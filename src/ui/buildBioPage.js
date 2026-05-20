@@ -168,10 +168,15 @@ function bioCalculate(mod){
     stations.forEach(function(st){
       stMean[st]=[];
       if(!pivot[st]) return;
+      /* count total replicates for this station */
+      var allRepsForSt = new Set();
+      grpRows.forEach(function(r){ if(String(r[colSt]||'').trim()===st) allRepsForSt.add(String(r[colRep]||'').trim()); });
+      var nReps = allRepsForSt.size || 1;
       Object.keys(pivot[st]).forEach(function(k){
         var parts=k.split('|||'), lv1=parts[0], lv2=parts[1];
-        var reps=Object.values(pivot[st][k]);
-        var mean=reps.reduce(function(a,v){return a+v;},0)/reps.length;
+        var reps=pivot[st][k];
+        var sum=Object.values(reps).reduce(function(a,v){return a+v;},0);
+        var mean=sum/nReps;
         stMean[st].push({lv1:lv1,lv2:lv2,mean:mean});
       });
     });
