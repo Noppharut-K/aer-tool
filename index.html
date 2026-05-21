@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AER — Environmental Analysis</title>
+<link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@600;700;800&family=IBM+Plex+Sans:wght@400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+  <script type="module" crossorigin src="/aer-tool/assets/index-lpm05OTh.js"></script>
+  <link rel="stylesheet" crossorigin href="/aer-tool/assets/index-BzHB7mr2.css">
+</head>
+<body>
+
+<!-- ══ HOME PAGE ══════════════════════════════════════════════════════════ -->
+<div id="page-home">
+  <nav class="home-nav">
+    <div class="home-logo">
+      <svg width="40" height="40" viewBox="0 0 52 52" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <linearGradient id="waveG" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0%" stop-color="#3b82c4"/>
+            <stop offset="100%" stop-color="#4dd9c0"/>
+          </linearGradient>
+          <clipPath id="box"><rect width="52" height="52" rx="11"/></clipPath>
+        </defs>
+        <rect width="52" height="52" rx="11" fill="#1a2035"/>
+        <text x="26" y="27" text-anchor="middle" font-family="Arial Black,sans-serif" font-size="17" font-weight="900" fill="#f0f0f2" letter-spacing="1">AER</text>
+        <path d="M4 36 Q10 31 16 36 Q22 41 28 36 Q34 31 40 36 Q46 41 50 38" fill="none" stroke="url(#waveG)" stroke-width="2.2" stroke-linecap="round" clip-path="url(#box)"/>
+        <path d="M2 41 Q9 36 15 41 Q21 46 27 41 Q33 36 39 41 Q45 46 51 42" fill="none" stroke="url(#waveG)" stroke-width="1.5" stroke-linecap="round" opacity=".6" clip-path="url(#box)"/>
+      </svg>
+    </div>
+    <div class="home-brand">
+      <h1>Assisted Environmental Reporting</h1>
+      <p class="home-sub-brand">v4.0 — Environmental Data Analysis Platform</p>
+    </div>
+    <div style="margin-left:auto;display:flex;align-items:center;gap:12px;">
+      <button class="theme-toggle" id="theme-toggle-home">&#9790; Dark</button>
+      <div class="lang-toggle">
+        <button class="lang-btn active" data-lang="th">TH</button>
+        <button class="lang-btn" data-lang="en">EN</button>
+      </div>
+    </div>
+  </nav>
+
+  <div class="home-body">
+    <div class="home-hero">
+      <div style="display:flex;justify-content:center;margin-bottom:20px">
+        <svg width="140" height="140" viewBox="0 0 52 52" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <linearGradient id="wGh" x1="0" y1="0" x2="1" y2="0">
+              <stop offset="0%" stop-color="#3b82c4"/>
+              <stop offset="100%" stop-color="#4dd9c0"/>
+            </linearGradient>
+            <clipPath id="bh"><rect width="52" height="52" rx="11"/></clipPath>
+          </defs>
+          <rect width="52" height="52" rx="11" fill="#1a2035"/>
+          <text x="26" y="27" text-anchor="middle" font-family="Arial Black,sans-serif" font-size="17" font-weight="900" fill="#f0f0f2" letter-spacing="1">AER</text>
+          <path d="M4 36 Q10 31 16 36 Q22 41 28 36 Q34 31 40 36 Q46 41 50 38" fill="none" stroke="url(#wGh)" stroke-width="2.2" stroke-linecap="round" clip-path="url(#bh)"/>
+          <path d="M2 41 Q9 36 15 41 Q21 46 27 41 Q33 36 39 41 Q45 46 51 42" fill="none" stroke="url(#wGh)" stroke-width="1.5" stroke-linecap="round" opacity=".6" clip-path="url(#bh)"/>
+        </svg>
+      </div>
+      <h2><span class="hh2a" id="home-title">วิเคราะห์ข้อมูลสิ่งแวดล้อม</span><br><span class="hh2b"><em id="home-sub">อย่างมีระบบ</em></span></h2>
+      <p class="hsub" id="home-desc">เลือกประเภทข้อมูลที่ต้องการวิเคราะห์</p>
+    </div>
+
+    <div class="type-grid">
+      <div class="tc tc-sea" data-tab="sea">
+        <div class="tc-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M2 12c1.5-2 3-2 4.5 0s3 2 4.5 0 3-2 4.5 0 3 2 4.5 0"/><path d="M2 17c1.5-2 3-2 4.5 0s3 2 4.5 0 3-2 4.5 0 3 2 4.5 0"/><path d="M2 7c1.5-2 3-2 4.5 0s3 2 4.5 0 3-2 4.5 0 3 2 4.5 0"/></svg></div>
+        <div class="tc-name">Seawater</div>
+        <div class="tc-sub">คุณภาพน้ำทะเล<br>Thai PCD 2564</div>
+        <span class="tc-pill">Thai PCD</span>
+      </div>
+      <div class="tc tc-sed" data-tab="sed">
+        <div class="tc-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><ellipse cx="12" cy="17" rx="9" ry="3"/><path d="M3 17V7a9 3 0 0118 0v10"/><path d="M12 14V4"/></svg></div>
+        <div class="tc-name">Sediment</div>
+        <div class="tc-sub">ดินตะกอนพื้นท้องทะเล<br>Thai PCD + ERL/ERM</div>
+        <span class="tc-pill">Thai PCD + NOAA</span>
+      </div>
+      <div class="tc tc-sw" data-tab="sw">
+        <div class="tc-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 2L6 13a6 6 0 1012 0L12 2z"/></svg></div>
+        <div class="tc-name">Surface Water</div>
+        <div class="tc-sub">คุณภาพน้ำผิวดิน<br>Thai PCD + WHO + EPA</div>
+        <span class="tc-pill">Multi-standard</span>
+      </div>
+      <div class="tc tc-air" data-tab="air">
+        <div class="tc-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9.59 4.59A2 2 0 1111 8H2m10.59 11.41A2 2 0 1014 16H2m15.73-8.27A2.5 2.5 0 1119.5 12H2"/></svg></div>
+        <div class="tc-name">Air Quality</div>
+        <div class="tc-sub">คุณภาพอากาศ<br>PM2.5, PM10, NO₂</div>
+        <span class="tc-pill">Thai PCD + WHO</span>
+      </div>
+      <div class="tc tc-noise" data-tab="noise">
+        <div class="tc-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 010 7.07"/><path d="M19.07 4.93a10 10 0 010 14.14"/></svg></div>
+        <div class="tc-name">Noise</div>
+        <div class="tc-sub">ระดับเสียง<br>กำหนดมาตรฐานเองได้</div>
+        <span class="tc-pill">Custom Standards</span>
+      </div>
+      <div class="tc tc-bio" data-tab="bio">
+        <div class="tc-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg></div>
+        <div class="tc-name">Biology</div>
+        <div class="tc-sub">Benthos · Phytoplankton<br>Zooplankton · Larvae</div>
+        <span class="tc-pill">Diversity Indices</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ ANALYSIS PAGES (built dynamically by JS) ════════════════════════════ -->
+<div id="page-sea"   class="apage"></div>
+<div id="page-sed"   class="apage"></div>
+<div id="page-sw"    class="apage"></div>
+<div id="page-air"   class="apage"></div>
+<div id="page-noise" class="apage"></div>
+<div id="page-bio"   class="apage"></div>
+
+<!-- ══ PROGRESS BAR ════════════════════════════════════════════════════════ -->
+<div id="progress-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:2000;display:none;align-items:center;justify-content:center;">
+  <div style="background:var(--white);border-radius:var(--rl);padding:28px 36px;min-width:300px;box-shadow:var(--sh-l);text-align:center;">
+    <div id="progress-label" style="font-size:14px;font-weight:600;color:var(--text);margin-bottom:14px;">กำลังวิเคราะห์...</div>
+    <div style="background:var(--bg);border-radius:20px;height:8px;overflow:hidden;">
+      <div id="progress-bar" style="height:100%;background:var(--blue);border-radius:20px;transition:width .3s;width:0%"></div>
+    </div>
+    <div id="progress-sub" style="font-size:12px;color:var(--text3);margin-top:8px;"></div>
+  </div>
+</div>
+
+</body>
+</html>
