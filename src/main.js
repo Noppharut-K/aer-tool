@@ -103,12 +103,12 @@ function buildHome() {
   document.getElementById('home-sub').textContent   = isEN ? 'systematically' : 'อย่างมีระบบ';
   document.getElementById('home-desc').textContent  = isEN ? 'Select data type to analyze' : 'เลือกประเภทข้อมูลที่ต้องการวิเคราะห์';
   const cards = {
-    sea:   { name:'Seawater',      subTH:'คุณภาพน้ำทะเล<br>Thai PCD 2564',             subEN:'Seawater Quality<br>Thai PCD 2564' },
-    sed:   { name:'Sediment',      subTH:'ดินตะกอนพื้นท้องทะเล<br>Thai PCD + ERL/ERM', subEN:'Marine Sediment<br>Thai PCD + ERL/ERM' },
-    sw:    { name:'Surface Water', subTH:'คุณภาพน้ำผิวดิน<br>Thai PCD + WHO + EPA',     subEN:'Surface Water Quality<br>Thai PCD + WHO + EPA' },
-    air:   { name:'Air Quality',   subTH:'คุณภาพอากาศ<br>PM2.5, PM10, NO₂',            subEN:'Air Quality<br>PM2.5, PM10, NO₂' },
-    noise: { name:'Noise',         subTH:'ระดับเสียง<br>กำหนดมาตรฐานเองได้',            subEN:'Noise Level<br>Custom Standards' },
-    bio:   { name:'Biology',       subTH:'Benthos · Phytoplankton<br>Zooplankton · Larvae', subEN:'Benthos · Phytoplankton<br>Zooplankton · Larvae' },
+    sea:   { name:'Seawater',      subTH:'Water quality · Standards · Trends',  subEN:'Water quality · Standards · Trends' },
+    sed:   { name:'Sediment',      subTH:'Sediment quality · Standards · Trends', subEN:'Sediment quality · Standards · Trends' },
+    sw:    { name:'Surface Water', subTH:'Water quality · Standards · Trends',  subEN:'Water quality · Standards · Trends' },
+    air:   { name:'Air Quality',   subTH:'Air quality · Standards · Trends',    subEN:'Air quality · Standards · Trends' },
+    noise: { name:'Noise',         subTH:'Noise level · Standards',             subEN:'Noise level · Standards' },
+    bio:   { name:'Biology',       subTH:'Benthos · Phyto · Zoo · Larvae',      subEN:'Benthos · Phyto · Zoo · Larvae' },
   };
   document.querySelectorAll('.tc[data-tab]').forEach(card => {
     const cfg = cards[card.dataset.tab]; if (!cfg) return;
