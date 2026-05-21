@@ -143,10 +143,18 @@ function bioCalculate(mod){
   var resultDiv = document.getElementById('bio-results-'+mod);
   resultDiv.innerHTML = '';
 
+  /* Collect ALL lvl1s and classes across all meta groups for consistent rows */
+  var allLvl1s = [...new Set(rows.map(function(r){return String(r[colLvl1]||'').trim();}).filter(Boolean))].sort();
+  /* all classes per lvl1 globally */
+  var allClassesByLvl1 = {};
+  allLvl1s.forEach(function(lv1){
+    allClassesByLvl1[lv1] = [...new Set(rows.filter(function(r){return String(r[colLvl1]||'').trim()===lv1;}).map(function(r){return String(r[colCls]||'').trim();}).filter(Boolean))].sort();
+  });
+
   Object.keys(byMeta).forEach(function(metaKey){
     var grpRows = byMeta[metaKey].rows;
     var stations = [...new Set(grpRows.map(function(r){return String(r[colSt]||'').trim();}))].sort();
-    var lvl1s = [...new Set(grpRows.map(function(r){return String(r[colLvl1]||'').trim();}).filter(Boolean))].sort();
+    var lvl1s = allLvl1s;
 
     /* ── Station mean density per lvl1+lvl2 (pivot fill=0) ── */
     /* pivot: {station: {lvl2: {rep: density}}} */
@@ -257,7 +265,27 @@ function bioCalculate(mod){
     lvl1s.forEach(function(lv1){
       var vals = stations.map(function(st){return stTaxaCount[st][lv1]||0;});
       var locTotal = locTaxaCount[lv1]?locTaxaCount[lv1].size:0;
-      rows2.push({label:'  '+lv1, vals:vals.concat([locTotal]), sec:false});
+      rows2.push({label:'  Division: '+lv1, vals:vals.concat([locTotal]), sec:false});
+
+      /* For phyto: show Class breakdown under Division */
+      if(mod==='phyto' && colCls){
+        var classes = allClassesByLvl1[lv1] || [];
+        classes.forEach(function(cls){
+          var clsVals = stations.map(function(st){
+            return new Set(grpRows.filter(function(r){
+              return String(r[colSt]||'').trim()===st &&
+                     String(r[colLvl1]||'').trim()===lv1 &&
+                     String(r[colCls]||'').trim()===cls;
+            }).map(function(r){return String(r[colLvl2]||'').trim();})).size;
+          });
+          var clsTotal = new Set(grpRows.filter(function(r){
+            return String(r[colLvl1]||'').trim()===lv1 &&
+                   String(r[colCls]||'').trim()===cls;
+          }).map(function(r){return String(r[colLvl2]||'').trim();})).size;
+          rows2.push({label:'    Class: '+cls, vals:clsVals.concat([clsTotal]), sec:false, indent:true});
+        });
+        rows2.push({label:'', vals:cols.map(function(){return '';}), sec:false});
+      }
     });
     var totalTaxaSt = stations.map(function(st){return lvl1s.reduce(function(a,lv1){return a+(stTaxaCount[st][lv1]||0);},0);});
     var totalTaxaLoc = Object.values(locTaxaCount).reduce(function(a,s){return a+s.size;},0);
@@ -269,7 +297,27 @@ function bioCalculate(mod){
     lvl1s.forEach(function(lv1){
       var vals = stations.map(function(st){return stDens[st][lv1]||0;});
       var locDen = bioRoundup0(vals.reduce(function(a,v){return a+v;},0)/stations.length);
-      rows2.push({label:'  '+lv1, vals:vals.concat([locDen]), sec:false});
+      var divLabel = mod==='phyto' ? '  Division: '+lv1 : '  '+lv1;
+      rows2.push({label:divLabel, vals:vals.concat([locDen]), sec:false});
+
+      /* For phyto: show Class density breakdown */
+      if(mod==='phyto' && colCls){
+        var classes = allClassesByLvl1[lv1] || [];
+        classes.forEach(function(cls){
+          var clsDens = stations.map(function(st){
+            var sum = stMean[st].filter(function(x){
+              return x.lv1===lv1 && String(grpRows.find(function(r){
+                return String(r[colLvl2]||'').trim()===x.lv2 && String(r[colLvl1]||'').trim()===lv1;
+              })||{})[colCls]===cls ||
+              grpRows.some(function(r){return String(r[colLvl2]||'').trim()===x.lv2 && String(r[colCls]||'').trim()===cls && String(r[colLvl1]||'').trim()===lv1;});
+            }).reduce(function(a,x){return a+x.mean;},0);
+            return bioRoundup0(sum);
+          });
+          var clsLocDen = bioRoundup0(clsDens.reduce(function(a,v){return a+v;},0)/stations.length);
+          rows2.push({label:'    Class: '+cls, vals:clsDens.concat([clsLocDen]), sec:false, indent:true});
+        });
+        rows2.push({label:'', vals:cols.map(function(){return '';}), sec:false});
+      }
     });
     var totalDenSt = stations.map(function(st){return lvl1s.reduce(function(a,lv1){return a+(stDens[st][lv1]||0);},0);});
     var totalDenLoc = bioRoundup0(totalDenSt.reduce(function(a,v){return a+v;},0)/stations.length);
@@ -326,7 +374,17 @@ function bioExport(mod){
       sheetData.push([row.label].concat(row.vals));
     });
     var ws = XLSX.utils.aoa_to_sheet(sheetData);
-    var sheetName = (metaKey==='ALL'?'Result':metaKey.replace(/\|\|/g,'_')).substring(0,31);
+    var sheetName;
+    if(mod==='phyto' && metaKey!=='ALL'){
+      var parts = metaKey.split('||');
+      /* parts: year||proj||loc||zone — want Station_Zone_Year */
+      var loc  = parts[2]||'';
+      var zone = parts[3]||'';
+      var yr   = parts[0]||'';
+      sheetName = (loc+'_'+zone+'_'+yr).substring(0,31);
+    } else {
+      sheetName = (metaKey==='ALL'?'Result':metaKey.replace(/\|\|/g,'_')).substring(0,31);
+    }
     XLSX.utils.book_append_sheet(wb, ws, sheetName);
   });
   var fname = BIO_CFG[mod].title+'_Results_'+new Date().toISOString().slice(0,10)+'.xlsx';
