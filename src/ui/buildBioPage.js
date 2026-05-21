@@ -265,7 +265,7 @@ function bioCalculate(mod){
     lvl1s.forEach(function(lv1){
       var vals = stations.map(function(st){return stTaxaCount[st][lv1]||0;});
       var locTotal = locTaxaCount[lv1]?locTaxaCount[lv1].size:0;
-      rows2.push({label:'  Division: '+lv1, vals:vals.concat([locTotal]), sec:false});
+      rows2.push({label:'  '+(mod==='phyto'?'Division: ':mod==='larvae'?'Order: ':'Phylum: ')+lv1, vals:vals.concat([locTotal]), sec:false});
 
       /* For phyto: show Class breakdown under Division */
       if(mod==='phyto' && colCls){
@@ -297,7 +297,7 @@ function bioCalculate(mod){
     lvl1s.forEach(function(lv1){
       var vals = stations.map(function(st){return stDens[st][lv1]||0;});
       var locDen = bioRoundup0(vals.reduce(function(a,v){return a+v;},0)/stations.length);
-      var divLabel = mod==='phyto' ? '  Division: '+lv1 : '  '+lv1;
+      var divLabel = '  '+(mod==='phyto'?'Division: ':mod==='larvae'?'Order: ':'Phylum: ')+lv1;
       rows2.push({label:divLabel, vals:vals.concat([locDen]), sec:false});
 
       /* For phyto: show Class density breakdown */
