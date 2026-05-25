@@ -1038,9 +1038,19 @@ function initBioModule(mod) {
   h.push('  <div style="display:flex;gap:10px;flex-wrap:wrap;padding-top:14px;border-top:1px solid var(--border)">');
   h.push('    <button class="bio-btn" onclick="bioCalculate(\''+mod+'\')">Calculate</button>');
   if(mod==='benthos'||mod==='phyto') h.push('    <button class="bio-btn-outline" onclick="bioCalculateByRep(\''+mod+'\')" style="border-color:var(--navy);color:var(--navy)">Calculate by Rep</button>');
-  if(mod==='benthos'||mod==='phyto') h.push('    <button class="bio-btn-outline" onclick="bioExportByRep(\''+mod+'\')">Export by Rep (.xlsx)</button>');
-  h.push('    <button class="bio-btn-outline" onclick="bioExport(\''+mod+'\')">Export Calculate (.xlsx)</button>');
-  h.push('    <button class="bio-btn-outline" onclick="bioExportTax(\''+mod+'\')">Export Summary (.xlsx)</button>');
+  h.push('    <div class="bio-export-wrap" style="position:relative;display:inline-block">');
+  h.push('      <button class="bio-btn-outline" onclick="bioToggleExportMenu(\''+mod+'\')" style="display:flex;align-items:center;gap:6px">Export <span style="font-size:10px">▼</span></button>');
+  h.push('      <div id="bio-export-menu-'+mod+'" style="display:none;position:absolute;top:100%;left:0;background:var(--white);border:1px solid var(--border);border-radius:var(--rs);box-shadow:var(--sh-l);z-index:100;min-width:210px;padding:4px 0">');
+  h.push('        <div class="bio-export-item" onclick="bioExport(\''+mod+'\');bioToggleExportMenu(\''+mod+'\')" style="padding:8px 14px;cursor:pointer;font-size:12px">Export Calculate (.xlsx)</div>');
+  if(mod==='benthos'||mod==='phyto') h.push('        <div class="bio-export-item" onclick="bioExportByRep(\''+mod+'\');bioToggleExportMenu(\''+mod+'\')" style="padding:8px 14px;cursor:pointer;font-size:12px">Export by Rep (.xlsx)</div>');
+  h.push('        <div class="bio-export-item" onclick="bioExportTax(\''+mod+'\');bioToggleExportMenu(\''+mod+'\')" style="padding:8px 14px;cursor:pointer;font-size:12px">Export Summary (.xlsx)</div>');
+  if(mod==='benthos'||mod==='phyto'){
+    h.push('        <div class="bio-export-item" onclick="bioExportLongByRep(\''+mod+'\');bioToggleExportMenu(\''+mod+'\')" style="padding:8px 14px;cursor:pointer;font-size:12px">Export Long Format (.xlsx)</div>');
+  } else {
+    h.push('        <div class="bio-export-item" onclick="bioExportLongMean(\''+mod+'\');bioToggleExportMenu(\''+mod+'\')" style="padding:8px 14px;cursor:pointer;font-size:12px">Export Long Format (.xlsx)</div>');
+  }
+  h.push('      </div>');
+  h.push('    </div>');
   h.push('  </div>');
   h.push('</div>');
 
@@ -1442,5 +1452,218 @@ function bioExportByRep(mod) {
   window.XLSX.writeFile(wb, fname);
 }
 
+function bioToggleExportMenu(mod) {
+  var menu = document.getElementById('bio-export-menu-'+mod);
+  if(!menu) return;
+  var isOpen = menu.style.display !== 'none';
+  document.querySelectorAll('[id^="bio-export-menu-"]').forEach(function(m){ m.style.display='none'; });
+  if(!isOpen){
+    menu.style.display = 'block';
+    setTimeout(function(){
+      document.addEventListener('click', function closeMenu(e){
+        if(!e.target.closest('.bio-export-wrap')){
+          menu.style.display='none';
+          document.removeEventListener('click', closeMenu);
+        }
+      });
+    }, 10);
+  }
+}
+
+function bioExportLong(mod) {
+  var raw = BIO[mod].raw;
+  if(!raw||!raw.length){ bioErr(mod,'กรุณา Upload ข้อมูลก่อนครับ'); return; }
+  var wb = window.XLSX.utils.book_new();
+  var ws = window.XLSX.utils.json_to_sheet(raw);
+  window.XLSX.utils.book_append_sheet(wb, ws, 'Long Format');
+  var fname = BIO_CFG[mod].title+'_LongFormat_'+new Date().toISOString().slice(0,10)+'.xlsx';
+  window.XLSX.writeFile(wb, fname);
+}
+
+function bioExportLongByRep(mod) {
+  var div = document.getElementById('bio-byrep-'+mod);
+  if(!div||!div.innerHTML){ bioErr(mod,'กด Calculate by Rep ก่อนครับ'); return; }
+
+  var colYear = (document.getElementById('bio-year-'+mod)||{}).value||'';
+  var colProj = (document.getElementById('bio-proj-'+mod)||{}).value||'';
+  var colLoc  = (document.getElementById('bio-loc-'+mod)||{}).value||'';
+  var colSt   = (document.getElementById('bio-st-'+mod)||{}).value||'';
+  var taxaGroup = BIO_CFG[mod].title;
+  var unitDen = 'Individual/m2';
+
+  var rows = [];
+
+  /* Get all result titles - format: "Year | Project | Location | Rep X" */
+  var titles = div.querySelectorAll('.bio-result-title');
+  var tables = div.querySelectorAll('table');
+
+  tables.forEach(function(tbl, i){
+    var title = titles[i] ? titles[i].textContent.trim() : '';
+    var parts = title.split('|').map(function(p){return p.trim();});
+    /* parts: Year, Project, Location, [Zone,] Rep X */
+    var year = parts[0]||'';
+    var proj = parts[1]||'';
+    var loc  = parts[2]||'';
+    var repPart = parts[parts.length-1]||'';
+    var rep = repPart.replace('Rep','').trim();
+
+    /* Parse table rows */
+    var inDensity = false;
+    var inIndices = false;
+    var stCols = [];
+    var totalDenBySt = {};
+    var totalTaxaBySt = {};
+    var indexBySt = {};
+
+    tbl.querySelectorAll('tr').forEach(function(tr, ri){
+      var cells = Array.from(tr.querySelectorAll('th,td')).map(function(td){return td.textContent.trim();});
+      if(!cells.length) return;
+
+      if(ri===0){
+        /* Header row - get station names */
+        stCols = cells.slice(1, cells.length-1); /* exclude Parameter and Total/Mean */
+        stCols.forEach(function(st){ totalDenBySt[st]=0; totalTaxaBySt[st]=0; indexBySt[st]={}; });
+        return;
+      }
+
+      var label = cells[0];
+      var vals  = cells.slice(1);
+
+      if(label==='Density'||label.includes('NUMBER OF')||label.includes('Number of')){
+        inDensity = label==='Density';
+        inIndices = false;
+        return;
+      }
+      if(label==='Indices'){ inIndices=true; inDensity=false; return; }
+      if(label==='') return;
+
+      /* Total density row */
+      if(label==='Total density'||label==='  Total density'){
+        stCols.forEach(function(st,si){
+          totalDenBySt[st] = parseFloat(vals[si])||0;
+        });
+        return;
+      }
+
+      /* Total taxa row */
+      if(label==='  Total'||label==='Total'){
+        stCols.forEach(function(st,si){
+          totalTaxaBySt[st] = parseFloat(vals[si])||0;
+        });
+        return;
+      }
+
+      /* Index rows */
+      if(inIndices){
+        var idxName = '';
+        if(label.includes("Diversity (H')")|| label.includes("Diversity")) idxName = 'Shannon diversity index';
+        else if(label.includes('Evenness')) idxName = 'Evenness index';
+        else if(label.includes('Richness')) idxName = 'Richness index';
+        if(idxName){
+          stCols.forEach(function(st,si){
+            indexBySt[st][idxName] = vals[si]!==''?vals[si]:'-';
+          });
+        }
+      }
+    });
+
+    /* Build output rows per station */
+    stCols.forEach(function(st){
+      var baseRow = {
+        'Year': year,
+        'Project name': proj,
+        'Location': loc,
+        'Station name': st,
+        'Replication': rep,
+        'Taxa_Group': taxaGroup
+      };
+      rows.push(Object.assign({}, baseRow, {'Parameter':'Total number of species','Value':totalTaxaBySt[st]||0,'Unit':'Taxa'}));
+      rows.push(Object.assign({}, baseRow, {'Parameter':'Total density','Value':totalDenBySt[st]||0,'Unit':unitDen}));
+      rows.push(Object.assign({}, baseRow, {'Parameter':'Shannon diversity index','Value':indexBySt[st]['Shannon diversity index']||'-','Unit':'-'}));
+      rows.push(Object.assign({}, baseRow, {'Parameter':'Evenness index','Value':indexBySt[st]['Evenness index']||'-','Unit':'-'}));
+      rows.push(Object.assign({}, baseRow, {'Parameter':'Richness index','Value':indexBySt[st]['Richness index']||'-','Unit':'-'}));
+    });
+  });
+
+  if(!rows.length){ bioErr(mod,'ไม่มีข้อมูล'); return; }
+
+  var wb = window.XLSX.utils.book_new();
+  var ws = window.XLSX.utils.json_to_sheet(rows);
+  ws['!cols'] = [{wch:8},{wch:14},{wch:12},{wch:14},{wch:12},{wch:12},{wch:26},{wch:10},{wch:14}];
+  window.XLSX.utils.book_append_sheet(wb, ws, 'Long Format by Rep');
+  var fname = BIO_CFG[mod].title+'_LongFormat_ByRep_'+new Date().toISOString().slice(0,10)+'.xlsx';
+  window.XLSX.writeFile(wb, fname);
+}
+
+function bioExportLongMean(mod) {
+  var calc = BIO[mod].calc;
+  if(!calc||!Object.keys(calc).length){ bioErr(mod,'กด Calculate ก่อนครับ'); return; }
+
+  var taxaGroup = BIO_CFG[mod].title;
+  var unitDen = mod==='zoo' ? 'Individual/m3' : mod==='larvae' ? 'Individual/1000m3' : 'Individual/m2';
+  var rows = [];
+
+  Object.keys(calc).forEach(function(metaKey){
+    var data = calc[metaKey];
+    var parts = metaKey.split('||');
+    var year = parts[0]||'';
+    var proj = parts[1]||'';
+    var loc  = parts[2]||'';
+
+    /* Get station columns (exclude Total/Mean) */
+    var stCols = data.cols.slice(0, data.cols.length-1);
+
+    /* Parse rows */
+    var totalTaxaBySt = {};
+    var totalDenBySt  = {};
+    var indexBySt     = {};
+    stCols.forEach(function(st){ totalTaxaBySt[st]=0; totalDenBySt[st]=0; indexBySt[st]={}; });
+
+    data.rows.forEach(function(row){
+      var label = (row.label||'').trim();
+      if(label==='  Total' || label==='Total'){
+        stCols.forEach(function(st,si){ totalTaxaBySt[st]=parseFloat(row.vals[si])||0; });
+      }
+      if(label==='  Total density' || label==='Total density'){
+        stCols.forEach(function(st,si){ totalDenBySt[st]=parseFloat(row.vals[si])||0; });
+      }
+      if(label.includes("Diversity (H')")||label.includes('Diversity')){
+        stCols.forEach(function(st,si){ indexBySt[st]['Shannon diversity index']=row.vals[si]!==''?row.vals[si]:'-'; });
+      }
+      if(label.includes('Evenness')){
+        stCols.forEach(function(st,si){ indexBySt[st]['Evenness index']=row.vals[si]!==''?row.vals[si]:'-'; });
+      }
+      if(label.includes('Richness')){
+        stCols.forEach(function(st,si){ indexBySt[st]['Richness index']=row.vals[si]!==''?row.vals[si]:'-'; });
+      }
+    });
+
+    stCols.forEach(function(st){
+      var baseRow = {
+        'Year': year, 'Project name': proj, 'Location': loc,
+        'Station name': st, 'Replication': 1, 'Taxa_Group': taxaGroup
+      };
+      rows.push(Object.assign({},baseRow,{'Parameter':'Total number of species','Value':totalTaxaBySt[st]||0,'Unit':'Taxa'}));
+      rows.push(Object.assign({},baseRow,{'Parameter':'Total density','Value':totalDenBySt[st]||0,'Unit':unitDen}));
+      rows.push(Object.assign({},baseRow,{'Parameter':'Shannon diversity index','Value':indexBySt[st]['Shannon diversity index']||'-','Unit':'-'}));
+      rows.push(Object.assign({},baseRow,{'Parameter':'Evenness index','Value':indexBySt[st]['Evenness index']||'-','Unit':'-'}));
+      rows.push(Object.assign({},baseRow,{'Parameter':'Richness index','Value':indexBySt[st]['Richness index']||'-','Unit':'-'}));
+    });
+  });
+
+  if(!rows.length){ bioErr(mod,'ไม่มีข้อมูล'); return; }
+
+  var wb = window.XLSX.utils.book_new();
+  var ws = window.XLSX.utils.json_to_sheet(rows);
+  ws['!cols'] = [{wch:8},{wch:14},{wch:12},{wch:14},{wch:12},{wch:12},{wch:26},{wch:10},{wch:14}];
+  window.XLSX.utils.book_append_sheet(wb, ws, 'Long Format');
+  var fname = BIO_CFG[mod].title+'_LongFormat_'+new Date().toISOString().slice(0,10)+'.xlsx';
+  window.XLSX.writeFile(wb, fname);
+}
+
 window.bioCalculateByRep = bioCalculateByRep;
 window.bioExportByRep = bioExportByRep;
+window.bioToggleExportMenu = bioToggleExportMenu;
+window.bioExportLong = bioExportLong;
+window.bioExportLongByRep = bioExportLongByRep;
+window.bioExportLongMean = bioExportLongMean;
