@@ -17,6 +17,7 @@ var BIO = {
   zoo:      {raw:null, tax:{}, calc:{}, filename:''},
   larvae:   {raw:null, tax:{}, calc:{}, filename:''}
 };
+window.BIO = BIO;
 
 export function buildBioPage(el) {
   var l = L[LANG]||L.th;
@@ -1073,27 +1074,63 @@ function initBioModule(mod) {
 function bioLoadFile(mod, input) {
   var file = input.files[0];
   if(!file) return;
-  /* Reset so same file can be re-uploaded */
   input.value = '';
   var reader = new FileReader();
   reader.onload = function(e) {
     try {
       var wb = XLSX.read(e.target.result, {type:'array'});
-      var ws = wb.Sheets[wb.SheetNames[0]];
-      var rows = XLSX.utils.sheet_to_json(ws, {defval:''});
-      if(!rows.length) { bioErr(mod,'ไม่พบข้อมูลในไฟล์'); return; }
-      BIO[mod].raw = rows;
+      BIO[mod]._wb = wb;
       BIO[mod].filename = file.name;
-      document.getElementById('bio-fi-'+mod).textContent = '&#10003; '+file.name+' — '+rows.length.toLocaleString()+' rows';
-      document.getElementById('bio-fi-'+mod).style.display = 'block';
-      document.getElementById('bio-err-'+mod).style.display = 'none';
-      bioPopulateCols(mod, Object.keys(rows[0]));
-      document.getElementById('bio-mapping-'+mod).style.display = 'block';
-      bioAutoDetect(mod, Object.keys(rows[0]));
-      bioUpdateFilters(mod);
+      if(wb.SheetNames.length === 1){
+        bioLoadSheet(mod, wb.SheetNames[0]);
+      } else {
+        /* Show sheet selector */
+        var errEl = document.getElementById('bio-err-'+mod);
+        var fiEl  = document.getElementById('bio-fi-'+mod);
+        fiEl.style.display = 'none';
+        errEl.style.display = 'none';
+        var existing = document.getElementById('bio-sheet-sel-'+mod);
+        if(existing) existing.remove();
+        var div = document.createElement('div');
+        div.id = 'bio-sheet-sel-'+mod;
+        div.style = 'margin:8px 0;display:flex;align-items:center;gap:8px;flex-wrap:wrap';
+        div.innerHTML = '<span style="font-size:12px;color:var(--text3)">เลือก Sheet:</span>'
+          + '<select id="bio-sheet-dd-'+mod+'" style="font-size:12px;padding:4px 8px;border:1px solid var(--border);border-radius:var(--rs);background:var(--white);color:var(--text)">'
+          + wb.SheetNames.map(function(s){return '<option value="'+s+'">'+s+'</option>';}).join('')
+          + '</select>'
+          + '<button class="bio-btn-outline" style="font-size:12px;padding:4px 10px" onclick="bioConfirmSheet(\'' + mod + '\')">โหลด</button>';
+        var mapping = document.getElementById('bio-mapping-'+mod);
+        mapping.parentNode.insertBefore(div, mapping);
+      }
     } catch(ex) { bioErr(mod,'อ่านไฟล์ไม่ได้: '+ex.message); }
   };
   reader.readAsArrayBuffer(file);
+}
+
+function bioConfirmSheet(mod) {
+  var dd = document.getElementById('bio-sheet-dd-'+mod);
+  if(!dd) return;
+  var sheetName = dd.value;
+  var sel = document.getElementById('bio-sheet-sel-'+mod);
+  if(sel) sel.remove();
+  bioLoadSheet(mod, sheetName);
+}
+
+function bioLoadSheet(mod, sheetName) {
+  try {
+    var wb = BIO[mod]._wb;
+    var ws = wb.Sheets[sheetName];
+    var rows = XLSX.utils.sheet_to_json(ws, {defval:''});
+    if(!rows.length) { bioErr(mod,'ไม่พบข้อมูลในไฟล์'); return; }
+    BIO[mod].raw = rows;
+    document.getElementById('bio-fi-'+mod).textContent = '✓ '+BIO[mod].filename+' ['+sheetName+'] — '+rows.length.toLocaleString()+' rows';
+    document.getElementById('bio-fi-'+mod).style.display = 'block';
+    document.getElementById('bio-err-'+mod).style.display = 'none';
+    bioPopulateCols(mod, Object.keys(rows[0]));
+    document.getElementById('bio-mapping-'+mod).style.display = 'block';
+    bioAutoDetect(mod, Object.keys(rows[0]));
+    bioUpdateFilters(mod);
+  } catch(ex) { bioErr(mod,'อ่านไฟล์ไม่ได้: '+ex.message); }
 }
 
 function bioErr(mod, msg) {
@@ -1480,6 +1517,56 @@ function bioExportLong(mod) {
   window.XLSX.writeFile(wb, fname);
 }
 
+/* Meta columns to include in long format export */
+var BIO_META_COLS = [
+  'Year','Project name','Field','Offshore Petroleum Phase',
+  'Report Type','Sampling Type','Location','Station name',
+  'X_ind_Propose','Y_ind_Propose','X_ind_Actual','Y_ind_Actual',
+  'Different Distance_(P/A)','Distance from Location','Depth',
+  'Replication','Water Level (Phytoplankton)'
+];
+
+/* Also try alternate spellings */
+var BIO_META_COLS_ALT = {
+  'X_ind_Propose': ['X_ind_Propose','X_Ind_Propose','X_ind_propose'],
+  'Y_ind_Propose': ['Y_ind_Propose','Y_Ind_Propose','Y_ind_propose'],
+  'X_ind_Actual':  ['X_ind_Actual','X_Ind_Actual'],
+  'Y_ind_Actual':  ['Y_ind_Actual','Y_Ind_Actual'],
+  'Different Distance_(P/A)': ['Different Distance_(P/A)','Different Distance (P/A)'],
+  'Water Level (Phytoplankton)': ['Water Level (Phytoplankton)','Water Level(Phytoplankton)']
+};
+
+function bioGetMetaRow(mod, station, rep) {
+  var raw = BIO[mod].raw || [];
+  var colSt  = (document.getElementById('bio-st-'+mod)||{}).value||'';
+  var colRep = (document.getElementById('bio-rep-'+mod)||{}).value||'';
+  /* Find first matching row */
+  var match = raw.find(function(r){
+    var stMatch  = !colSt  || String(r[colSt]||'').trim()  === String(station).trim();
+    var repMatch = !colRep || String(r[colRep]||'').trim() === String(rep).trim();
+    return stMatch && repMatch;
+  }) || {};
+  /* Build meta object */
+  var meta = {};
+  BIO_META_COLS.forEach(function(col){
+    var val = match[col];
+    if(val===undefined){
+      /* Try alternate spellings */
+      var alts = (BIO_META_COLS_ALT[col]||[]);
+      for(var ai=0;ai<alts.length;ai++){
+        if(match[alts[ai]]!==undefined){ val=match[alts[ai]]; break; }
+      }
+    }
+    if(val===undefined){
+      /* Try case-insensitive */
+      var key = Object.keys(match).find(function(k){ return k.toLowerCase()===col.toLowerCase(); });
+      val = key ? match[key] : '';
+    }
+    meta[col] = (val===null||val===undefined) ? '' : val;
+  });
+  return meta;
+}
+
 function bioExportLongByRep(mod) {
   var div = document.getElementById('bio-byrep-'+mod);
   if(!div||!div.innerHTML){ bioErr(mod,'กด Calculate by Rep ก่อนครับ'); return; }
@@ -1569,14 +1656,8 @@ function bioExportLongByRep(mod) {
 
     /* Build output rows per station */
     stCols.forEach(function(st){
-      var baseRow = {
-        'Year': year,
-        'Project name': proj,
-        'Location': loc,
-        'Station name': st,
-        'Replication': rep,
-        'Taxa_Group': taxaGroup
-      };
+      var meta = bioGetMetaRow(mod, st, rep);
+      var baseRow = Object.assign({}, meta, {'Taxa_Group': taxaGroup});
       rows.push(Object.assign({}, baseRow, {'Parameter':'Total number of species','Value':totalTaxaBySt[st]||0,'Unit':'Taxa'}));
       rows.push(Object.assign({}, baseRow, {'Parameter':'Total density','Value':totalDenBySt[st]||0,'Unit':unitDen}));
       rows.push(Object.assign({}, baseRow, {'Parameter':'Shannon diversity index','Value':indexBySt[st]['Shannon diversity index']||'-','Unit':'-'}));
@@ -1589,7 +1670,7 @@ function bioExportLongByRep(mod) {
 
   var wb = window.XLSX.utils.book_new();
   var ws = window.XLSX.utils.json_to_sheet(rows);
-  ws['!cols'] = [{wch:8},{wch:14},{wch:12},{wch:14},{wch:12},{wch:12},{wch:26},{wch:10},{wch:14}];
+  ws['!cols'] = BIO_META_COLS.concat(['Taxa_Group','Parameter','Value','Unit']).map(function(){return {wch:16};});
   window.XLSX.utils.book_append_sheet(wb, ws, 'Long Format by Rep');
   var fname = BIO_CFG[mod].title+'_LongFormat_ByRep_'+new Date().toISOString().slice(0,10)+'.xlsx';
   window.XLSX.writeFile(wb, fname);
@@ -1639,10 +1720,8 @@ function bioExportLongMean(mod) {
     });
 
     stCols.forEach(function(st){
-      var baseRow = {
-        'Year': year, 'Project name': proj, 'Location': loc,
-        'Station name': st, 'Replication': 1, 'Taxa_Group': taxaGroup
-      };
+      var meta = bioGetMetaRow(mod, st, '1');
+      var baseRow = Object.assign({}, meta, {'Replication': 1, 'Taxa_Group': taxaGroup});
       rows.push(Object.assign({},baseRow,{'Parameter':'Total number of species','Value':totalTaxaBySt[st]||0,'Unit':'Taxa'}));
       rows.push(Object.assign({},baseRow,{'Parameter':'Total density','Value':totalDenBySt[st]||0,'Unit':unitDen}));
       rows.push(Object.assign({},baseRow,{'Parameter':'Shannon diversity index','Value':indexBySt[st]['Shannon diversity index']||'-','Unit':'-'}));
@@ -1655,7 +1734,7 @@ function bioExportLongMean(mod) {
 
   var wb = window.XLSX.utils.book_new();
   var ws = window.XLSX.utils.json_to_sheet(rows);
-  ws['!cols'] = [{wch:8},{wch:14},{wch:12},{wch:14},{wch:12},{wch:12},{wch:26},{wch:10},{wch:14}];
+  ws['!cols'] = BIO_META_COLS.concat(['Taxa_Group','Parameter','Value','Unit']).map(function(){return {wch:16};});
   window.XLSX.utils.book_append_sheet(wb, ws, 'Long Format');
   var fname = BIO_CFG[mod].title+'_LongFormat_'+new Date().toISOString().slice(0,10)+'.xlsx';
   window.XLSX.writeFile(wb, fname);
@@ -1667,3 +1746,6 @@ window.bioToggleExportMenu = bioToggleExportMenu;
 window.bioExportLong = bioExportLong;
 window.bioExportLongByRep = bioExportLongByRep;
 window.bioExportLongMean = bioExportLongMean;
+window.bioConfirmSheet = bioConfirmSheet;
+window.bioLoadSheet = bioLoadSheet;
+window.bioGetMetaRow = bioGetMetaRow;
