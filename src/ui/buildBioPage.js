@@ -1221,7 +1221,7 @@ function bioGetFilteredRows(mod) {
       var nSlider = document.querySelector('#bio-rep-ctrl-'+mod+' input[type=range]');
       if(nSlider){
         var n = parseInt(nSlider.value);
-        var allReps = [...new Set(raw.map(function(r){return String(r[repCol]||'').trim();}).filter(Boolean))].sort(function(a,b){return parseFloat(a)-parseFloat(b)||a.localeCompare(b);});
+        var allReps = [...new Set(rows.map(function(r){return String(r[repCol]||'').trim();}).filter(Boolean))].sort(function(a,b){return parseFloat(a)-parseFloat(b)||a.localeCompare(b);});
         var chosen = allReps.slice(0,n);
         rows = rows.filter(function(r){ return chosen.includes(String(r[repCol]||'').trim()); });
       }
