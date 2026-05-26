@@ -1536,15 +1536,19 @@ var BIO_META_COLS_ALT = {
   'Water Level (Phytoplankton)': ['Water Level (Phytoplankton)','Water Level(Phytoplankton)']
 };
 
-function bioGetMetaRow(mod, station, rep) {
+function bioGetMetaRow(mod, station, rep, year, zone) {
   var raw = BIO[mod].raw || [];
-  var colSt  = (document.getElementById('bio-st-'+mod)||{}).value||'';
-  var colRep = (document.getElementById('bio-rep-'+mod)||{}).value||'';
+  var colSt   = (document.getElementById('bio-st-'+mod)||{}).value||'';
+  var colRep  = (document.getElementById('bio-rep-'+mod)||{}).value||'';
+  var colYear = (document.getElementById('bio-year-'+mod)||{}).value||'';
+  var colZone = (document.getElementById('bio-zone-'+mod)||{}).value||'';
   /* Find first matching row */
   var match = raw.find(function(r){
-    var stMatch  = !colSt  || String(r[colSt]||'').trim()  === String(station).trim();
-    var repMatch = !colRep || String(r[colRep]||'').trim() === String(rep).trim();
-    return stMatch && repMatch;
+    var stMatch   = !colSt   || String(r[colSt]||'').trim()   === String(station).trim();
+    var repMatch  = !colRep  || String(r[colRep]||'').trim()  === String(rep).trim();
+    var yrMatch   = !colYear || !year || String(r[colYear]||'').trim() === String(year).trim();
+    var zoneMatch = !colZone || !zone || String(r[colZone]||'').trim() === String(zone).trim();
+    return stMatch && repMatch && yrMatch && zoneMatch;
   }) || {};
   /* Build meta object */
   var meta = {};
@@ -1656,7 +1660,7 @@ function bioExportLongByRep(mod) {
 
     /* Build output rows per station */
     stCols.forEach(function(st){
-      var meta = bioGetMetaRow(mod, st, rep);
+      var meta = bioGetMetaRow(mod, st, rep, year, parts[3]||'');
       var baseRow = Object.assign({}, meta, {'Taxa_Group': taxaGroup});
       rows.push(Object.assign({}, baseRow, {'Parameter':'Total number of species','Value':totalTaxaBySt[st]||0,'Unit':'Taxa'}));
       rows.push(Object.assign({}, baseRow, {'Parameter':'Total density','Value':totalDenBySt[st]||0,'Unit':unitDen}));
@@ -1720,7 +1724,7 @@ function bioExportLongMean(mod) {
     });
 
     stCols.forEach(function(st){
-      var meta = bioGetMetaRow(mod, st, '1');
+      var meta = bioGetMetaRow(mod, st, '1', year);
       var baseRow = Object.assign({}, meta, {'Replication': 1, 'Taxa_Group': taxaGroup});
       rows.push(Object.assign({},baseRow,{'Parameter':'Total number of species','Value':totalTaxaBySt[st]||0,'Unit':'Taxa'}));
       rows.push(Object.assign({},baseRow,{'Parameter':'Total density','Value':totalDenBySt[st]||0,'Unit':unitDen}));
