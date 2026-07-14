@@ -1177,16 +1177,43 @@ function bioUpdateFilters(mod) {
   var yearCol = (document.getElementById('bio-year-'+mod)||{}).value||'';
   var projCol = (document.getElementById('bio-proj-'+mod)||{}).value||'';
   var locCol  = (document.getElementById('bio-loc-'+mod)||{}).value||'';
-  var html2 = '';
+  filterDiv.innerHTML = '';
+  var any = false;
   [[yearCol,'bio-f-year-'+mod,'Year'],[projCol,'bio-f-proj-'+mod,'Project'],[locCol,'bio-f-loc-'+mod,'Location']].forEach(function(triple){
     var col=triple[0],fid=triple[1],lbl=triple[2];
     if(!col) return;
+    any = true;
     var vals = [...new Set(raw.map(function(r){return String(r[col]||'').trim();}).filter(Boolean))].sort();
-    html2 += '<div class="bio-field"><label>'+lbl+'</label><select id="'+fid+'" multiple style="height:72px;font-size:11px">';
-    vals.forEach(function(v){ html2+='<option value="'+v+'" selected>'+v+'</option>'; });
-    html2 += '</select></div>';
+    /* Build via DOM API (not string concat) so values containing quotes/
+       special chars aren't corrupted, which was silently excluding all
+       rows for that value (e.g. a project name with a " in it) */
+    var field = document.createElement('div');
+    field.className = 'bio-field';
+    var label = document.createElement('label');
+    label.textContent = lbl;
+    var sel = document.createElement('select');
+    sel.id = fid;
+    sel.multiple = true;
+    sel.style.height = '72px';
+    sel.style.fontSize = '11px';
+    vals.forEach(function(v){
+      var opt = document.createElement('option');
+      opt.value = v;
+      opt.textContent = v;
+      opt.selected = true;
+      sel.appendChild(opt);
+    });
+    field.appendChild(label);
+    field.appendChild(sel);
+    filterDiv.appendChild(field);
   });
-  filterDiv.innerHTML = html2 || '<span style="font-size:12px;color:var(--text3)">เลือก Year/Project/Location columns ก่อน</span>';
+  if(!any){
+    var hint = document.createElement('span');
+    hint.style.fontSize = '12px';
+    hint.style.color = 'var(--text3)';
+    hint.textContent = 'เลือก Year/Project/Location columns ก่อน';
+    filterDiv.appendChild(hint);
+  }
   bioUpdateRepOptions(mod);
 }
 
