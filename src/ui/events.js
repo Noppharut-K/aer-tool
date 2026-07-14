@@ -43,10 +43,10 @@ export function setSt(t, msg, v = 'idle') {
 export function handleFile(t, file) {
   if (!file) return;
   const reader = new FileReader();
+  const isCSV = file.name.endsWith('.csv');
 
   reader.onload = e => {
     try {
-      const isCSV = file.name.endsWith('.csv');
       const wb = isCSV
         ? XLSX.read(e.target.result, { type: 'binary' })
         : XLSX.read(e.target.result, { type: 'array' });
@@ -69,7 +69,6 @@ export function handleFile(t, file) {
   };
 
   isCSV ? reader.readAsBinaryString(file) : reader.readAsArrayBuffer(file);
-  const isCSV = file.name.endsWith('.csv');
 }
 
 // ── Column setup ──────────────────────────────────────────────────────────────
@@ -93,8 +92,19 @@ export function setupCols(t) {
     const el = document.getElementById(`${t}-c-${k}`);
     if (!el) return;
     const isOptional = ['depth','dist','year','date'].includes(k);
-    el.innerHTML = `<option value="">${isOptional ? T('col_none') : T('col_auto')}</option>`;
-    cols.forEach(c => { el.innerHTML += `<option value="${c}">${c}</option>`; });
+    el.innerHTML = '';
+    const noneOpt = document.createElement('option');
+    noneOpt.value = '';
+    noneOpt.textContent = isOptional ? T('col_none') : T('col_auto');
+    el.appendChild(noneOpt);
+    /* Column headers come from the uploaded file — build options via DOM
+       API so a header containing a quote can't corrupt the value attr */
+    cols.forEach(c => {
+      const opt = document.createElement('option');
+      opt.value = c;
+      opt.textContent = c;
+      el.appendChild(opt);
+    });
     const match = cols.find(c => (kw[k] || []).some(w => c.toLowerCase().includes(w)));
     if (match) el.value = match;
   });
@@ -122,9 +132,23 @@ export function rebuildRef(t) {
     }
     const cls = listId === 'reflist' ? `rck-${t}` : `bck-${t}`;
     const sts = [...new Set(state.raw.map(r => String(r[sc] || '')).filter(Boolean))].sort();
-    el.innerHTML = sts.map(s =>
-      `<label class="ref-item"><input type="checkbox" value="${s}" class="${cls}"><span>${s}</span></label>`
-    ).join('');
+    el.innerHTML = '';
+    /* Station names come from the uploaded file — build via DOM API so a
+       name containing a quote can't corrupt the checkbox's value attr
+       (which would silently misclassify that station as ref/baseline) */
+    sts.forEach(s => {
+      const label = document.createElement('label');
+      label.className = 'ref-item';
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.value = s;
+      cb.className = cls;
+      const span = document.createElement('span');
+      span.textContent = s;
+      label.appendChild(cb);
+      label.appendChild(span);
+      el.appendChild(label);
+    });
   });
 }
 
@@ -143,15 +167,24 @@ export function buildRtypeFilter(t) {
   const blanks = raw.filter(r => !String(r[colRtype] || '').trim()).length;
 
   block.style.display = 'block';
-  let h = '';
-  if (blanks > 0) {
-    h += `<div style="font-size:11px;color:var(--amber);background:var(--amber-l);padding:6px 8px;border-radius:var(--rs);margin-bottom:8px;border:1px solid var(--amber-m)">⚠️ พบ ${blanks} rows ที่ไม่มีค่า Report_Type — จะถูก exclude</div>`;
-  }
+  body.innerHTML = blanks > 0
+    ? `<div style="font-size:11px;color:var(--amber);background:var(--amber-l);padding:6px 8px;border-radius:var(--rs);margin-bottom:8px;border:1px solid var(--amber-m)">⚠️ พบ ${blanks} rows ที่ไม่มีค่า Report_Type — จะถูก exclude</div>`
+    : '';
+  /* Report type values come from the uploaded file — build checkboxes via
+     DOM API so a value containing a quote can't corrupt the value attr */
   types.forEach(tp => {
-    const cbId = `rtype-${t}-${tp.replace(/[^a-zA-Z0-9]/g,'_')}`;
-    h += `<label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text2);padding:4px 0;cursor:pointer"><input type="checkbox" id="${cbId}" value="${tp}" checked style="accent-color:var(--navy)"> ${tp}</label>`;
+    const label = document.createElement('label');
+    label.style.cssText = 'display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text2);padding:4px 0;cursor:pointer';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.id = `rtype-${t}-${tp.replace(/[^a-zA-Z0-9]/g,'_')}`;
+    cb.value = tp;
+    cb.checked = true;
+    cb.style.accentColor = 'var(--navy)';
+    label.appendChild(cb);
+    label.appendChild(document.createTextNode(' ' + tp));
+    body.appendChild(label);
   });
-  body.innerHTML = h;
 }
 
 // ── Data Quality Check ────────────────────────────────────────────────────────

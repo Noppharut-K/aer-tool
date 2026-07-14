@@ -49,8 +49,21 @@ function filterByRtype(rows, t) {
 function fillSel(id, items, allLabel, valueMapper = x => x, labelMapper = x => x) {
   const sel = document.getElementById(id);
   if (!sel) return;
-  sel.innerHTML = `<option value="all" class="f-all-opt">${allLabel}</option>` +
-    items.map(x => `<option value="${valueMapper(x)}">${labelMapper(x)}</option>`).join('');
+  sel.innerHTML = '';
+  /* Built via DOM API (not string concat) — a location/parameter name
+     containing a quote would otherwise truncate the option's value
+     attribute, silently breaking that filter option */
+  const allOpt = document.createElement('option');
+  allOpt.value = 'all';
+  allOpt.className = 'f-all-opt';
+  allOpt.textContent = allLabel;
+  sel.appendChild(allOpt);
+  items.forEach(x => {
+    const opt = document.createElement('option');
+    opt.value = valueMapper(x);
+    opt.textContent = labelMapper(x);
+    sel.appendChild(opt);
+  });
 }
 
 /**
@@ -156,7 +169,7 @@ export function runCore(t) {
       fillSel(`${t}-${tab}-p`, params, l.f_all)
     );
     // Location selectors
-    ['yr-loc','mk-loc','ov-loc','std-loc'].forEach(id =>
+    ['yr-loc','mk-loc','ov-loc','std-loc','para-loc'].forEach(id =>
       fillSel(`${t}-${id}`, locs, l.f_all)
     );
     ['ref-loc','bs-loc'].forEach(id =>
@@ -171,11 +184,6 @@ export function runCore(t) {
     fillSel(`${t}-bs-p`,  params, l.f_all);
     fillSel(`${t}-yr-par`, params, l.f_all);
 
-    // Location selector for report tab
-    const ploc = document.getElementById(`${t}-para-loc`);
-    if (ploc) ploc.innerHTML = `<option value="all" class="f-all-opt">${l.f_all}</option>` +
-      locs.map(lo => `<option value="${lo}">${lo}</option>`).join('');
-
     // Distance filter
     const distColV = document.getElementById(`${t}-c-dist`)?.value;
     const dists = distColV
@@ -188,8 +196,17 @@ export function runCore(t) {
     // Chart param selector
     const cp = document.getElementById(`${t}-ch-p`);
     if (cp) {
-      cp.innerHTML = `<option value="">${l.f_sel}</option>` +
-        params.map(p => `<option value="${p}">${p}</option>`).join('');
+      cp.innerHTML = '';
+      const selOpt = document.createElement('option');
+      selOpt.value = '';
+      selOpt.textContent = l.f_sel;
+      cp.appendChild(selOpt);
+      params.forEach(p => {
+        const opt = document.createElement('option');
+        opt.value = p;
+        opt.textContent = p;
+        cp.appendChild(opt);
+      });
       if (params[0]) cp.value = params[0];
     }
 

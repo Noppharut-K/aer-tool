@@ -7,6 +7,24 @@ import { getState } from '../core/state.js';
 import { STD, TYPE_CFG } from '../core/standards.js';
 import { calcStat, fmt, mannKendall } from '../core/analysis.js';
 import { setSt } from './events.js';
+import { renderOV, renderST, renderSTD } from './renders.js';
+import { renderCMP, renderMK } from './renders2.js';
+import { renderParaSea, renderParaSed, renderParaGeneric } from './renderPara.js';
+
+/* Re-render the report paragraph box — mirrors the dispatch in main.js's
+   renderFns.para (there's no single exported renderPara to reuse) */
+function renderPara(t) {
+  const box = document.getElementById(`${t}-para-box`);
+  if (!box) return;
+  try {
+    if (t === 'sea') box.innerHTML = renderParaSea(t);
+    else if (t === 'sed') box.innerHTML = renderParaSed(t);
+    else box.innerHTML = renderParaGeneric(t);
+  } catch(e) {
+    box.innerHTML = `<span style="color:var(--red)">Error: ${e.message}</span>`;
+    console.error(e);
+  }
+}
 
 var MRL_DEFAULTS={
   sea:{
@@ -16,6 +34,13 @@ var MRL_DEFAULTS={
   }
 };
 var MRL={}; /* MRL[type][paramCol] = detection limit */
+
+/* Escape a parameter/column name (from the uploaded file) before it goes
+   into an HTML attribute or text node — a name containing a quote would
+   otherwise truncate the attribute value it's placed in */
+function escHtml(s){
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
 
 function doExport(t){
   if(!getState(t).analyzed) return;
@@ -136,7 +161,7 @@ function openSettings(t){
     return;
   }
   if(!window.DEC) window.DEC={}; if(!window.DEC[t]) window.DEC[t]={};
-  if(!window.MRL) window.MRL={}; if(!window.MRL[t]) window.MRL[t]={};
+  if(!MRL[t]) MRL[t]={};
   const paramMap={};
   getState(t).rows.forEach(r=>{
     if(!paramMap[r.col]) paramMap[r.col]={unit:r.unit,vals:[]};
@@ -153,13 +178,12 @@ function openSettings(t){
     const sample=d.vals[0]!=null?parseFloat(d.vals[0]).toFixed(cur):'—';
     return `<div class="settings-row">
       <div>
-        <div class="settings-param">${col}</div>
-        <div style="font-size:11px;color:var(--text3)">${d.unit}</div>
+        <div class="settings-param">${escHtml(col)}</div>
+        <div style="font-size:11px;color:var(--text3)">${escHtml(d.unit)}</div>
       </div>
       <div class="settings-preview" id="prev-${t}-${col.replace(/[^a-z0-9]/gi,'_')}">${sample}</div>
       <input type="number" class="settings-input" min="0" max="8" value="${cur}"
-        data-col="${col}" data-type="${t}"
-        oninput="previewDec(this,'${t}','${col}')">
+        data-col="${escHtml(col)}" data-type="${t}">
     </div>`;
   }).join('');
 
@@ -167,13 +191,13 @@ function openSettings(t){
     const cur=getMRL(t,col);
     return `<div class="settings-row">
       <div>
-        <div class="settings-param">${col}</div>
-        <div style="font-size:11px;color:var(--text3)">${d.unit}</div>
+        <div class="settings-param">${escHtml(col)}</div>
+        <div style="font-size:11px;color:var(--text3)">${escHtml(d.unit)}</div>
       </div>
       <div style="font-size:11px;color:var(--text3)">${cur!=null?'default: '+cur:'—'}</div>
       <input type="number" class="settings-input" min="0" step="any"
         value="${cur!=null?cur:''}" placeholder="—"
-        data-col="${col}" id="mrl-inp-${t}-${col.replace(/[^a-z0-9]/gi,'_')}">
+        data-col="${escHtml(col)}" id="mrl-inp-${t}-${col.replace(/[^a-z0-9]/gi,'_')}">
     </div>`;
   }).join('');
 
@@ -215,11 +239,16 @@ function openSettings(t){
       </div>
     </div>`;
   document.getElementById('page-'+t).appendChild(overlay);
+  /* Wired programmatically (not inline onclick) so a column name
+     containing a quote can't break out of a JS string literal */
+  overlay.querySelectorAll(`#spane-dec-${t} .settings-input`).forEach(inp => {
+    inp.addEventListener('input', () => previewDec(inp, t, inp.dataset.col));
+  });
 }
 
 function applySettings(t){
   if(!window.DEC) window.DEC={}; if(!window.DEC[t]) window.DEC[t]={};
-  if(!window.MRL) window.MRL={}; if(!window.MRL[t]) window.MRL[t]={};
+  if(!MRL[t]) MRL[t]={};
   /* save decimals */
   document.querySelectorAll(`#settings-overlay-${t} #spane-dec-${t} .settings-input`).forEach(inp=>{
     const col=inp.dataset.col;
@@ -401,4 +430,11 @@ function previewDec(input,t,col){
   const sample=s.rows.find(r=>r.col===col)?.val;
   if(sample!=null) prev.textContent=parseFloat(sample).toFixed(d);
 }
+/* Called from inline onclick="" in the settings modal markup — must be
+   global since this module's top-level functions aren't otherwise
+   reachable from an HTML attribute event handler */
+window.switchSTab = switchSTab;
+window.resetSettingsTab = resetSettingsTab;
+window.applySettings = applySettings;
+
 export { doExport, copyPara, openSettings, downloadTemplate, getMRL, loadMRL, saveMRL };
