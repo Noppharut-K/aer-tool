@@ -1095,10 +1095,17 @@ function bioLoadFile(mod, input) {
         div.id = 'bio-sheet-sel-'+mod;
         div.style = 'margin:8px 0;display:flex;align-items:center;gap:8px;flex-wrap:wrap';
         div.innerHTML = '<span style="font-size:12px;color:var(--text3)">เลือก Sheet:</span>'
-          + '<select id="bio-sheet-dd-'+mod+'" style="font-size:12px;padding:4px 8px;border:1px solid var(--border);border-radius:var(--rs);background:var(--white);color:var(--text)">'
-          + wb.SheetNames.map(function(s){return '<option value="'+s+'">'+s+'</option>';}).join('')
-          + '</select>'
+          + '<select id="bio-sheet-dd-'+mod+'" style="font-size:12px;padding:4px 8px;border:1px solid var(--border);border-radius:var(--rs);background:var(--white);color:var(--text)"></select>'
           + '<button class="bio-btn-outline" style="font-size:12px;padding:4px 10px" onclick="bioConfirmSheet(\'' + mod + '\')">โหลด</button>';
+        /* Sheet names come from the uploaded file — build options via DOM
+           API so a name containing a quote can't corrupt the value attr */
+        var sheetSel = div.querySelector('#bio-sheet-dd-'+mod);
+        wb.SheetNames.forEach(function(s){
+          var opt = document.createElement('option');
+          opt.value = s;
+          opt.textContent = s;
+          sheetSel.appendChild(opt);
+        });
         var mapping = document.getElementById('bio-mapping-'+mod);
         mapping.parentNode.insertBefore(div, mapping);
       }
@@ -1145,8 +1152,21 @@ function bioPopulateCols(mod, cols) {
     var sel = document.getElementById('bio-'+k+'-'+mod);
     if(!sel) return;
     var hasNone = sel.options[0] && sel.options[0].value==='';
-    sel.innerHTML = (hasNone?'<option value="">(none)</option>':'');
-    cols.forEach(function(c){ sel.innerHTML += '<option value="'+c+'">'+c+'</option>'; });
+    sel.innerHTML = '';
+    if(hasNone){
+      var noneOpt = document.createElement('option');
+      noneOpt.value = '';
+      noneOpt.textContent = '(none)';
+      sel.appendChild(noneOpt);
+    }
+    /* Column headers come from the uploaded file — build options via DOM
+       API so a header containing a quote can't corrupt the value attr */
+    cols.forEach(function(c){
+      var opt = document.createElement('option');
+      opt.value = c;
+      opt.textContent = c;
+      sel.appendChild(opt);
+    });
     sel.onchange = function(){ bioUpdateFilters(mod); };
   });
 }
@@ -1276,7 +1296,22 @@ function bioRepChange(mod) {
   if(mode.value==='n'){
     ctrl.innerHTML = '<input type="range" min="1" max="'+repVals.length+'" value="'+repVals.length+'" style="width:120px" oninput="this.nextElementSibling.textContent=this.value"> <span>'+repVals.length+'</span>';
   } else if(mode.value==='pick'){
-    ctrl.innerHTML = '<select multiple style="height:64px;font-size:11px" id="bio-rep-pick-'+mod+'">'+repVals.map(function(v){return '<option value="'+v+'" selected>'+v+'</option>';}).join('')+'</select>';
+    ctrl.innerHTML = '';
+    var pickSel = document.createElement('select');
+    pickSel.multiple = true;
+    pickSel.style.height = '64px';
+    pickSel.style.fontSize = '11px';
+    pickSel.id = 'bio-rep-pick-'+mod;
+    /* Replicate values come from the uploaded file — build options via
+       DOM API so a value containing a quote can't corrupt the value attr */
+    repVals.forEach(function(v){
+      var opt = document.createElement('option');
+      opt.value = v;
+      opt.textContent = v;
+      opt.selected = true;
+      pickSel.appendChild(opt);
+    });
+    ctrl.appendChild(pickSel);
   } else {
     ctrl.innerHTML = '<span style="font-size:11px;color:var(--text3)">All replicates</span>';
   }
