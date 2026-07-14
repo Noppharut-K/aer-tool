@@ -1139,7 +1139,7 @@ function bioErr(mod, msg) {
 }
 
 function bioPopulateCols(mod, cols) {
-  var ids = ['year','proj','loc','st','rep','den','lvl1','lvl2','class'];
+  var ids = ['year','proj','loc','st','rep','den','lvl1','lvl2','class','order','family','genus'];
   if(BIO_CFG[mod].hasZone) ids.push('zone');
   ids.forEach(function(k){
     var sel = document.getElementById('bio-'+k+'-'+mod);
@@ -1526,8 +1526,13 @@ var BIO_META_COLS = [
   'Replication','Water Level (Phytoplankton)'
 ];
 
-/* Also try alternate spellings */
+/* Also try alternate spellings — includes the short headers used by
+   the built-in "Download Template" (Station/Project/Replicate) since
+   they don't match the full official template's column names */
 var BIO_META_COLS_ALT = {
+  'Project name':  ['Project name','Project'],
+  'Station name':  ['Station name','Station'],
+  'Replication':   ['Replication','Replicate'],
   'X_ind_Propose': ['X_ind_Propose','X_Ind_Propose','X_ind_propose'],
   'Y_ind_Propose': ['Y_ind_Propose','Y_Ind_Propose','Y_ind_propose'],
   'X_ind_Actual':  ['X_ind_Actual','X_Ind_Actual'],
