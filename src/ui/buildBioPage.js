@@ -1167,18 +1167,37 @@ function bioPopulateCols(mod, cols) {
   });
 }
 
+/* Exact column names from the standard EcoData template — tried before
+   the fuzzy keyword search below so ambiguous fuzzy matches (e.g. every
+   module's file has both "Phylum" and "Order" columns, but Larvae's
+   lvl1 should be "Order") resolve correctly */
+var BIO_EXACT_MAP = {
+  year:'Year', proj:'Project name', loc:'Location', st:'Station name',
+  rep:'Replication', den:'Density', class:'Class', order:'Order',
+  family:'Family', genus:'Genus'
+};
+var BIO_EXACT_LVL = {
+  benthos: { lvl1:'Phylum', lvl2:'species' },
+  phyto:   { lvl1:'Phylum', lvl2:'species', zone:'Water Level (Phytoplankton)' },
+  zoo:     { lvl1:'Phylum', lvl2:'species' },
+  larvae:  { lvl1:'Order',  lvl2:'Family' }
+};
+
 function bioAutoDetect(mod, cols) {
   var map = {
     year:['year','ปี'], proj:['project','proj'], loc:['location','loc','บริเวณ'],
-    zone:['zone','โซน'], st:['station','สถานี'], rep:['replicate','rep','ซ้ำ'],
+    zone:['zone','โซน'], st:['station','สถานี'], rep:['replic','ซ้ำ'],
     den:['density','ความหนาแน่น'], lvl1:['phylum','division','order','ไฟลัม'],
-    lvl2:['taxon','taxa','species','specie','family','แท็กซอน'],
+    lvl2:['taxon','species','specie','family','แท็กซอน'],
     class:['class','คลาส'], order:['order','ออเดอร์'], family:['family','แฟมิลี'], genus:['genus','จีนัส']
   };
+  var exactLvl = BIO_EXACT_LVL[mod] || {};
   Object.keys(map).forEach(function(k){
     var sel = document.getElementById('bio-'+k+'-'+mod);
     if(!sel) return;
-    var found = cols.find(function(c){ return map[k].some(function(kw){ return c.toLowerCase().includes(kw); }); });
+    var exactTarget = exactLvl[k] || BIO_EXACT_MAP[k];
+    var found = exactTarget && cols.find(function(c){ return c.trim().toLowerCase() === exactTarget.toLowerCase(); });
+    if(!found) found = cols.find(function(c){ return map[k].some(function(kw){ return c.toLowerCase().includes(kw); }); });
     if(found) sel.value = found;
   });
 }
