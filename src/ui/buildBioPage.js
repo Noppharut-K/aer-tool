@@ -1105,6 +1105,15 @@ function bioAutoDetect(mod, cols) {
 
 /* ── Filters ── */
 
+/* Find a raw data column by exact (case-insensitive) name, e.g. so a
+   combined multi-parameter file can be filtered down to one module's
+   rows via its Taxa_Group column without needing a dedicated selector */
+function bioFindCol(raw, name) {
+  if(!raw || !raw.length) return '';
+  var key = Object.keys(raw[0]).find(function(k){ return k.trim().toLowerCase() === name.toLowerCase(); });
+  return key || '';
+}
+
 function bioUpdateFilters(mod) {
   var raw = BIO[mod].raw;
   if(!raw) return;
@@ -1113,9 +1122,10 @@ function bioUpdateFilters(mod) {
   var yearCol = (document.getElementById('bio-year-'+mod)||{}).value||'';
   var projCol = (document.getElementById('bio-proj-'+mod)||{}).value||'';
   var locCol  = (document.getElementById('bio-loc-'+mod)||{}).value||'';
+  var tgCol   = bioFindCol(raw, 'Taxa_Group');
   filterDiv.innerHTML = '';
   var any = false;
-  [[yearCol,'bio-f-year-'+mod,'Year'],[projCol,'bio-f-proj-'+mod,'Project'],[locCol,'bio-f-loc-'+mod,'Location']].forEach(function(triple){
+  [[yearCol,'bio-f-year-'+mod,'Year'],[projCol,'bio-f-proj-'+mod,'Project'],[locCol,'bio-f-loc-'+mod,'Location'],[tgCol,'bio-f-taxagroup-'+mod,'Taxa Group']].forEach(function(triple){
     var col=triple[0],fid=triple[1],lbl=triple[2];
     if(!col) return;
     any = true;
@@ -1159,6 +1169,7 @@ function bioGetFilteredRows(mod) {
   var yearCol = (document.getElementById('bio-year-'+mod)||{}).value||'';
   var projCol = (document.getElementById('bio-proj-'+mod)||{}).value||'';
   var locCol  = (document.getElementById('bio-loc-'+mod)||{}).value||'';
+  var tgCol   = bioFindCol(raw, 'Taxa_Group');
 
   /* meta filters */
   function getSelected(id){
@@ -1168,11 +1179,13 @@ function bioGetFilteredRows(mod) {
   var yPick = getSelected('bio-f-year-'+mod);
   var pPick = getSelected('bio-f-proj-'+mod);
   var lPick = getSelected('bio-f-loc-'+mod);
+  var tgPick = getSelected('bio-f-taxagroup-'+mod);
 
   var rows = raw.filter(function(r){
     if(yearCol && yPick && !yPick.includes(String(r[yearCol]||'').trim())) return false;
     if(projCol && pPick && !pPick.includes(String(r[projCol]||'').trim())) return false;
     if(locCol  && lPick && !lPick.includes(String(r[locCol]||'').trim())) return false;
+    if(tgCol   && tgPick && !tgPick.includes(String(r[tgCol]||'').trim())) return false;
     return true;
   });
 
