@@ -8,7 +8,8 @@ var BIO_CFG = {
   benthos:  { title:'Benthos',       unit:'Taxon',   lvl1:'Phylum',  lvl2:'Taxon',  indices:'phylum' },
   phyto:    { title:'Phytoplankton', unit:'Species', lvl1:'Division',lvl2:'Species',indices:'direct', hasZone:true },
   zoo:      { title:'Zooplankton',   unit:'Taxon',   lvl1:'Phylum',  lvl2:'Taxon',  indices:'phylum' },
-  larvae:   { title:'Fish Larvae',   unit:'Family',  lvl1:'Order',   lvl2:'Family', indices:'order'  }
+  larvae:   { title:'Fish Larvae',   unit:'Family',  lvl1:'Order',   lvl2:'Family', indices:'order'  },
+  larvae2:  { title:'Larvae',        unit:'Taxon',   lvl1:'Phylum',  lvl2:'Taxon',  indices:'phylum' }
 };
 
 /* Filename-safe module title (strips spaces, e.g. "Fish Larvae" -> "FishLarvae") */
@@ -18,19 +19,21 @@ var BIO = {
   benthos:  {raw:null, tax:{}, calc:{}, filename:''},
   phyto:    {raw:null, tax:{}, calc:{}, filename:''},
   zoo:      {raw:null, tax:{}, calc:{}, filename:''},
-  larvae:   {raw:null, tax:{}, calc:{}, filename:''}
+  larvae:   {raw:null, tax:{}, calc:{}, filename:''},
+  larvae2:  {raw:null, tax:{}, calc:{}, filename:''}
 };
 window.BIO = BIO;
 
 export function buildBioPage(el) {
   var l = L[LANG]||L.th;
   el.innerHTML = [
-    '<div class="ph"><button class="ph-back" id="bio-back-btn"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>'+l.back+'</button><div class="ph-div"></div><div style="display:flex;flex-direction:column;gap:1px"><span class="ph-title">Biology Calculator</span><span class="ph-sub">Benthos &middot; Phytoplankton &middot; Zooplankton &middot; Fish Larvae</span></div></div>',
+    '<div class="ph"><button class="ph-back" id="bio-back-btn"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>'+l.back+'</button><div class="ph-div"></div><div style="display:flex;flex-direction:column;gap:1px"><span class="ph-title">Biology Calculator</span><span class="ph-sub">Benthos &middot; Phytoplankton &middot; Zooplankton &middot; Fish Larvae &middot; Larvae</span></div></div>',
     '<div class="bio-layout"><div class="bio-tabs" id="bio-tabs-bar">',
     '<button class="bio-tab-btn active" id="bio-btn-benthos">Benthos</button>',
     '<button class="bio-tab-btn" id="bio-btn-phyto">Phytoplankton</button>',
     '<button class="bio-tab-btn" id="bio-btn-zoo">Zooplankton</button>',
     '<button class="bio-tab-btn" id="bio-btn-larvae">Fish Larvae</button>',
+    '<button class="bio-tab-btn" id="bio-btn-larvae2">Larvae</button>',
     '<button class="bio-tab-btn" id="bio-btn-method">หลักการคำนวน</button>',
     '</div>',
     '<div class="bio-content">',
@@ -38,6 +41,7 @@ export function buildBioPage(el) {
     '<div id="bio-pane-phyto" class="bio-pane"></div>',
     '<div id="bio-pane-zoo" class="bio-pane"></div>',
     '<div id="bio-pane-larvae" class="bio-pane"></div>',
+    '<div id="bio-pane-larvae2" class="bio-pane"></div>',
     '<div id="bio-pane-method" class="bio-pane"></div>',
     '</div></div>'
   ].join('');
@@ -45,7 +49,7 @@ export function buildBioPage(el) {
   var backBtn = document.getElementById('bio-back-btn'); if(backBtn) backBtn.setAttribute('data-back','bio');
   initBioModule('benthos');
   /* Wire tab buttons */
-  ['benthos','phyto','zoo','larvae','method'].forEach(function(k){
+  ['benthos','phyto','zoo','larvae','larvae2','method'].forEach(function(k){
     var btn = document.getElementById('bio-btn-'+k);
     if(btn) btn.addEventListener('click', function(){ switchBioTab(k, btn); });
   });
@@ -395,115 +399,6 @@ function bioExport(mod){
   XLSX.writeFile(wb, fname);
 }
 
-/* === BIO DEMO DATA === */
-var BIO_DEMO=(function(){
-  /* ── shared taxa pools ── */
-  var BENTHOS_TAXA=[
-    {Phylum:'Polychaeta',  Taxon:'Capitella capitata'},
-    {Phylum:'Polychaeta',  Taxon:'Nereis diversicolor'},
-    {Phylum:'Polychaeta',  Taxon:'Polydora sp.'},
-    {Phylum:'Polychaeta',  Taxon:'Prionospio sp.'},
-    {Phylum:'Polychaeta',  Taxon:'Glycera sp.'},
-    {Phylum:'Crustacea',   Taxon:'Ampelisca sp.'},
-    {Phylum:'Crustacea',   Taxon:'Corophium sp.'},
-    {Phylum:'Crustacea',   Taxon:'Diastylis sp.'},
-    {Phylum:'Mollusca',    Taxon:'Tellina sp.'},
-    {Phylum:'Mollusca',    Taxon:'Nucula sp.'},
-    {Phylum:'Mollusca',    Taxon:'Macoma sp.'},
-    {Phylum:'Echinodermata',Taxon:'Amphiura sp.'},
-  ];
-  var PHYTO_TAXA=[
-    {Division:'Bacillariophyta', Class:'Bacillariophyceae', Species:'Chaetoceros sp.'},
-    {Division:'Bacillariophyta', Class:'Bacillariophyceae', Species:'Skeletonema sp.'},
-    {Division:'Bacillariophyta', Class:'Bacillariophyceae', Species:'Nitzschia sp.'},
-    {Division:'Bacillariophyta', Class:'Bacillariophyceae', Species:'Coscinodiscus sp.'},
-    {Division:'Bacillariophyta', Class:'Bacillariophyceae', Species:'Rhizosolenia sp.'},
-    {Division:'Dinoflagellata',  Class:'Dinophyceae',       Species:'Ceratium sp.'},
-    {Division:'Dinoflagellata',  Class:'Dinophyceae',       Species:'Noctiluca sp.'},
-    {Division:'Dinoflagellata',  Class:'Dinophyceae',       Species:'Protoperidinium sp.'},
-    {Division:'Cyanophyta',      Class:'Cyanophyceae',      Species:'Trichodesmium sp.'},
-  ];
-  var ZOO_TAXA=[
-    {Phylum:'Copepoda',    Taxon:'Acartia sp.'},
-    {Phylum:'Copepoda',    Taxon:'Paracalanus sp.'},
-    {Phylum:'Copepoda',    Taxon:'Temora sp.'},
-    {Phylum:'Copepoda',    Taxon:'Oncaea sp.'},
-    {Phylum:'Chaetognatha',Taxon:'Sagitta sp.'},
-    {Phylum:'Medusozoa',   Taxon:'Aurelia sp.'},
-    {Phylum:'Euphausiacea',Taxon:'Euphausia sp.'},
-    {Phylum:'Ostracoda',   Taxon:'Cypridina sp.'},
-  ];
-  var LARVAE_TAXA=[
-    {Order:'Decapoda',   Family:'Penaeidae'},
-    {Order:'Decapoda',   Family:'Sergestidae'},
-    {Order:'Decapoda',   Family:'Portunidae'},
-    {Order:'Mysidacea',  Family:'Mysidae'},
-    {Order:'Amphipoda',  Family:'Gammaridae'},
-    {Order:'Clupeiformes',Family:'Clupeidae'},
-    {Order:'Perciformes', Family:'Sciaenidae'},
-  ];
-
-  var LOCS=['Loc-A','Loc-B'];
-  var STS={
-    'Loc-A':['ST-A01','ST-A02','ST-A03','ST-A04','ST-A05'],
-    'Loc-B':['ST-B01','ST-B02','ST-B03','ST-B04','ST-B05'],
-  };
-  var YEARS=[2020,2021,2022,2023];
-  var REPS=['1','2','3'];
-  var ZONES=['Surface','Euphotic'];
-
-  /* seed-based density variation per year/station */
-  function d(base, yr, st, taxa){
-    var s=(yr*31+st.charCodeAt(st.length-1)*17+taxa.charCodeAt(0)*7)%100;
-    return Math.max(5, Math.round(base*(0.65+s/100)));
-  }
-
-  var benthos=[], phyto=[], zoo=[], larvae=[];
-
-  LOCS.forEach(function(loc){
-    STS[loc].forEach(function(st){
-      YEARS.forEach(function(yr){
-        REPS.forEach(function(rep){
-          /* benthos: 6-9 taxa per replicate, vary by yr */
-          var nTaxa=6+Math.abs((yr-2020+parseInt(st.slice(-2)))%4);
-          BENTHOS_TAXA.slice(0,nTaxa).forEach(function(tx){
-            var base=tx.Phylum==='Polychaeta'?100:tx.Phylum==='Crustacea'?55:35;
-            benthos.push({Year:String(yr),Project:'EIA-Demo',Location:loc,Station:st,Replicate:rep,
-              Phylum:tx.Phylum,Taxon:tx.Taxon,Density:d(base,yr,st,tx.Taxon)});
-          });
-          /* zoo: 4-6 taxa */
-          var nZoo=4+((yr+parseInt(rep))%3);
-          ZOO_TAXA.slice(0,nZoo).forEach(function(tx){
-            var base=tx.Phylum==='Copepoda'?700:tx.Phylum==='Chaetognatha'?180:120;
-            zoo.push({Year:String(yr),Project:'EIA-Demo',Location:loc,Station:st,Replicate:rep,
-              Phylum:tx.Phylum,Taxon:tx.Taxon,Density:d(base,yr,st,tx.Taxon)});
-          });
-          /* larvae: 3-5 taxa */
-          var nLarv=3+((yr+parseInt(st.slice(-2)))%3);
-          LARVAE_TAXA.slice(0,nLarv).forEach(function(tx){
-            var base=tx.Order==='Decapoda'?300:tx.Order==='Mysidacea'?100:80;
-            larvae.push({Year:String(yr),Project:'EIA-Demo',Location:loc,Station:st,Replicate:rep,
-              Order:tx.Order,Family:tx.Family,Density:d(base,yr,st,tx.Family)});
-          });
-        });
-        /* phyto: 2 zones × 2 reps × 5-7 species */
-        ZONES.forEach(function(zone){
-          ['1','2'].forEach(function(rep){
-            var nSp=5+((yr+parseInt(st.slice(-2))+ZONES.indexOf(zone))%3);
-            PHYTO_TAXA.slice(0,nSp).forEach(function(tx){
-              var base=zone==='Surface'?(tx.Division==='Bacillariophyta'?2000:300):(tx.Division==='Bacillariophyta'?1000:180);
-              phyto.push({Year:String(yr),Project:'EIA-Demo',Location:loc,Station:st,Replicate:rep,Zone:zone,
-                Division:tx.Division,Class:tx.Class,Species:tx.Species,Density:d(base,yr,st,tx.Species)});
-            });
-          });
-        });
-      });
-    });
-  });
-
-  return {benthos:benthos, phyto:phyto, zoo:zoo, larvae:larvae};
-})();
-
 function bioLoadDemo(mod) {
   var data = BIO_DEMO[mod];
   if(!data) return;
@@ -543,7 +438,7 @@ function initBioMethod() {
     /* ── Section 2: N calculation ── */
     '<div class="bio-section">การคำนวณ N (Total Density)</div>',
     '<div style="background:var(--white);border-radius:var(--rm);padding:14px 16px;margin-bottom:14px">',
-    '<p style="font-size:12.5px;font-weight:700;color:var(--navy);margin-bottom:8px">Benthos &amp; Zooplankton (Phylum-based)</p>',
+    '<p style="font-size:12.5px;font-weight:700;color:var(--navy);margin-bottom:8px">Benthos, Zooplankton &amp; Larvae (Phylum-based)</p>',
     '<p style="font-size:12.5px;color:var(--text2);line-height:1.8">',
     '1. รวม Density ของแต่ละ Phylum: <code>Phylum<sub>sum</sub> = &Sigma; Density</code><br>',
     '2. ROUNDUP ค่าผลรวมของแต่ละ Phylum ทีละตัว<br>',
@@ -960,7 +855,9 @@ var BIO_DEMO=(function(){
     });
   });
 
-  return {benthos:benthos, phyto:phyto, zoo:zoo, larvae:larvae};
+  /* Larvae2 ("Larvae") reuses Benthos's demo data — same taxa, same
+     calculation method (Phylum-based), just a different tab/name */
+  return {benthos:benthos, phyto:phyto, zoo:zoo, larvae:larvae, larvae2:benthos};
 })();
 
 
@@ -1037,14 +934,14 @@ function initBioModule(mod) {
   /* Action buttons */
   h.push('  <div style="display:flex;gap:10px;flex-wrap:wrap;padding-top:14px;border-top:1px solid var(--border)">');
   h.push('    <button class="bio-btn" onclick="bioCalculate(\''+mod+'\')">Calculate</button>');
-  if(mod==='benthos'||mod==='phyto') h.push('    <button class="bio-btn-outline" onclick="bioCalculateByRep(\''+mod+'\')" style="border-color:var(--navy);color:var(--navy)">Calculate by Rep</button>');
+  if(mod==='benthos'||mod==='phyto'||mod==='larvae2') h.push('    <button class="bio-btn-outline" onclick="bioCalculateByRep(\''+mod+'\')" style="border-color:var(--navy);color:var(--navy)">Calculate by Rep</button>');
   h.push('    <div class="bio-export-wrap" style="position:relative;display:inline-block">');
   h.push('      <button class="bio-btn-outline" onclick="bioToggleExportMenu(\''+mod+'\')" style="display:flex;align-items:center;gap:6px">Export <span style="font-size:10px">▼</span></button>');
   h.push('      <div id="bio-export-menu-'+mod+'" style="display:none;position:absolute;top:100%;left:0;background:var(--white);border:1px solid var(--border);border-radius:var(--rs);box-shadow:var(--sh-l);z-index:100;min-width:210px;padding:4px 0">');
   h.push('        <div class="bio-export-item" onclick="bioExport(\''+mod+'\');bioToggleExportMenu(\''+mod+'\')" style="padding:8px 14px;cursor:pointer;font-size:12px">Export Calculate (.xlsx)</div>');
-  if(mod==='benthos'||mod==='phyto') h.push('        <div class="bio-export-item" onclick="bioExportByRep(\''+mod+'\');bioToggleExportMenu(\''+mod+'\')" style="padding:8px 14px;cursor:pointer;font-size:12px">Export by Rep (.xlsx)</div>');
+  if(mod==='benthos'||mod==='phyto'||mod==='larvae2') h.push('        <div class="bio-export-item" onclick="bioExportByRep(\''+mod+'\');bioToggleExportMenu(\''+mod+'\')" style="padding:8px 14px;cursor:pointer;font-size:12px">Export by Rep (.xlsx)</div>');
   h.push('        <div class="bio-export-item" onclick="bioExportTax(\''+mod+'\');bioToggleExportMenu(\''+mod+'\')" style="padding:8px 14px;cursor:pointer;font-size:12px">Export Summary (.xlsx)</div>');
-  if(mod==='benthos'||mod==='phyto'){
+  if(mod==='benthos'||mod==='phyto'||mod==='larvae2'){
     h.push('        <div class="bio-export-item" onclick="bioExportLongByRep(\''+mod+'\');bioToggleExportMenu(\''+mod+'\')" style="padding:8px 14px;cursor:pointer;font-size:12px">Export Long Format (.xlsx)</div>');
   } else {
     h.push('        <div class="bio-export-item" onclick="bioExportLongMean(\''+mod+'\');bioToggleExportMenu(\''+mod+'\')" style="padding:8px 14px;cursor:pointer;font-size:12px">Export Long Format (.xlsx)</div>');
@@ -1058,7 +955,7 @@ function initBioModule(mod) {
   h.push('<div style="display:flex;gap:0;margin-top:20px;border-bottom:1.5px solid var(--border)">');
   h.push('  <button class="bio-sub-btn active" id="bio-sub-calc-'+mod+'" onclick="bioSubTab(\''+mod+'\',\'calc\',this)">Calculate</button>');
   h.push('  <button class="bio-sub-btn" id="bio-sub-tax-'+mod+'" onclick="bioSubTab(\''+mod+'\',\'tax\',this)">Taxonomy Summary</button>');
-  if(mod==='benthos'||mod==='phyto') h.push('  <button class="bio-sub-btn" id="bio-sub-rep-'+mod+'" onclick="bioSubTab(\''+mod+'\',\'rep\',this)">By Replicate</button>');
+  if(mod==='benthos'||mod==='phyto'||mod==='larvae2') h.push('  <button class="bio-sub-btn" id="bio-sub-rep-'+mod+'" onclick="bioSubTab(\''+mod+'\',\'rep\',this)">By Replicate</button>');
   h.push('</div>');
   h.push('<div id="bio-results-'+mod+'" class="bio-result"></div>');
   h.push('<div id="bio-taxsummary-'+mod+'" class="bio-result" style="display:none"></div>');
@@ -1183,7 +1080,8 @@ var BIO_EXACT_LVL = {
   benthos: { lvl1:'Phylum', lvl2:'species' },
   phyto:   { lvl1:'Phylum', lvl2:'species', zone:'Water Level (Phytoplankton)' },
   zoo:     { lvl1:'Phylum', lvl2:'species' },
-  larvae:  { lvl1:'Order',  lvl2:'Family' }
+  larvae:  { lvl1:'Order',  lvl2:'Family' },
+  larvae2: { lvl1:'Phylum', lvl2:'species' }
 };
 
 function bioAutoDetect(mod, cols) {
