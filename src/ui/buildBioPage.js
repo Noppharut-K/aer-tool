@@ -832,26 +832,22 @@ bioCalculate = function(mod) {
 };
 
 /* === EXCEL TEMPLATE DOWNLOAD === */
+/* Unified "EcoData" header — matches the lab's real data files, same
+   30 columns across all 4 Bio modules (Benthos/Phyto/Zoo/Larvae) */
+var BIO_ECODATA_HEADERS = [
+  'No','Year','Project name','Field','Offshore Petroleum Phase','Report Type','Sampling Type',
+  'Location','Station name','X_ind_Propose','Y_ind_Propose','X_ind_Actual','Y_ind_Actual',
+  'Different Distance_(P/A)','Distance from Location','Depth','Replication','Water Level (Phytoplankton)',
+  'Taxa_Group','Phylum','Class','Subclass','Order','Suborder','Family','Genus','species',
+  'Density','Unit','Remark'
+];
+
 function bioDownloadTemplate(mod) {
   var wb = XLSX.utils.book_new();
-  var cfg = BIO_CFG[mod];
-  var headers = {
-    benthos:  ['Year','Project','Location','Station','Replicate','Phylum','Class','Order','Family','Taxon','Density'],
-    phyto:    ['Year','Project','Location','Zone','Station','Replicate','Division','Class','Species','Density'],
-    zoo:      ['Year','Project','Location','Station','Replicate','Phylum','Class','Order','Family','Taxon','Density'],
-    larvae:   ['Year','Project','Location','Station','Replicate','Order','Family','Density']
-  };
-  var examples = {
-    benthos:  [['2023','EIA-A','Loc-1','ST-1','1','Polychaeta','Polychaeta','Capitellida','Capitellidae','Capitella capitata',120]],
-    phyto:    [['2023','EIA-A','Loc-1','Surface','ST-1','1','Bacillariophyta','Bacillariophyceae','Chaetoceros sp.',2500]],
-    zoo:      [['2023','EIA-A','Loc-1','ST-1','1','Copepoda','Copepoda','Calanoida','Acartidae','Acartia sp.',850]],
-    larvae:   [['2023','EIA-A','Loc-1','ST-1','1','Decapoda','Penaeidae',320]]
-  };
-  var ws = XLSX.utils.aoa_to_sheet([headers[mod]].concat(examples[mod]||[]));
-  /* Column width */
-  ws['!cols'] = headers[mod].map(function(){return {wch:16};});
-  XLSX.utils.book_append_sheet(wb, ws, cfg.title);
-  XLSX.writeFile(wb, cfg.title+'_Template.xlsx');
+  var ws = XLSX.utils.aoa_to_sheet([BIO_ECODATA_HEADERS]);
+  ws['!cols'] = BIO_ECODATA_HEADERS.map(function(){return {wch:16};});
+  XLSX.utils.book_append_sheet(wb, ws, 'EcoData');
+  XLSX.writeFile(wb, BIO_CFG[mod].title+'_Template.xlsx');
 }
 
 /* === THEME TOGGLE === */
