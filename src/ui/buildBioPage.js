@@ -8,8 +8,11 @@ var BIO_CFG = {
   benthos:  { title:'Benthos',       unit:'Taxon',   lvl1:'Phylum',  lvl2:'Taxon',  indices:'phylum' },
   phyto:    { title:'Phytoplankton', unit:'Species', lvl1:'Division',lvl2:'Species',indices:'direct', hasZone:true },
   zoo:      { title:'Zooplankton',   unit:'Taxon',   lvl1:'Phylum',  lvl2:'Taxon',  indices:'phylum' },
-  larvae:   { title:'Larvae',        unit:'Family',  lvl1:'Order',   lvl2:'Family', indices:'order'  }
+  larvae:   { title:'Fish Larvae',   unit:'Family',  lvl1:'Order',   lvl2:'Family', indices:'order'  }
 };
+
+/* Filename-safe module title (strips spaces, e.g. "Fish Larvae" -> "FishLarvae") */
+function bioFname(mod) { return BIO_CFG[mod].title.replace(/\s+/g,''); }
 
 var BIO = {
   benthos:  {raw:null, tax:{}, calc:{}, filename:''},
@@ -22,12 +25,12 @@ window.BIO = BIO;
 export function buildBioPage(el) {
   var l = L[LANG]||L.th;
   el.innerHTML = [
-    '<div class="ph"><button class="ph-back" id="bio-back-btn"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>'+l.back+'</button><div class="ph-div"></div><div style="display:flex;flex-direction:column;gap:1px"><span class="ph-title">Biology Calculator</span><span class="ph-sub">Benthos &middot; Phytoplankton &middot; Zooplankton &middot; Larvae</span></div></div>',
+    '<div class="ph"><button class="ph-back" id="bio-back-btn"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>'+l.back+'</button><div class="ph-div"></div><div style="display:flex;flex-direction:column;gap:1px"><span class="ph-title">Biology Calculator</span><span class="ph-sub">Benthos &middot; Phytoplankton &middot; Zooplankton &middot; Fish Larvae</span></div></div>',
     '<div class="bio-layout"><div class="bio-tabs" id="bio-tabs-bar">',
     '<button class="bio-tab-btn active" id="bio-btn-benthos">Benthos</button>',
     '<button class="bio-tab-btn" id="bio-btn-phyto">Phytoplankton</button>',
     '<button class="bio-tab-btn" id="bio-btn-zoo">Zooplankton</button>',
-    '<button class="bio-tab-btn" id="bio-btn-larvae">Larvae</button>',
+    '<button class="bio-tab-btn" id="bio-btn-larvae">Fish Larvae</button>',
     '<button class="bio-tab-btn" id="bio-btn-method">หลักการคำนวน</button>',
     '</div>',
     '<div class="bio-content">',
@@ -388,7 +391,7 @@ function bioExport(mod){
     }
     XLSX.utils.book_append_sheet(wb, ws, sheetName);
   });
-  var fname = BIO_CFG[mod].title+'_Results_'+new Date().toISOString().slice(0,10)+'.xlsx';
+  var fname = bioFname(mod)+'_Results_'+new Date().toISOString().slice(0,10)+'.xlsx';
   XLSX.writeFile(wb, fname);
 }
 
@@ -554,7 +557,7 @@ function initBioMethod() {
     '</p>',
     '</div>',
     '<div style="background:var(--white);border-radius:var(--rm);padding:14px 16px;margin-bottom:14px">',
-    '<p style="font-size:12.5px;font-weight:700;color:var(--navy);margin-bottom:8px">Larvae (Order-based)</p>',
+    '<p style="font-size:12.5px;font-weight:700;color:var(--navy);margin-bottom:8px">Fish Larvae (Order-based)</p>',
     '<p style="font-size:12.5px;color:var(--text2);line-height:1.8">',
     '1. รวม Density ของแต่ละ Order: <code>Order<sub>sum</sub> = &Sigma; Density</code><br>',
     '2. N = &Sigma; ROUNDUP(Order<sub>sum</sub>)',
@@ -821,7 +824,7 @@ function bioExportTax(mod) {
     var ws = XLSX.utils.aoa_to_sheet(data);
     XLSX.utils.book_append_sheet(wb, ws, lbl.substring(0,31));
   });
-  XLSX.writeFile(wb, BIO_CFG[mod].title+'_TaxSummary_'+new Date().toISOString().slice(0,10)+'.xlsx');
+  XLSX.writeFile(wb, bioFname(mod)+'_TaxSummary_'+new Date().toISOString().slice(0,10)+'.xlsx');
 }
 
 /* Update bioCalculate to also run taxonomy summary */
@@ -847,7 +850,7 @@ function bioDownloadTemplate(mod) {
   var ws = XLSX.utils.aoa_to_sheet([BIO_ECODATA_HEADERS]);
   ws['!cols'] = BIO_ECODATA_HEADERS.map(function(){return {wch:16};});
   XLSX.utils.book_append_sheet(wb, ws, 'EcoData');
-  XLSX.writeFile(wb, BIO_CFG[mod].title+'_Template.xlsx');
+  XLSX.writeFile(wb, bioFname(mod)+'_Template.xlsx');
 }
 
 /* === THEME TOGGLE === */
@@ -1562,7 +1565,7 @@ function bioExportByRep(mod) {
     window.XLSX.utils.book_append_sheet(wb, ws, sheetName);
   });
 
-  var fname = BIO_CFG[mod].title+'_ByRep_'+new Date().toISOString().slice(0,10)+'.xlsx';
+  var fname = bioFname(mod)+'_ByRep_'+new Date().toISOString().slice(0,10)+'.xlsx';
   window.XLSX.writeFile(wb, fname);
 }
 
@@ -1590,7 +1593,7 @@ function bioExportLong(mod) {
   var wb = window.XLSX.utils.book_new();
   var ws = window.XLSX.utils.json_to_sheet(raw);
   window.XLSX.utils.book_append_sheet(wb, ws, 'Long Format');
-  var fname = BIO_CFG[mod].title+'_LongFormat_'+new Date().toISOString().slice(0,10)+'.xlsx';
+  var fname = bioFname(mod)+'_LongFormat_'+new Date().toISOString().slice(0,10)+'.xlsx';
   window.XLSX.writeFile(wb, fname);
 }
 
@@ -1763,7 +1766,7 @@ function bioExportLongByRep(mod) {
   var ws = window.XLSX.utils.json_to_sheet(rows);
   ws['!cols'] = BIO_META_COLS.concat(['Taxa_Group','Unit','Remark','Parameter','Value']).map(function(){return {wch:16};});
   window.XLSX.utils.book_append_sheet(wb, ws, 'Long Format by Rep');
-  var fname = BIO_CFG[mod].title+'_LongFormat_ByRep_'+new Date().toISOString().slice(0,10)+'.xlsx';
+  var fname = bioFname(mod)+'_LongFormat_ByRep_'+new Date().toISOString().slice(0,10)+'.xlsx';
   window.XLSX.writeFile(wb, fname);
 }
 
@@ -1827,7 +1830,7 @@ function bioExportLongMean(mod) {
   var ws = window.XLSX.utils.json_to_sheet(rows);
   ws['!cols'] = BIO_META_COLS.concat(['Taxa_Group','Unit','Remark','Parameter','Value']).map(function(){return {wch:16};});
   window.XLSX.utils.book_append_sheet(wb, ws, 'Long Format');
-  var fname = BIO_CFG[mod].title+'_LongFormat_'+new Date().toISOString().slice(0,10)+'.xlsx';
+  var fname = bioFname(mod)+'_LongFormat_'+new Date().toISOString().slice(0,10)+'.xlsx';
   window.XLSX.writeFile(wb, fname);
 }
 

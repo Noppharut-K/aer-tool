@@ -108,7 +108,7 @@ function buildHome() {
     sw:    { name:'Surface Water', subTH:'Water quality · Standards · Trends',  subEN:'Water quality · Standards · Trends' },
     air:   { name:'Air Quality',   subTH:'Air quality · Standards · Trends',    subEN:'Air quality · Standards · Trends' },
     noise: { name:'Noise',         subTH:'Noise level · Standards',             subEN:'Noise level · Standards' },
-    bio:   { name:'Biology',       subTH:'Benthos · Phyto · Zoo · Larvae',      subEN:'Benthos · Phyto · Zoo · Larvae' },
+    bio:   { name:'Biology',       subTH:'Benthos · Phyto · Zoo · Fish Larvae', subEN:'Benthos · Phyto · Zoo · Fish Larvae' },
   };
   document.querySelectorAll('.tc[data-tab]').forEach(card => {
     const cfg = cards[card.dataset.tab]; if (!cfg) return;
