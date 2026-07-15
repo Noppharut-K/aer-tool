@@ -1631,6 +1631,11 @@ function bioGetMetaRow(mod, station, rep, year, zone) {
     }
     meta[col] = (val===null||val===undefined) ? '' : val;
   });
+  /* Carried straight from the source row — callers fall back to a
+     computed default if the source file left these blank */
+  meta['Taxa_Group'] = (match['Taxa_Group']==null) ? '' : match['Taxa_Group'];
+  meta['Unit']        = (match['Unit']==null) ? '' : match['Unit'];
+  meta['Remark']       = (match['Remark']==null) ? '' : match['Remark'];
   return meta;
 }
 
@@ -1642,8 +1647,8 @@ function bioExportLongByRep(mod) {
   var colProj = (document.getElementById('bio-proj-'+mod)||{}).value||'';
   var colLoc  = (document.getElementById('bio-loc-'+mod)||{}).value||'';
   var colSt   = (document.getElementById('bio-st-'+mod)||{}).value||'';
-  var taxaGroup = BIO_CFG[mod].title;
-  var unitDen = 'Individual/m2';
+  var taxaGroupDefault = BIO_CFG[mod].title;
+  var unitDenDefault = mod==='zoo' ? 'Individual/m3' : mod==='larvae' ? 'Individual/1000m3' : 'Individual/m2';
 
   var rows = [];
 
@@ -1724,9 +1729,9 @@ function bioExportLongByRep(mod) {
     /* Build output rows per station */
     stCols.forEach(function(st){
       var meta = bioGetMetaRow(mod, st, rep, year, parts[3]||'');
-      var baseRow = Object.assign({}, meta, {'Taxa_Group': taxaGroup});
+      var baseRow = Object.assign({}, meta, {'Taxa_Group': meta['Taxa_Group'] || taxaGroupDefault});
       rows.push(Object.assign({}, baseRow, {'Parameter':'Total number of species','Value':totalTaxaBySt[st]||0,'Unit':'Taxa'}));
-      rows.push(Object.assign({}, baseRow, {'Parameter':'Total density','Value':totalDenBySt[st]||0,'Unit':unitDen}));
+      rows.push(Object.assign({}, baseRow, {'Parameter':'Total density','Value':totalDenBySt[st]||0,'Unit':meta['Unit']||unitDenDefault}));
       rows.push(Object.assign({}, baseRow, {'Parameter':'Shannon diversity index','Value':indexBySt[st]['Shannon diversity index']||'-','Unit':'-'}));
       rows.push(Object.assign({}, baseRow, {'Parameter':'Evenness index','Value':indexBySt[st]['Evenness index']||'-','Unit':'-'}));
       rows.push(Object.assign({}, baseRow, {'Parameter':'Richness index','Value':indexBySt[st]['Richness index']||'-','Unit':'-'}));
@@ -1737,7 +1742,7 @@ function bioExportLongByRep(mod) {
 
   var wb = window.XLSX.utils.book_new();
   var ws = window.XLSX.utils.json_to_sheet(rows);
-  ws['!cols'] = BIO_META_COLS.concat(['Taxa_Group','Parameter','Value','Unit']).map(function(){return {wch:16};});
+  ws['!cols'] = BIO_META_COLS.concat(['Taxa_Group','Unit','Remark','Parameter','Value']).map(function(){return {wch:16};});
   window.XLSX.utils.book_append_sheet(wb, ws, 'Long Format by Rep');
   var fname = BIO_CFG[mod].title+'_LongFormat_ByRep_'+new Date().toISOString().slice(0,10)+'.xlsx';
   window.XLSX.writeFile(wb, fname);
@@ -1747,8 +1752,8 @@ function bioExportLongMean(mod) {
   var calc = BIO[mod].calc;
   if(!calc||!Object.keys(calc).length){ bioErr(mod,'กด Calculate ก่อนครับ'); return; }
 
-  var taxaGroup = BIO_CFG[mod].title;
-  var unitDen = mod==='zoo' ? 'Individual/m3' : mod==='larvae' ? 'Individual/1000m3' : 'Individual/m2';
+  var taxaGroupDefault = BIO_CFG[mod].title;
+  var unitDenDefault = mod==='zoo' ? 'Individual/m3' : mod==='larvae' ? 'Individual/1000m3' : 'Individual/m2';
   var rows = [];
 
   Object.keys(calc).forEach(function(metaKey){
@@ -1788,9 +1793,9 @@ function bioExportLongMean(mod) {
 
     stCols.forEach(function(st){
       var meta = bioGetMetaRow(mod, st, '1', year);
-      var baseRow = Object.assign({}, meta, {'Replication': 1, 'Taxa_Group': taxaGroup});
+      var baseRow = Object.assign({}, meta, {'Replication': 1, 'Taxa_Group': meta['Taxa_Group'] || taxaGroupDefault});
       rows.push(Object.assign({},baseRow,{'Parameter':'Total number of species','Value':totalTaxaBySt[st]||0,'Unit':'Taxa'}));
-      rows.push(Object.assign({},baseRow,{'Parameter':'Total density','Value':totalDenBySt[st]||0,'Unit':unitDen}));
+      rows.push(Object.assign({},baseRow,{'Parameter':'Total density','Value':totalDenBySt[st]||0,'Unit':meta['Unit']||unitDenDefault}));
       rows.push(Object.assign({},baseRow,{'Parameter':'Shannon diversity index','Value':indexBySt[st]['Shannon diversity index']||'-','Unit':'-'}));
       rows.push(Object.assign({},baseRow,{'Parameter':'Evenness index','Value':indexBySt[st]['Evenness index']||'-','Unit':'-'}));
       rows.push(Object.assign({},baseRow,{'Parameter':'Richness index','Value':indexBySt[st]['Richness index']||'-','Unit':'-'}));
@@ -1801,7 +1806,7 @@ function bioExportLongMean(mod) {
 
   var wb = window.XLSX.utils.book_new();
   var ws = window.XLSX.utils.json_to_sheet(rows);
-  ws['!cols'] = BIO_META_COLS.concat(['Taxa_Group','Parameter','Value','Unit']).map(function(){return {wch:16};});
+  ws['!cols'] = BIO_META_COLS.concat(['Taxa_Group','Unit','Remark','Parameter','Value']).map(function(){return {wch:16};});
   window.XLSX.utils.book_append_sheet(wb, ws, 'Long Format');
   var fname = BIO_CFG[mod].title+'_LongFormat_'+new Date().toISOString().slice(0,10)+'.xlsx';
   window.XLSX.writeFile(wb, fname);
