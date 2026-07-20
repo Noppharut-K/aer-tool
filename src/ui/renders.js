@@ -94,7 +94,9 @@ export function renderOV(t) {
   }
 
   const locF = document.getElementById(`${t}-ov-loc`)?.value || 'all';
-  const filteredRows = locF !== 'all' ? rows.filter(r => r.loc === locF) : rows;
+  const wlF  = document.getElementById(`${t}-ov-wl`)?.value  || 'all';
+  let filteredRows = locF !== 'all' ? rows.filter(r => r.loc === locF) : rows;
+  if (wlF !== 'all') filteredRows = filteredRows.filter(r => r.wl === wlF);
 
   const map = {};
   filteredRows.forEach(r => {
@@ -138,6 +140,7 @@ export function renderOV(t) {
 // ── Statistics Table ──────────────────────────────────────────────────────────
 export function renderST(t) {
   const distF         = document.getElementById(`${t}-st-dist`)?.value || 'all';
+  const wlF            = document.getElementById(`${t}-st-wl`)?.value   || 'all';
   const grp           = document.getElementById(`${t}-st-grp`)?.value  || 'param';
   const outlierMethod = document.getElementById(`${t}-st-outlier`)?.value || 'none';
   const l             = L[LANG] || L.th;
@@ -146,6 +149,7 @@ export function renderST(t) {
 
   let rows = flt(t, 'st-yr', 'st-p');
   if (distF !== 'all') rows = rows.filter(r => String(r.dist) === distF || r.dist === parseFloat(distF));
+  if (wlF !== 'all') rows = rows.filter(r => r.wl === wlF);
   if (!rows.length) { tblEl.innerHTML = `<div class="empty-state"><p>${T('es_nodata')}</p></div>`; return; }
 
   const map = {};
@@ -219,6 +223,7 @@ export function renderST(t) {
 // ── Standards Table ───────────────────────────────────────────────────────────
 export function renderSTD(t) {
   const distF  = document.getElementById(`${t}-std-dist`)?.value  || 'all';
+  const wlF    = document.getElementById(`${t}-std-wl`)?.value    || 'all';
   const showEx = document.getElementById(`${t}-std-show`)?.value  || 'all';
   const locF   = document.getElementById(`${t}-std-loc`)?.value   || 'all';
   const l      = L[LANG] || L.th;
@@ -227,6 +232,7 @@ export function renderSTD(t) {
 
   let rows = flt(t, 'std-yr', 'std-p').filter(r => r.sc_status !== 'no_std');
   if (distF  !== 'all') rows = rows.filter(r => String(r.dist) === distF);
+  if (wlF    !== 'all') rows = rows.filter(r => r.wl === wlF);
   if (locF   !== 'all') rows = rows.filter(r => r.loc === locF);
   if (showEx === 'exceed') rows = rows.filter(r => r.sc_status === 'exceed');
 

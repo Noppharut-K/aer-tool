@@ -96,6 +96,7 @@ export function buildPage(t, el) {
               <select id="${t}-c-${k}"><option value="" class="f-all-opt">${l.col_auto}</option></select>
             </div>`).join('')}
           ${t==='sea' ? `<div class="field"><label>${l.col_depth}</label><select id="${t}-c-depth"><option value="">${l.col_none}</option></select></div>` : ''}
+          ${t==='sea' ? `<div class="field"><label>${l.col_wl}</label><select id="${t}-c-wl"><option value="">${l.col_none}</option></select></div>` : ''}
           ${t==='sed' ? `<div class="field"><label>${l.col_dist}</label><select id="${t}-c-dist"><option value="">${l.col_none}</option></select></div>` : ''}
           <div class="field">
             <label>${l.col_year}</label>
@@ -245,6 +246,7 @@ export function buildPage(t, el) {
             <div class="field"><label class="fl-yr">${l.f_yr}</label><select id="${t}-ov-yr"><option value="all" class="f-all-opt">${l.f_all}</option></select></div>
             <div class="field"><label class="fl-loc">${l.f_loc}</label><select id="${t}-ov-loc"><option value="all" class="f-all-opt">${l.f_all}</option></select></div>
             <div class="field"><label class="fl-p">${l.f_p}</label><select id="${t}-ov-p"><option value="all" class="f-all-opt">${l.f_all}</option></select></div>
+            ${t==='sea'?`<div class="field"><label>${l.col_wl}</label><select id="${t}-ov-wl"><option value="all" class="f-all-opt">${l.f_all}</option></select></div>`:''}
           </div>
           <div class="tbl-wrap" id="${t}-tbl-ov"><div class="empty-state"><p>${l.es_ov}</p></div></div>
         </div>
@@ -257,6 +259,7 @@ export function buildPage(t, el) {
             <div class="field"><label class="fl-yr">${l.f_yr}</label><select id="${t}-st-yr"><option value="all" class="f-all-opt">${l.f_all}</option></select></div>
             <div class="field"><label class="fl-p">${l.f_p}</label><select id="${t}-st-p"><option value="all" class="f-all-opt">${l.f_all}</option></select></div>
             ${t==='sed'?`<div class="field"><label>Distance</label><select id="${t}-st-dist"><option value="all" class="f-all-opt">${l.f_all}</option></select></div>`:''}
+            ${t==='sea'?`<div class="field"><label>${l.col_wl}</label><select id="${t}-st-wl"><option value="all" class="f-all-opt">${l.f_all}</option></select></div>`:''}
           </div>
           <div class="tbl-wrap" id="${t}-tbl-st"><div class="empty-state"><p>${l.es_ana}</p></div></div>
         </div>
@@ -269,6 +272,7 @@ export function buildPage(t, el) {
             <div class="field"><label class="fl-p">${l.f_p}</label><select id="${t}-std-p"><option value="all" class="f-all-opt">${l.f_all}</option></select></div>
             <div class="field"><label>${l.f_show}</label><select id="${t}-std-show"><option value="all">${l.f_all}</option><option value="exceed">${l.f_exc}</option></select></div>
             ${t==='sed'?`<div class="field"><label>Distance</label><select id="${t}-std-dist"><option value="all" class="f-all-opt">${l.f_all}</option></select></div>`:''}
+            ${t==='sea'?`<div class="field"><label>${l.col_wl}</label><select id="${t}-std-wl"><option value="all" class="f-all-opt">${l.f_all}</option></select></div>`:''}
           </div>
           <div class="tbl-wrap" id="${t}-tbl-std"><div class="empty-state"><p>${l.es_ana}</p></div></div>
         </div>

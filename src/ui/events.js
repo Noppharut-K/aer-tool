@@ -83,15 +83,16 @@ export function setupCols(t) {
     st:    ['station','สถานี'],
     depth: ['depth','ความลึก'],
     dist:  ['distance','ระยะ'],
+    wl:    ['water level','waterlevel','ระดับน้ำ'],
     year:  ['year','ปี'],
     date:  ['date','วันที่','sampling_date'],
     rtype: ['report_type','reporttype','ประเภท'],
   };
 
-  ['area','loc','st','depth','dist','year','date','rtype'].forEach(k => {
+  ['area','loc','st','depth','dist','wl','year','date','rtype'].forEach(k => {
     const el = document.getElementById(`${t}-c-${k}`);
     if (!el) return;
-    const isOptional = ['depth','dist','year','date'].includes(k);
+    const isOptional = ['depth','dist','wl','year','date'].includes(k);
     el.innerHTML = '';
     const noneOpt = document.createElement('option');
     noneOpt.value = '';
@@ -193,7 +194,7 @@ export function runDQ(t) {
   const state = getState(t);
   if (!state.raw.length) return;
 
-  const metaCols  = new Set(['area','loc','st','depth','dist','year','date'].map(k => document.getElementById(`${t}-c-${k}`)?.value).filter(Boolean));
+  const metaCols  = new Set(['area','loc','st','depth','dist','wl','year','date'].map(k => document.getElementById(`${t}-c-${k}`)?.value).filter(Boolean));
   const paramCols = state.cols.filter(c => !metaCols.has(c) && !c.toUpperCase().startsWith('MRL_'));
   const issues    = [];
 
@@ -362,14 +363,19 @@ export function wireEvents(t, { loadDemo, runAnalysis, renderFns, downloadTempla
     [`${t}-ov-yr`,  renderFns?.ov],
     [`${t}-ov-loc`, renderFns?.ov],
     [`${t}-ov-p`,   renderFns?.ov],
+    [`${t}-ov-wl`,  renderFns?.ov],
     [`${t}-st-grp`, renderFns?.st],
     [`${t}-st-yr`,  renderFns?.st],
     [`${t}-st-p`,   renderFns?.st],
     [`${t}-st-outlier`, renderFns?.st],
+    [`${t}-st-dist`, renderFns?.st],
+    [`${t}-st-wl`,  renderFns?.st],
     [`${t}-std-yr`, renderFns?.std],
     [`${t}-std-loc`,renderFns?.std],
     [`${t}-std-p`,  renderFns?.std],
     [`${t}-std-show`,renderFns?.std],
+    [`${t}-std-dist`, renderFns?.std],
+    [`${t}-std-wl`, renderFns?.std],
     [`${t}-ref-yr`, renderFns?.ref],
     [`${t}-ref-p`,  renderFns?.ref],
     [`${t}-ref-loc`,renderFns?.ref],

@@ -82,6 +82,7 @@ export function runCore(t) {
     const colYr    = getColVal(t, 'year');
     const colDist  = getColVal(t, 'dist');
     const colDate  = getColVal(t, 'date');
+    const colWL    = getColVal(t, 'wl');
 
     const refSet   = getRefSet(t);
     const bsSet    = getBsSet(t);
@@ -89,7 +90,7 @@ export function runCore(t) {
 
     // Identify meta vs parameter columns
     const metaCols = new Set(
-      ['area','loc','st','depth','dist','year','date']
+      ['area','loc','st','depth','dist','year','date','wl']
         .map(k => document.getElementById(`${t}-c-${k}`)?.value)
         .filter(Boolean)
     );
@@ -126,6 +127,7 @@ export function runCore(t) {
           yr:         colYr && row[colYr] ? parseFloat(row[colYr]) : null,
           date:       colDate && row[colDate] ? String(row[colDate]) : null,
           dist:       colDist && row[colDist] != null ? parseFloat(row[colDist]) : null,
+          wl:         colWL  && row[colWL]  != null ? String(row[colWL]).trim() : null,
           col, pk, val: v,
           unit:       stdDef.unit  || '',
           label:      stdDef.label || col,
@@ -191,6 +193,13 @@ export function runCore(t) {
       : [];
     ['st-dist','std-dist'].forEach(id =>
       fillSel(`${t}-${id}`, dists, l.f_all, d => d, d => `${d}m`)
+    );
+
+    // Water Level filter (sea) — a station can have multiple water levels
+    // (e.g. Surface/Bottom), varying by site, so it's filtered like Distance
+    const wls = [...new Set(rows.filter(r => r.wl).map(r => r.wl))].sort();
+    ['ov-wl','st-wl','std-wl'].forEach(id =>
+      fillSel(`${t}-${id}`, wls, l.f_all)
     );
 
     // Chart param selector
