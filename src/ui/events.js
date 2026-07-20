@@ -236,6 +236,11 @@ export function runDQ(t) {
 
 // ── Tab switching ─────────────────────────────────────────────────────────────
 
+/* Tab pane index (0-8, see buildPage.js) -> renderFns key (see main.js).
+   Pane 8 (Standard Reference) is static HTML built once and never
+   re-rendered, so it has no entry here. */
+export const TAB_IDX_MAP = { 0:'ov', 1:'st', 2:'std', 3:'ref', 4:'mk', 5:'para', 6:'chart', 7:'raw' };
+
 export function swTab(t, i, renderFns) {
   document.querySelectorAll(`#page-${t} .tab-pane`).forEach(p => p.classList.remove('active'));
   document.querySelectorAll(`#page-${t} .tab-btn`).forEach(b => b.classList.remove('active'));
@@ -244,7 +249,7 @@ export function swTab(t, i, renderFns) {
 
   const state = getState(t);
   if (state.analyzed && renderFns) {
-    const fn = renderFns[i];
+    const fn = renderFns[TAB_IDX_MAP[i]];
     if (fn) fn(t);
   }
 }

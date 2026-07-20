@@ -6,7 +6,7 @@
 import { LANG, T, Tf } from '../utils/lang.js';
 import { getState } from '../core/state.js';
 import { runCore } from '../core/runCore.js';
-import { showProgress, updateProgress, hideProgress, setSt } from '../ui/events.js';
+import { showProgress, updateProgress, hideProgress, setSt, TAB_IDX_MAP } from '../ui/events.js';
 import { renderOV, renderRAW } from '../ui/renders.js';
 
 /**
@@ -38,8 +38,7 @@ export function runAnalysis(t, renderFns = {}) {
       // Render active tab if not overview
       const activePane = document.querySelector(`#page-${t} .tab-pane.active`);
       const activeIdx  = activePane ? parseInt(activePane.id.replace(`${t}-pane-`, '')) : 0;
-      const fnMap = { 1:'st', 2:'std', 3:'ref', 4:'mk', 5:'para', 6:'chart', 7:'raw' };
-      const activeFn = renderFns[fnMap[activeIdx]];
+      const activeFn = renderFns[TAB_IDX_MAP[activeIdx]];
       if (activeFn) activeFn(t);
 
       updateProgress(100, isEN ? 'Done!' : 'เสร็จสิ้น!');
