@@ -36,7 +36,7 @@ const depT = { Surface:0, '20m':-0.8, '40m':-1.6, Bottom:-2.8 };
 function seaRow(loc, st, yr, dep, wd, base, si) {
   const df = depF[dep] || 1, dt = depT[dep] || 0;
   return {
-    Area:'Gulf', Location:loc, Station:st, Depth:dep, Water_Depth:wd, Year:yr,
+    Area:'Gulf', Location:loc, Station:st, Depth:dep, 'Water Level':dep, Water_Depth:wd, Year:yr,
     Date: _demoDate(loc, yr, si || 0), Report_Type:'EIA',
     DO:        parseFloat(((base.DO) * df * _dr(0.88, 1.12)).toFixed(2)),
     pH:        parseFloat((_dr(base.pH - 0.15, base.pH + 0.15, 2)).toFixed(2)),
