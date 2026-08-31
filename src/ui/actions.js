@@ -307,7 +307,7 @@ function loadMRL(t){
     if(s) MRL[t]=JSON.parse(s);
   }catch(e){}
 }
-['sea','sed','sw','air','noise'].forEach(t=>loadMRL(t));
+['sea','sed'].forEach(t=>loadMRL(t));
 
 function saveMRL(t){
   try{ localStorage.setItem('aer-mrl-'+t, JSON.stringify(MRL[t]||{})); }catch(e){}
@@ -321,15 +321,10 @@ function downloadTemplate(t){
   const meta = {
     sea:   ['Area','Location','Station','Depth','Water_Depth','Year','Date','Report_Type'],
     sed:   ['Area','Location','Station','Distance','Year','Date','Report_Type'],
-    sw:    ['Area','Location','Station','Year','Date','Report_Type'],
-    air:   ['Area','Location','Station','Year','Date','Report_Type'],
-    noise: ['Area','Location','Station','Year','Date','Report_Type']
   };
 
   /* Parameter columns — generate from STD database */
-  const paramCols = t==='noise'
-    ? ['Leq_day','Leq_night','Lmax','L90']
-    : Object.keys(STD[t]||{});
+  const paramCols = Object.keys(STD[t]||{});
 
   const headers = [...(meta[t]||[]), ...paramCols];
 

@@ -5,7 +5,7 @@
 
 import { LANG, L, T, Tf } from '../utils/lang.js';
 import { STD } from './standards.js';
-import { resP, chkStd, chkNoise } from './analysis.js';
+import { resP, chkStd } from './analysis.js';
 import { getState, setRows, getColVal } from './state.js';
 
 /** Get value from a row column, return '-' if missing */
@@ -19,20 +19,6 @@ function getRefSet(t) {
 /** Get selected Baseline station names for a tab */
 function getBsSet(t) {
   return new Set([...document.querySelectorAll(`.bck-${t}:checked`)].map(c => c.value));
-}
-
-/** Get noise standards for a tab */
-function getNSR(t) {
-  const rows = document.querySelectorAll(`#${t}-nsr-list .nsr`);
-  const stds = [];
-  rows.forEach(row => {
-    const id  = row.id;
-    const name = document.getElementById(id + '-n')?.value || '';
-    const mn   = parseFloat(document.getElementById(id + '-mn')?.value);
-    const mx   = parseFloat(document.getElementById(id + '-mx')?.value);
-    if (name) stds.push({ name, min: isNaN(mn) ? null : mn, max: isNaN(mx) ? null : mx });
-  });
-  return stds;
 }
 
 /** Get report type filter */
@@ -68,7 +54,7 @@ function fillSel(id, items, allLabel, valueMapper = x => x, labelMapper = x => x
 
 /**
  * Main analysis engine — processes raw data and updates UI
- * @param {string} t - Tab identifier (sea, sed, sw, air, noise, bio)
+ * @param {string} t - Tab identifier (sea, sed, bio)
  */
 export function runCore(t) {
   const isEN = LANG === 'en';
@@ -86,7 +72,6 @@ export function runCore(t) {
 
     const refSet   = getRefSet(t);
     const bsSet    = getBsSet(t);
-    const nsStds   = t === 'noise' ? getNSR(t) : [];
 
     // Identify meta vs parameter columns
     const metaCols = new Set(
@@ -116,7 +101,7 @@ export function runCore(t) {
         const v      = parseFloat(row[col]);
         const pk     = resP(col);
         const stdDef = (STD[t] || {})[pk] || {};
-        const sc     = t === 'noise' ? chkNoise(v, nsStds) : chkStd(t, pk, v);
+        const sc     = chkStd(t, pk, v);
         const stName = gM(row, colSt);
         const isBs   = !isRef && bsSet.size > 0 && bsSet.has(stName);
 

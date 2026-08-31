@@ -2,7 +2,7 @@
  * Application state management
  * Replaces the global S={} object from the original single-file implementation
  *
- * Each tab (sea, sed, sw, air, noise, bio) has its own TabState object.
+ * Each tab (sea, sed, bio) has its own TabState object.
  */
 
 /** @typedef {Object} TabState
@@ -25,7 +25,7 @@ function createTabState() {
 /** Global state map: tabId → TabState */
 const _state = {};
 
-const TABS = ['sea', 'sed', 'sw', 'air', 'noise', 'bio'];
+const TABS = ['sea', 'sed', 'bio'];
 
 // Initialise all tabs
 TABS.forEach(t => { _state[t] = createTabState(); });

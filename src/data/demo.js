@@ -162,76 +162,6 @@ function buildSed() {
   return rows;
 }
 
-// ── SW ───────────────────────────────────────────────────────────────────────
-const SW_STS_A = ['SW-A01','SW-A02','SW-A03','SW-A04','SW-A05','SW-A06','SW-A07','SW-A08','SW-A09','SW-A10'];
-const SW_STS_B = ['SW-B01','SW-B02','SW-B03','SW-B04','SW-B05','SW-B06','SW-B07','SW-B08','SW-B09','SW-B10'];
-const SW_YRS   = [2020,2021,2022,2023];
-
-function swRow(loc,st,yr,si,bDO,bBOD,bpH,bSS,bTDS,bTurb,bNH3,bHg,bPb,bCd){
-  return {Area:'Basin',Location:loc,Station:st,Year:yr,Date:_demoDate(loc.includes('Loc')?loc:'River',yr,si||0),Report_Type:'EIA',
-    DO:parseFloat((bDO*_dr(0.88,1.12)).toFixed(2)),BOD:parseFloat((bBOD*_dr(0.80,1.20)).toFixed(2)),
-    pH:parseFloat((_dr(bpH-0.2,bpH+0.2)).toFixed(2)),SS:parseFloat((bSS*_dr(0.75,1.25)).toFixed(1)),
-    TDS:parseFloat((bTDS*_dr(0.88,1.12)).toFixed(0)),Turbidity:parseFloat((bTurb*_dr(0.75,1.25)).toFixed(1)),
-    Temp:parseFloat((_dr(27.5,31.5)).toFixed(1)),NH3_N:parseFloat((bNH3*_dr(0.70,1.30)).toFixed(3)),
-    Mercury:parseFloat((bHg*_dr(0.7,1.3)).toFixed(5)),Lead:parseFloat((bPb*_dr(0.75,1.25)).toFixed(4)),
-    Cadmium:parseFloat((bCd*_dr(0.7,1.3)).toFixed(5)),
-  };
-}
-
-function buildSw() {
-  const rows = [];
-  SW_YRS.forEach(yr => rows.push(swRow('River','REF-01',yr,0,7.4,1.2,7.7,10,165,6.5,0.03,0.0004,0.003,0.0003)));
-  rows.push(swRow('Baseline','BL-01',2019,0,6.8,1.8,7.6,14,195,9.2,0.06,0.0006,0.004,0.0005));
-  SW_STS_A.forEach((st,i) => SW_YRS.forEach(yr => rows.push(swRow('Loc-A',st,yr,i,6.2-i*0.12,2.2+i*0.18,7.55-i*0.02,18+i*2.5,210+i*8,12+i*1.5,0.08+i*0.015,0.0006+i*0.00005,0.004+i*0.0004,0.0005+i*0.00003))));
-  SW_STS_B.forEach((st,i) => SW_YRS.forEach(yr => rows.push(swRow('Loc-B',st,yr,i,5.9-i*0.10,2.8+i*0.22,7.48-i*0.02,22+i*3.0,240+i*10,15+i*1.8,0.12+i*0.018,0.0008+i*0.00006,0.005+i*0.0005,0.0006+i*0.00004))));
-  return rows;
-}
-
-// ── AIR ──────────────────────────────────────────────────────────────────────
-const AIR_STS_A = ['AIR-A01','AIR-A02','AIR-A03','AIR-A04','AIR-A05','AIR-A06','AIR-A07','AIR-A08','AIR-A09','AIR-A10'];
-const AIR_STS_B = ['AIR-B01','AIR-B02','AIR-B03','AIR-B04','AIR-B05','AIR-B06','AIR-B07','AIR-B08','AIR-B09','AIR-B10'];
-const AIR_YRS   = [2020,2021,2022,2023];
-
-function airRow(loc,st,yr,si,b25,b10,bO3,bNO2,bSO2,bCO){
-  return {Area:'Province',Location:loc,Station:st,Year:yr,Date:_demoDate('Province',yr,si||0),Report_Type:'EIA',
-    PM2_5_24h:parseFloat((b25*_dr(0.82,1.18)).toFixed(1)),PM2_5_annual:parseFloat((b25*0.65*_dr(0.88,1.12)).toFixed(1)),
-    PM10_24h:parseFloat((b10*_dr(0.80,1.20)).toFixed(1)),PM10_annual:parseFloat((b10*0.62*_dr(0.88,1.12)).toFixed(1)),
-    O3_8h:parseFloat((bO3*_dr(0.80,1.20)).toFixed(4)),NO2_1h:parseFloat((bNO2*_dr(0.78,1.22)).toFixed(4)),
-    NO2_annual:parseFloat((bNO2*0.55*_dr(0.85,1.15)).toFixed(4)),SO2_24h:parseFloat((bSO2*_dr(0.75,1.25)).toFixed(4)),
-    CO_8h:parseFloat((bCO*_dr(0.82,1.18)).toFixed(2)),
-  };
-}
-
-function buildAir() {
-  const rows = [];
-  AIR_YRS.forEach(yr => rows.push(airRow('Background','REF-01',yr,0,16,32,0.052,0.019,0.008,1.1)));
-  rows.push(airRow('Background','BL-01',2019,0,14,29,0.048,0.017,0.007,0.95));
-  AIR_STS_A.forEach((st,i) => AIR_YRS.forEach(yr => rows.push(airRow('Loc-A',st,yr,i,26+i*1.2,46+i*2.0,0.062+i*0.001,0.032+i*0.001,0.018+i*0.001,1.8+i*0.08))));
-  AIR_STS_B.forEach((st,i) => AIR_YRS.forEach(yr => rows.push(airRow('Loc-B',st,yr,i,29+i*1.4,52+i*2.2,0.068+i*0.001,0.036+i*0.0012,0.022+i*0.0012,2.1+i*0.09))));
-  return rows;
-}
-
-// ── NOISE ─────────────────────────────────────────────────────────────────────
-const NST_A     = ['NST-A01','NST-A02','NST-A03','NST-A04','NST-A05','NST-A06','NST-A07','NST-A08','NST-A09','NST-A10'];
-const NST_B     = ['NST-B01','NST-B02','NST-B03','NST-B04','NST-B05','NST-B06','NST-B07','NST-B08','NST-B09','NST-B10'];
-const NOISE_YRS = [2020,2021,2022,2023];
-
-function noiseRow(loc,st,yr,si,bDay,bNight,bMax,bL90){
-  return {Area:'Site',Location:loc,Station:st,Year:yr,Date:_demoDate('Site',yr,si||0),Report_Type:'EIA',
-    Leq_day:parseFloat((bDay*_dr(0.95,1.05)).toFixed(1)),Leq_night:parseFloat((bNight*_dr(0.94,1.06)).toFixed(1)),
-    Lmax:parseFloat((bMax*_dr(0.93,1.07)).toFixed(1)),L90:parseFloat((bL90*_dr(0.92,1.08)).toFixed(1)),
-  };
-}
-
-function buildNoise() {
-  const rows = [];
-  NOISE_YRS.forEach(yr => rows.push(noiseRow('Background','REF-01',yr,0,48,38,65,35)));
-  rows.push(noiseRow('Background','BL-01',2019,0,46,36,62,33));
-  NST_A.forEach((st,i) => NOISE_YRS.forEach(yr => rows.push(noiseRow('Loc-A',st,yr,i,62+i*1.2,52+i*0.9,78+i*1.5,46+i*0.8))));
-  NST_B.forEach((st,i) => NOISE_YRS.forEach(yr => rows.push(noiseRow('Loc-B',st,yr,i,66+i*1.3,55+i*1.0,82+i*1.6,49+i*0.9))));
-  return rows;
-}
-
 /** Generate all demo data (lazy — called once on first use) */
 let _cache = null;
 export function getDemoData() {
@@ -240,9 +170,6 @@ export function getDemoData() {
     _cache = {
       sea:   buildSea(),
       sed:   buildSed(),
-      sw:    buildSw(),
-      air:   buildAir(),
-      noise: buildNoise(),
     };
   }
   return _cache;

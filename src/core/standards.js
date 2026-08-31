@@ -38,31 +38,6 @@ export const STD = {
     Silt:     { unit:'%',                                              label:'Silt' },
     Clay:     { unit:'%',                                              label:'Clay' },
   },
-  sw: {
-    DO:       { unit:'mg/L',  pcd_min:4.0, who_min:5.0, epa_min:5.0,         label:'DO' },
-    BOD:      { unit:'mg/L',  pcd_max:4.0, who_max:5.0, epa_max:5.0,         label:'BOD' },
-    pH:       { unit:'-',     pcd_min:5.0, pcd_max:9.0, who_min:6.5, who_max:9.0, label:'pH' },
-    SS:       { unit:'mg/L',  pcd_max:50,  epa_max:30,                        label:'SS' },
-    TDS:      { unit:'mg/L',  pcd_max:500, who_max:600,                       label:'TDS' },
-    Turbidity:{ unit:'NTU',   pcd_max:100, who_max:5,                         label:'Turbidity' },
-    Temp:     { unit:'°C',    pcd_max:35,                                      label:'Temperature' },
-    NH3_N:    { unit:'mg/L',  pcd_max:0.5, who_max:1.5,                       label:'NH₃-N' },
-    Mercury:  { unit:'µg/L',  pcd_max:2.0, who_max:1.0,                       label:'Mercury (Hg)' },
-    Lead:     { unit:'µg/L',  pcd_max:50,  who_max:10,                        label:'Lead (Pb)' },
-    Cadmium:  { unit:'µg/L',  pcd_max:5,   who_max:3,                         label:'Cadmium (Cd)' },
-  },
-  air: {
-    PM2_5_24h:   { unit:'µg/m³', pcd_max:37.5, who_max:15,  epa_max:35,  label:'PM2.5 (24h)' },
-    PM2_5_annual:{ unit:'µg/m³', pcd_max:25,   who_max:5,   epa_max:12,  label:'PM2.5 (annual)' },
-    PM10_24h:    { unit:'µg/m³', pcd_max:120,  who_max:45,  epa_max:150, label:'PM10 (24h)' },
-    PM10_annual: { unit:'µg/m³', pcd_max:50,   who_max:15,               label:'PM10 (annual)' },
-    O3_8h:       { unit:'ppm',   pcd_max:0.07, who_max:0.06,epa_max:0.07,label:'O₃ (8h)' },
-    NO2_1h:      { unit:'ppm',   pcd_max:0.17, epa_max:0.1,              label:'NO₂ (1h)' },
-    NO2_annual:  { unit:'ppm',   pcd_max:0.05, who_max:0.005,epa_max:0.053,label:'NO₂ (annual)' },
-    SO2_24h:     { unit:'ppm',   pcd_max:0.12, who_max:0.01,epa_max:0.14,label:'SO₂ (24h)' },
-    CO_8h:       { unit:'ppm',   pcd_max:9.0,  epa_max:9.0,              label:'CO (8h)' },
-  },
-  noise: {}
 };
 
 /** Parameter name alias map (lowercase key → canonical name) */
@@ -81,17 +56,12 @@ export const ALIAS = {
   'ni':'Nickel', 'nickel':'Nickel', 'cr':'Chromium', 'chromium':'Chromium',
   'fe':'Iron', 'iron':'Iron', 'mn':'Manganese', 'manganese':'Manganese',
   'ba':'Barium', 'barium':'Barium',
-  'pm2.5':'PM2_5_24h', 'pm25':'PM2_5_24h', 'pm10':'PM10_24h',
-  'o3':'O3_8h', 'no2':'NO2_1h', 'so2':'SO2_24h', 'co':'CO_8h',
 };
 
 /** Tab configuration */
 export const TYPE_CFG = {
   sea:  { name:'Seawater',      c:'var(--sea-c)',   l:'var(--sea-l)',   b:'var(--sea-b)' },
   sed:  { name:'Sediment',      c:'var(--sed-c)',   l:'var(--sed-l)',   b:'var(--sed-b)' },
-  sw:   { name:'Surface Water', c:'var(--sw-c)',    l:'var(--sw-l)',    b:'var(--sw-b)' },
-  air:  { name:'Air Quality',   c:'var(--air-c)',   l:'var(--air-l)',   b:'var(--air-b)' },
-  noise:{ name:'Noise',         c:'var(--noise-c)', l:'var(--noise-l)', b:'var(--noise-b)' },
   bio:  { name:'Biology',       c:'var(--bio-c)',   l:'var(--bio-l)',   b:'var(--bio-l)' },
 };
 

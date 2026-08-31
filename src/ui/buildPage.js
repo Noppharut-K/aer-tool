@@ -28,7 +28,7 @@ function buildStdRef(t) {
 
 /**
  * Build and inject HTML for an analysis page
- * @param {string} t  - Tab ID (sea, sed, sw, air, noise)
+ * @param {string} t  - Tab ID (sea, sed)
  * @param {HTMLElement} el - Target container element
  */
 export function buildPage(t, el) {
@@ -201,15 +201,6 @@ export function buildPage(t, el) {
           </div>
         </div>
       </div>
-
-      <!-- Noise Standards -->
-      ${t==='noise' ? `
-      <div class="sb-block">
-        <div class="sb-title sb-ns-title">${l.ns_sec}</div>
-        <div id="${t}-nsr-list"></div>
-        <button class="btn btn-outline btn-sm btn-full ns-add-btn" style="margin-top:6px" data-nsr-add="${t}">${l.ns_add}</button>
-        <div class="ns-hint" style="margin-top:6px;font-size:10.5px;color:var(--text4)">${l.ns_hint}</div>
-      </div>` : ''}
 
       <!-- Run Analysis -->
       <div class="sb-block">

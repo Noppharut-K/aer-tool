@@ -36,7 +36,7 @@ export function loadMRL(t) {
 }
 
 // Load saved MRL on startup
-['sea','sed','sw','air','noise'].forEach(t => loadMRL(t));
+['sea','sed'].forEach(t => loadMRL(t));
 
 
 export function renderParaSea(t){

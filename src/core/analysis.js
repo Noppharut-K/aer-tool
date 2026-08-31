@@ -7,7 +7,6 @@ export function resP(c) {
 
 /** Check value against standard thresholds */
 export function chkStd(t, pk, v) {
-  if (t === 'noise') return { status: 'no_std', msg: '—' };
   const s = (STD[t] || {})[pk];
   if (!s) return { status: 'no_std', msg: '—' };
   const exc = [];
@@ -20,14 +19,6 @@ export function chkStd(t, pk, v) {
   if (s.epa_max != null && v > s.epa_max) exc.push(`EPA(${s.epa_max})`);
   return exc.length
     ? { status: 'exceed', msg: 'เกิน ' + exc.join(', ') }
-    : { status: 'pass',   msg: 'ผ่าน' };
-}
-
-/** Check noise value against custom standards */
-export function chkNoise(v, stds) {
-  const exc = stds.filter(s => (s.max != null && v > s.max) || (s.min != null && v < s.min));
-  return exc.length
-    ? { status: 'exceed', msg: 'เกิน ' + exc.map(s => s.name).join(', ') }
     : { status: 'pass',   msg: 'ผ่าน' };
 }
 
