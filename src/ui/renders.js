@@ -58,7 +58,7 @@ function updateFieldSummary(t) {
   const isEN = LANG === 'en';
   const dims = checkedFields(t);
   const el = document.getElementById(`${t}-fp-summary`);
-  if (el) el.textContent = dims.length ? dims.map(d => isEN ? FIELD_LABEL[d].en : FIELD_LABEL[d].th).join(' + ') : (isEN ? 'None' : 'ไม่มี');
+  if (el) el.textContent = dims.length ? dims.map(d => isEN ? FIELD_LABEL[d].en : FIELD_LABEL[d].th).join(' + ') : (isEN ? 'Overview' : 'ภาพรวม');
 }
 
 function renderKPIs(t) {

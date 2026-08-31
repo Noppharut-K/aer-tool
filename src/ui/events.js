@@ -6,7 +6,10 @@ import { LANG } from '../utils/lang.js';
 import { getState, setRaw, getParamCols, resolveCanonical } from '../core/state.js';
 import { showColumnMappingScreen, exportConfigTemplate, importConfigTemplate } from './columnMapping.js';
 import { renderDashboard } from './renders.js';
+import { isNumericValue } from '../core/analysis.js';
 import { renderStandardsUI } from './standardsUI.js';
+import { renderRefBaselineUI } from './refBaselineUI.js';
+import { renderComparisonUI } from './comparisonUI.js';
 import { runAnalysis } from '../core/runAnalysis.js';
 
 export function setSt(t, msg, kind = 'idle') {
@@ -72,7 +75,7 @@ export function runDQ(t) {
     const nonNum = [];
     state.raw.forEach((r, i) => {
       const v = r[col];
-      if (v != null && v !== '' && isNaN(parseFloat(v))) nonNum.push({ row: i + 2, val: v });
+      if (v != null && v !== '' && !isNumericValue(v)) nonNum.push({ row: i + 2, val: v });
     });
     if (nonNum.length) issues.push({ col: resolveCanonical(t, col), samples: nonNum.slice(0, 3) });
   });
@@ -89,6 +92,12 @@ export function runDQ(t) {
 
 // ── Field-picker popover ─────────────────────────────────────────────────
 
+const FP_PRESETS = {
+  overview: [],
+  location: ['year', 'loc'],
+  station: ['st'],
+};
+
 function wireFieldPicker(t) {
   const btn = document.querySelector(`[data-fp-toggle="${t}"]`);
   const popover = document.getElementById(`${t}-fp-popover`);
@@ -98,6 +107,11 @@ function wireFieldPicker(t) {
     if (popover.classList.contains('open') && !popover.contains(e.target) && e.target !== btn) popover.classList.remove('open');
   });
   popover.querySelectorAll('.fp-check').forEach(cb => cb.addEventListener('change', () => renderDashboard(t)));
+  popover.querySelectorAll('.fp-preset').forEach(btn => btn.addEventListener('click', () => {
+    const fields = FP_PRESETS[btn.dataset.preset] || [];
+    popover.querySelectorAll('.fp-check').forEach(cb => { cb.checked = fields.includes(cb.value); });
+    renderDashboard(t);
+  }));
 }
 
 // ── View nav (Data Overview / Standards) ─────────────────────────────────
@@ -109,7 +123,11 @@ function wireViewNav(t) {
       btn.classList.add('active');
       document.querySelectorAll(`#page-${t} .view-pane`).forEach(p => p.classList.remove('active'));
       document.getElementById(`${t}-view-${btn.dataset.viewBtn}`).classList.add('active');
+      const titleEl = document.getElementById(`${t}-view-title`);
+      if (titleEl) titleEl.textContent = btn.textContent.trim();
       if (btn.dataset.viewBtn === 'standards') renderStandardsUI(t);
+      if (btn.dataset.viewBtn === 'refmap') renderRefBaselineUI(t);
+      if (btn.dataset.viewBtn === 'comparison') renderComparisonUI(t);
     });
   });
 }
@@ -167,5 +185,11 @@ export function wireEvents(t, { loadDemo, downloadTemplate, doExport }) {
   window.addEventListener('aer-standards-changed', e => {
     if (e.detail?.t !== t) return;
     runAnalysis(t, () => renderDashboard(t));
+  });
+
+  window.addEventListener('aer-refmap-changed', e => {
+    if (e.detail?.t !== t) return;
+    const comparisonPane = document.getElementById(`${t}-view-comparison`);
+    if (comparisonPane?.classList.contains('active')) renderComparisonUI(t);
   });
 }

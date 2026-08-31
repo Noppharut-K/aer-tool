@@ -33,6 +33,8 @@ export function buildPage(t, el) {
     <div class="view-nav">
       <button class="view-nav-btn active" data-view-btn="dashboard">${isEN ? 'Data Overview' : 'ข้อมูลพื้นฐาน'}</button>
       <button class="view-nav-btn" data-view-btn="standards">${isEN ? 'Standards' : 'มาตรฐานอ้างอิง'}</button>
+      <button class="view-nav-btn" data-view-btn="refmap">${isEN ? 'REF / Baseline' : 'REF / Baseline'}</button>
+      <button class="view-nav-btn" data-view-btn="comparison">${isEN ? 'Comparison' : 'เปรียบเทียบ'}</button>
     </div>
 
     <div class="view-pane active" id="${t}-view-dashboard">
@@ -73,7 +75,13 @@ export function buildPage(t, el) {
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:11px;height:11px;margin-left:1px"><polyline points="6 9 12 15 18 9"/></svg>
           </button>
           <div class="field-popover" id="${t}-fp-popover">
-            <div class="field-popover-hd">${isEN ? 'Group table by' : 'จัดกลุ่มตาราง'}</div>
+            <div class="field-popover-hd">${isEN ? 'Quick picks' : 'เลือกด่วน'}</div>
+            <div class="fp-presets">
+              <button type="button" class="fp-preset" data-t="${t}" data-preset="overview">${isEN ? 'Overview' : 'ภาพรวม'}</button>
+              <button type="button" class="fp-preset" data-t="${t}" data-preset="location">${isEN ? 'By location' : 'แยกตามพื้นที่'}</button>
+              <button type="button" class="fp-preset" data-t="${t}" data-preset="station">${isEN ? 'By station' : 'แยกตามสถานี'}</button>
+            </div>
+            <div class="field-popover-hd field-popover-hd-2">${isEN ? 'Group table by' : 'จัดกลุ่มตาราง'}</div>
             <label><input type="checkbox" class="fp-check" data-t="${t}" value="year" checked> ${isEN ? 'Year' : 'ปี'}</label>
             <label><input type="checkbox" class="fp-check" data-t="${t}" value="loc" checked> Location</label>
             <label><input type="checkbox" class="fp-check" data-t="${t}" value="st"> Station</label>
@@ -95,6 +103,14 @@ export function buildPage(t, el) {
 
     <div class="view-pane" id="${t}-view-standards">
       <div id="${t}-standards-root"></div>
+    </div>
+
+    <div class="view-pane" id="${t}-view-refmap">
+      <div id="${t}-refmap-root"></div>
+    </div>
+
+    <div class="view-pane" id="${t}-view-comparison">
+      <div id="${t}-comparison-root"></div>
     </div>
   </div>
 

@@ -8,6 +8,7 @@
 import { LANG } from '../utils/lang.js';
 import { TYPE_CFG } from '../core/standards.js';
 import { getState, setColMap, getColMap } from '../core/state.js';
+import { isNumericValue } from '../core/analysis.js';
 
 function escHtml(s) {
   return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -68,12 +69,38 @@ function autoDetect(t, cols) {
   return { fields, used };
 }
 
+/* Explicit date-shaped patterns only — deliberately NOT using new Date(str)
+   to detect these, since that parser is far too permissive (e.g.
+   new Date("REF-01") silently parses as a valid date, which would wrongly
+   swallow a Station column here). */
+const DATE_PATTERNS = [
+  /^\d{4}-\d{1,2}-\d{1,2}([ T]\d{1,2}:\d{2}(:\d{2})?)?$/, // 2020-05-10, 2020-05-10T00:00:00
+  /^\d{1,2}[/\-]\d{1,2}[/\-]\d{2,4}$/,                     // 10/05/2020, 10-05-2020
+];
+
+/** Columns that clearly hold dates, not a mappable field or parameter — cut
+    from the mapping screen entirely (no role to assign them, no value to
+    read as data) rather than leaving them as a distracting "Ignore" row.
+    Caught by name (any column with "date" in it) or, for oddly-named
+    columns, by the sample value matching an explicit date pattern. */
+function isDateLikeColumn(col, raw) {
+  if (/date/i.test(col)) return true;
+  const sample = raw.find(r => r[col] != null && r[col] !== '');
+  if (!sample) return false;
+  const v = String(sample[col]).trim();
+  return DATE_PATTERNS.some(p => p.test(v));
+}
+
+function mappableCols(state) {
+  return state.cols.filter(col => !isDateLikeColumn(col, state.raw));
+}
+
 function autoDetectParams(cols, raw, used) {
   const params = {};
   cols.forEach(col => {
     if (used.has(col)) return;
     const sample = raw.find(r => r[col] != null && r[col] !== '');
-    if (sample == null || isNaN(parseFloat(sample[col]))) return;
+    if (sample == null || !isNumericValue(sample[col])) return;
     params[col] = col;
   });
   return params;
@@ -81,7 +108,7 @@ function autoDetectParams(cols, raw, used) {
 
 function buildDraft(t, prefill) {
   const state = getState(t);
-  const cols = state.cols, raw = state.raw;
+  const cols = mappableCols(state), raw = state.raw;
   if (prefill) {
     const fields = {};
     SINGULAR_FIELDS.forEach(k => { if (prefill.fields?.[k] && cols.includes(prefill.fields[k])) fields[k] = prefill.fields[k]; });
@@ -126,7 +153,7 @@ export function showColumnMappingScreen(t, { onConfirm, onCancel, prefill } = {}
       <div class="colmap-row colmap-hd">
         <div>${isEN ? 'Column' : 'คอลัมน์'}</div><div>${isEN ? 'Sample' : 'ตัวอย่าง'}</div><div>${isEN ? 'Field' : 'บทบาท'}</div>
       </div>
-      ${state.cols.map(col => {
+      ${mappableCols(state).map(col => {
         const sample = state.raw.slice(0, 2).map(r => r[col]).filter(v => v != null && v !== '').map(String).join(', ');
         let role = '';
         for (const k of SINGULAR_FIELDS) if (draft.fields[k] === col) { role = k; break; }

@@ -1,21 +1,20 @@
 /**
- * refBaselineUI.js — per-Location REF/Baseline station assignment (Phase 4)
- *
- * Replaces the old flat, tab-wide REF/Baseline checkbox lists. Each Location
- * gets its own REF and Baseline pickers, offering every station in the
- * uploaded file (cross-Location assignment allowed — a REF station commonly
- * sits outside any of the study's own Locations in EIA practice).
+ * refBaselineUI.js — per-Location REF/Baseline station mapping (Tab 2
+ * foundation). Each Location gets its own REF and Baseline picker,
+ * offering every station tab-wide (cross-Location assignment allowed —
+ * REF stations are commonly external reference points in EIA practice).
+ * Rewritten fresh for the redesigned visual system; no logic ported from
+ * the discarded pre-redesign build beyond the underlying concept.
  */
 
 import { LANG } from '../utils/lang.js';
-import { getState, getColVal, getRefMap, getBaselineMap, setRefMap, setBaselineMap } from '../core/state.js';
+import { getState } from '../core/state.js';
+import { setRefMap, getRefMap, setBaselineMap, getBaselineMap } from '../core/state.js';
 
 function escHtml(s) {
-  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
-/** Read every checked box in the sidebar back into a { [location]: string[] } map */
 function readMap(t, cls) {
   const map = {};
   document.querySelectorAll(`.${cls}-${t}:checked`).forEach(cb => {
@@ -25,64 +24,55 @@ function readMap(t, cls) {
   return map;
 }
 
-/** Rebuild the per-Location REF/Baseline sidebar UI for a tab, replacing
-    rebuildRef() from the old flat-checkbox implementation. Call this after
-    a file loads/reloads, or after Edit Mapping changes the Station/Location
-    columns. `onChange` fires whenever a checkbox is toggled, after state has
-    been updated — the caller re-renders dependent tabs from there. */
-export function rebuildRefBaseline(t, onChange) {
-  const el = document.getElementById(`${t}-refbaseline-body`);
-  if (!el) return;
+export function renderRefBaselineUI(t) {
+  const root = document.getElementById(`${t}-refmap-root`);
+  if (!root) return;
+  const isEN = LANG === 'en';
+  const state = getState(t);
 
-  const state  = getState(t);
-  const colLoc = getColVal(t, 'loc');
-  const colSt  = getColVal(t, 'st');
-  const isEN   = LANG === 'en';
-
-  if (!colSt || !state.raw.length) {
-    el.innerHTML = `<p style="font-size:12px;color:var(--text3);padding:4px">${isEN ? 'Load a file first' : 'โหลดไฟล์ก่อน'}</p>`;
+  if (!state.analyzed || !state.rows.length) {
+    root.innerHTML = `<div class="empty-state"><p>${isEN ? 'Run analysis first to see Locations and Stations here.' : 'วิเคราะห์ข้อมูลก่อน เพื่อให้เห็น Location และ Station ที่นี่'}</p></div>`;
     return;
   }
 
-  const allStations = [...new Set(state.raw.map(r => String(r[colSt] || '')).filter(Boolean))].sort();
-  const locations = colLoc
-    ? [...new Set(state.raw.map(r => String(r[colLoc] || '')).filter(Boolean))].sort()
-    : [isEN ? '(All stations)' : '(สถานีทั้งหมด)'];
-
+  const locations = [...new Set(state.rows.map(r => r.loc))].sort();
+  const stations = [...new Set(state.rows.map(r => r.st))].sort();
   const refMap = getRefMap(t) || {};
-  const bsMap  = getBaselineMap(t) || {};
+  const baselineMap = getBaselineMap(t) || {};
 
-  el.innerHTML = locations.map(loc => {
-    const refChecked = new Set(refMap[loc] || []);
-    const bsChecked  = new Set(bsMap[loc]  || []);
-    const stationOpts = (checkedSet, cls) => allStations.map(s => `
-      <label class="ref-item">
-        <input type="checkbox" class="${cls}-${t}" data-location="${escHtml(loc)}" value="${escHtml(s)}" ${checkedSet.has(s) ? 'checked' : ''}>
-        <span>${escHtml(s)}</span>
-      </label>`).join('');
-    return `<div class="rb-loc-block">
-      <div class="rb-loc-title">${escHtml(loc)}</div>
-      <div class="rb-loc-cols">
-        <div>
-          <div class="rb-col-lbl">${isEN ? 'REF' : 'REF'}</div>
-          <div class="ref-list rb-ref-list">${stationOpts(refChecked, 'rck-loc')}</div>
+  root.innerHTML = `
+    <div class="sheet-sub" style="margin-bottom:14px">${isEN
+      ? 'Assign REF and Baseline stations to each Location — a station from any Location can serve as another’s reference.'
+      : 'กำหนดสถานี REF และ Baseline ให้แต่ละ Location — เลือกสถานีจาก Location ใดก็ได้มาเป็นค่าอ้างอิงของ Location อื่น'}</div>
+    ${locations.map(loc => `
+      <div class="refmap-loc-card">
+        <div class="refmap-loc-title">${escHtml(loc)}</div>
+        <div class="refmap-loc-cols">
+          <div>
+            <div class="refmap-role-lbl">REF</div>
+            <div class="refmap-chip-grid">
+              ${stations.map(s => `<label class="refmap-chip">
+                <input type="checkbox" class="rck-loc-${t}" data-location="${escHtml(loc)}" value="${escHtml(s)}" ${(refMap[loc] || []).includes(s) ? 'checked' : ''}>
+                <span>${escHtml(s)}</span>
+              </label>`).join('')}
+            </div>
+          </div>
+          <div>
+            <div class="refmap-role-lbl">Baseline</div>
+            <div class="refmap-chip-grid">
+              ${stations.map(s => `<label class="refmap-chip">
+                <input type="checkbox" class="bck-loc-${t}" data-location="${escHtml(loc)}" value="${escHtml(s)}" ${(baselineMap[loc] || []).includes(s) ? 'checked' : ''}>
+                <span>${escHtml(s)}</span>
+              </label>`).join('')}
+            </div>
+          </div>
         </div>
-        <div>
-          <div class="rb-col-lbl">${isEN ? 'Baseline' : 'Baseline'}</div>
-          <div class="ref-list rb-ref-list">${stationOpts(bsChecked, 'bck-loc')}</div>
-        </div>
-      </div>
-    </div>`;
-  }).join('');
+      </div>`).join('')}`;
 
-  // Note: NOT committed on build (only on user interaction, below) — leaving
-  // refMap/baselineMap at whatever they already were (null on a fresh
-  // upload) preserves getRefStationsFor()'s "no per-Location mapping
-  // configured yet" fallback until the user actually touches a checkbox.
   const commit = () => {
     setRefMap(t, readMap(t, 'rck-loc'));
     setBaselineMap(t, readMap(t, 'bck-loc'));
-    onChange?.();
+    window.dispatchEvent(new CustomEvent('aer-refmap-changed', { detail: { t } }));
   };
-  el.querySelectorAll(`.rck-loc-${t}, .bck-loc-${t}`).forEach(cb => cb.addEventListener('change', commit));
+  root.querySelectorAll(`.rck-loc-${t}, .bck-loc-${t}`).forEach(cb => cb.addEventListener('change', commit));
 }

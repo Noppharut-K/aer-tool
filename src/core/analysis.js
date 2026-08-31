@@ -2,6 +2,18 @@
  * analysis.js — pure calculation helpers (no DOM, no state)
  */
 
+/** Whether a raw cell value is a genuine number, not just something
+    parseFloat() would partially parse (e.g. parseFloat("2020-05-10")
+    silently succeeds as 2020 — Number() correctly rejects it as NaN since
+    it requires the WHOLE string to be numeric). Used for column
+    auto-detection and row-level parsing so date-like or otherwise
+    non-numeric text never gets mistaken for a parameter value. */
+export function isNumericValue(v) {
+  if (v == null || v === '') return false;
+  if (typeof v === 'number') return !isNaN(v);
+  return String(v).trim() !== '' && !isNaN(Number(v));
+}
+
 /** Descriptive statistics for an array of numbers */
 export function calcStat(arr) {
   if (!arr || !arr.length) return null;

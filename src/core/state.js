@@ -26,6 +26,14 @@
  * @property {StdEntry[]} standards - User-entered standards library, starts empty
  */
 
+function defaultCmpSettings() {
+  return {
+    stRef:   { yearMode: 'match', fixedYear: null, threshold: 20 },
+    locBase: { yearMode: 'match', fixedYear: null, threshold: 20 },
+    locYear: { baseYear: null, threshold: 20 },
+  };
+}
+
 function createTabState() {
   return {
     raw: [],
@@ -34,6 +42,10 @@ function createTabState() {
     rows: [],
     analyzed: false,
     standards: [],
+    refMap: null,
+    baselineMap: null,
+    depthSummaryMethod: 'avg',
+    cmpSettings: defaultCmpSettings(),
   };
 }
 
@@ -57,6 +69,9 @@ export function setRaw(t, raw) {
   s.colMap = null;
   s.rows = [];
   s.analyzed = false;
+  s.refMap = null;
+  s.baselineMap = null;
+  s.cmpSettings = defaultCmpSettings();
 }
 
 export function setColMap(t, colMap) {
@@ -126,6 +141,42 @@ export function removeStandard(t, id) {
 
 export function setStandards(t, list) {
   getState(t).standards = list;
+}
+
+// ── REF / Baseline mapping ────────────────────────────────────────────────
+
+/** { [location]: string[] } — every configured Location maps to zero or
+    more REF stations (cross-Location assignment allowed) */
+export function setRefMap(t, map) {
+  getState(t).refMap = map;
+}
+export function getRefMap(t) {
+  return getState(t).refMap;
+}
+export function setBaselineMap(t, map) {
+  getState(t).baselineMap = map;
+}
+export function getBaselineMap(t) {
+  return getState(t).baselineMap;
+}
+
+// ── Depth-level summarization (Seawater only) ─────────────────────────────
+
+export function setDepthSummaryMethod(t, method) {
+  getState(t).depthSummaryMethod = method;
+}
+export function getDepthSummaryMethod(t) {
+  return getState(t).depthSummaryMethod;
+}
+
+// ── Comparison format settings ────────────────────────────────────────────
+
+export function getCmpSettings(t) {
+  return getState(t).cmpSettings;
+}
+export function updateCmpSettings(t, formatKey, patch) {
+  const s = getState(t);
+  s.cmpSettings[formatKey] = { ...s.cmpSettings[formatKey], ...patch };
 }
 
 export { TABS };

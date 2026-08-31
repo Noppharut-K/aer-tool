@@ -3,7 +3,7 @@
  */
 
 import { getState, setRows, getColVal, getParamCols, resolveCanonical, getStandardFor } from './state.js';
-import { checkStandard, computeOutlierStats } from './analysis.js';
+import { checkStandard, computeOutlierStats, isNumericValue } from './analysis.js';
 
 /** Fixed baseline z-score threshold for the row-level dq_flag tag — distinct
     from the dashboard's adjustable-threshold display filter, which
@@ -19,7 +19,6 @@ export function runCore(t) {
   const colLoc = getColVal(t, 'loc');
   const colSt = getColVal(t, 'st');
   const colYr = getColVal(t, 'year');
-  const colDate = getColVal(t, 'date');
   const colDist = getColVal(t, 'dist');
   const colDir = getColVal(t, 'direction');
   const colUtmN = getColVal(t, 'utmN');
@@ -30,7 +29,7 @@ export function runCore(t) {
   const rows = [];
   state.raw.forEach(raw => {
     paramCols.forEach(col => {
-      if (raw[col] == null || raw[col] === '' || isNaN(parseFloat(raw[col]))) return;
+      if (!isNumericValue(raw[col])) return;
       const val = parseFloat(raw[col]);
       const pk = resolveCanonical(t, col);
       const std = getStandardFor(t, pk);
@@ -40,7 +39,6 @@ export function runCore(t) {
         loc: gM(raw, colLoc),
         st: gM(raw, colSt),
         yr: colYr && raw[colYr] != null ? parseFloat(raw[colYr]) : null,
-        date: colDate && raw[colDate] != null ? String(raw[colDate]) : null,
         dist: colDist && raw[colDist] != null ? parseFloat(raw[colDist]) : null,
         direction: gM(raw, colDir),
         utmN: colUtmN && raw[colUtmN] != null ? parseFloat(raw[colUtmN]) : null,
