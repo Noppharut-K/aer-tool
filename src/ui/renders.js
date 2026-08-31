@@ -5,7 +5,8 @@
 import { LANG, L, T } from '../utils/lang.js';
 import { fmtD, fmt } from '../utils/fmt.js';
 import { getState, getColVal } from '../core/state.js';
-import { calcStat } from '../core/analysis.js';
+import { calcStat, computeOutlierStats } from '../core/analysis.js';
+import { wireSearch, wirePagination } from './tableControls.js';
 
 // ── Helper: filter rows by year and parameter selectors ──────────────────────
 export function flt(t, yrId, pId) {
@@ -17,21 +18,54 @@ export function flt(t, yrId, pId) {
   return r;
 }
 
-// ── mkTbl — build a sortable data table ─────────────────────────────────────
-export function mkTbl(el, ths, rows, fn, title) {
+// ── mkTbl — build a data table, optionally with click-to-sort headers ───────
+/**
+ * @param {?Array<?(string|(row:any)=>any)>} sortKeys - parallel array to
+ *   `ths`; null/undefined entries are non-sortable columns, a string is a
+ *   row property name, a function is a row->value accessor. Omit entirely
+ *   for a plain (non-sortable) table — existing callers are unaffected.
+ */
+export function mkTbl(el, ths, rows, fn, title, sortKeys) {
   if (!rows || !rows.length) {
     el.innerHTML = `<div class="empty-state"><p>${T('es_nodata')}</p></div>`;
     return;
   }
   const txtPat = /^(location|parameter|station|area|หน่วย|unit|ชื่อ|name|label|สถานี|พื้นที่|บริเวณ|ผลเปรียบเทียบ|ผลการเปรียบเทียบ|ผลเทียบมาตรฐาน|standard|มีนัย|sig|แนวโน้ม|trend|ระดับ|level|diff)/i;
-  const thHtml = ths.map(h => {
+
+  const curCol = sortKeys && el.dataset.sortCol != null ? +el.dataset.sortCol : null;
+  const curDir = el.dataset.sortDir || 'asc';
+  let sortedRows = rows;
+  if (sortKeys && curCol != null && sortKeys[curCol]) {
+    const keyFn = typeof sortKeys[curCol] === 'function' ? sortKeys[curCol] : (r => r[sortKeys[curCol]]);
+    sortedRows = [...rows].sort((a, b) => {
+      const av = keyFn(a), bv = keyFn(b);
+      const cmp = av > bv ? 1 : av < bv ? -1 : 0;
+      return curDir === 'asc' ? cmp : -cmp;
+    });
+  }
+
+  const thHtml = ths.map((h, i) => {
     const isTxt = txtPat.test(typeof h === 'string' ? h : '');
-    return `<th${isTxt ? ' class="txt"' : ''}>${h}</th>`;
+    const sortable = sortKeys && sortKeys[i];
+    const cls = [isTxt ? 'txt' : '', sortable ? 'sortable-th' : ''].filter(Boolean).join(' ');
+    const arrow = sortable && curCol === i ? (curDir === 'asc' ? ' ▲' : ' ▼') : '';
+    return `<th${cls ? ` class="${cls}"` : ''}${sortable ? ` data-sort-idx="${i}"` : ''}>${h}${arrow}</th>`;
   }).join('');
   const titleHtml = title
     ? `<div style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;padding:8px 4px 4px">${title}</div>`
     : '';
-  el.innerHTML = titleHtml + `<table><thead><tr>${thHtml}</tr></thead><tbody>${rows.map(fn).join('')}</tbody></table>`;
+  el.innerHTML = titleHtml + `<table><thead><tr>${thHtml}</tr></thead><tbody>${sortedRows.map(fn).join('')}</tbody></table>`;
+
+  if (sortKeys) {
+    el.querySelectorAll('th[data-sort-idx]').forEach(th => {
+      th.addEventListener('click', () => {
+        const idx = +th.dataset.sortIdx;
+        if (curCol === idx) el.dataset.sortDir = curDir === 'asc' ? 'desc' : 'asc';
+        else { el.dataset.sortCol = idx; el.dataset.sortDir = 'asc'; }
+        mkTbl(el, ths, rows, fn, title, sortKeys);
+      });
+    });
+  }
 }
 
 // ── Traffic Light (Overview pane) ────────────────────────────────────────────
@@ -81,6 +115,8 @@ export function renderTL(t) {
   }).join('');
 }
 
+const OV_PAGE_SIZE = 20;
+
 // ── Overview Table ────────────────────────────────────────────────────────────
 export function renderOV(t) {
   renderTL(t);
@@ -90,6 +126,7 @@ export function renderOV(t) {
 
   if (!rows.length) {
     tblEl.innerHTML = `<div class="empty-state"><p>${T('es_nodata')}</p></div>`;
+    document.getElementById(`${t}-ov-page`)?.replaceChildren();
     return;
   }
 
@@ -97,6 +134,26 @@ export function renderOV(t) {
   const wlF  = document.getElementById(`${t}-ov-wl`)?.value  || 'all';
   let filteredRows = locF !== 'all' ? rows.filter(r => r.loc === locF) : rows;
   if (wlF !== 'all') filteredRows = filteredRows.filter(r => r.wl === wlF);
+
+  // Text search — restricts which raw measurements feed the aggregation
+  // below, so searching a station/location name narrows the resulting
+  // param×year groups to ones that actually include it
+  const searchEl = document.getElementById(`${t}-ov-search`);
+  wireSearch(searchEl, filteredRows,
+    (r, q) => r.col.toLowerCase().includes(q) || (r.loc||'').toLowerCase().includes(q) || (r.st||'').toLowerCase().includes(q),
+    searchedRows => renderOVTable(t, tblEl, searchedRows)
+  );
+}
+
+function renderOVTable(t, tblEl, filteredRows) {
+  if (!filteredRows.length) {
+    tblEl.innerHTML = `<div class="empty-state"><p>${T('es_nodata')}</p></div>`;
+    document.getElementById(`${t}-ov-page`)?.replaceChildren();
+    return;
+  }
+
+  const zThreshold = parseFloat(document.getElementById(`${t}-ov-outlier`)?.value);
+  const showExceedOnly = document.getElementById(`${t}-sc-ep-card`)?.classList.contains('active');
 
   const map = {};
   filteredRows.forEach(r => {
@@ -107,35 +164,57 @@ export function renderOV(t) {
     if (r.exceed) map[k].excSt.add(r.st);
   });
 
+  let data = Object.values(map).sort((a, b) => a.col.localeCompare(b.col) || (a.yr > b.yr ? 1 : -1));
+  if (showExceedOnly) data = data.filter(d => d.excSt.size > 0);
+
   const l = L[LANG] || L.th;
-  mkTbl(tblEl,
-    [l.th_p, l.th_yr, l.th_u, l.th_n, l.th_min, l.th_max, l.th_mean, l.th_sd, l.th_exst, l.th_exn, l.th_exfq, l.th_stat],
-    Object.values(map).sort((a, b) => a.col.localeCompare(b.col) || (a.yr > b.yr ? 1 : -1)),
-    d => {
-      const st = calcStat(d.vals);
-      const stationsInGroup = new Set(filteredRows.filter(r => r.col === d.col && String(r.yr ?? '—') === String(d.yr)).map(r => r.st)).size;
-      const excPct = stationsInGroup > 0 ? Math.round(d.excSt.size / stationsInGroup * 100) : 0;
-      return `<tr>
-        <td class="em">${d.col}</td>
-        <td class="num">${d.yr}</td>
-        <td>${d.unit}</td>
-        <td class="num">${st.n}</td>
-        <td class="num">${fmtD(st.min, t, d.col)}</td>
-        <td class="num">${fmtD(st.max, t, d.col)}</td>
-        <td class="num">${fmtD(st.mean, t, d.col)}</td>
-        <td class="num">${fmtD(st.sd, t, d.col)}</td>
-        <td class="num" style="font-size:12px;max-width:180px">${d.excSt.size > 0
-          ? `<span style="color:var(--red);font-weight:600">${[...d.excSt].join(', ')}</span>`
-          : '—'}</td>
-        <td class="num">${d.excSt.size > 0 ? `<span class="badge badge-red">${d.excSt.size}</span>` : '—'}</td>
-        <td class="num">${d.excSt.size > 0 ? `<span style="color:var(--red);font-weight:600">${excPct}%</span>` : '—'}</td>
-        <td class="num">${d.excSt.size > 0
-          ? `<span class="badge badge-red">${T('b_exc')}</span>`
-          : `<span class="badge badge-green">${T('b_pass')}</span>`}</td>
-      </tr>`;
-    }
+  const ths = [l.th_p, l.th_yr, l.th_u, l.th_n, l.th_min, l.th_max, l.th_mean, l.th_sd, isEN()?'Outliers':'ค่าผิดปกติ', l.th_exst, l.th_exn, l.th_exfq, l.th_stat];
+  const sortKeys = [
+    d => d.col, d => d.yr, null,
+    d => calcStat(d.vals).n, d => calcStat(d.vals).min, d => calcStat(d.vals).max,
+    d => calcStat(d.vals).mean, d => calcStat(d.vals).sd,
+    d => outlierCount(d.vals, zThreshold),
+    null, d => d.excSt.size, d => d.excSt.size, d => d.excSt.size > 0 ? 1 : 0,
+  ];
+
+  const rowFn = d => {
+    const st = calcStat(d.vals);
+    const stationsInGroup = new Set(filteredRows.filter(r => r.col === d.col && String(r.yr ?? '—') === String(d.yr)).map(r => r.st)).size;
+    const excPct = stationsInGroup > 0 ? Math.round(d.excSt.size / stationsInGroup * 100) : 0;
+    const outCount = outlierCount(d.vals, zThreshold);
+    return `<tr>
+      <td class="em">${d.col}</td>
+      <td class="num">${d.yr}</td>
+      <td>${d.unit}</td>
+      <td class="num">${st.n}</td>
+      <td class="num">${fmtD(st.min, t, d.col)}</td>
+      <td class="num">${fmtD(st.max, t, d.col)}</td>
+      <td class="num">${fmtD(st.mean, t, d.col)}</td>
+      <td class="num">${fmtD(st.sd, t, d.col)}</td>
+      <td class="num">${outCount > 0 ? `<span class="badge badge-amber">${outCount}</span>` : '—'}</td>
+      <td class="num" style="font-size:12px;max-width:180px">${d.excSt.size > 0
+        ? `<span style="color:var(--red);font-weight:600">${[...d.excSt].join(', ')}</span>`
+        : '—'}</td>
+      <td class="num">${d.excSt.size > 0 ? `<span class="badge badge-red">${d.excSt.size}</span>` : '—'}</td>
+      <td class="num">${d.excSt.size > 0 ? `<span style="color:var(--red);font-weight:600">${excPct}%</span>` : '—'}</td>
+      <td class="num">${d.excSt.size > 0
+        ? `<span class="badge badge-red">${T('b_exc')}</span>`
+        : `<span class="badge badge-green">${T('b_pass')}</span>`}</td>
+    </tr>`;
+  };
+
+  wirePagination(document.getElementById(`${t}-ov-page`), data, OV_PAGE_SIZE,
+    pageData => mkTbl(tblEl, ths, pageData, rowFn, null, sortKeys)
   );
 }
+
+function outlierCount(vals, zThreshold) {
+  if (!(zThreshold > 0)) return 0;
+  const { isOutlier } = computeOutlierStats(vals, zThreshold);
+  return vals.filter(isOutlier).length;
+}
+
+function isEN() { return LANG === 'en'; }
 
 // ── Statistics Table ──────────────────────────────────────────────────────────
 export function renderST(t) {
@@ -176,19 +255,17 @@ export function renderST(t) {
   if (outlierMethod !== 'none') {
     data.forEach(d => {
       const colVals = rawByCol[d.col] || [];
-      const mean = colVals.reduce((a,b)=>a+b,0)/colVals.length;
-      const sd   = Math.sqrt(colVals.reduce((a,b)=>a+(b-mean)**2,0)/colVals.length);
-      d.vals.forEach(v => {
-        if (outlierMethod === 'z2' && Math.abs((v-mean)/sd) > 2) outlierSet.add(d);
-        if (outlierMethod === 'z3' && Math.abs((v-mean)/sd) > 3) outlierSet.add(d);
-        if (outlierMethod === 'iqr') {
-          const sorted = [...colVals].sort((a,b)=>a-b);
-          const q1 = sorted[Math.floor(sorted.length*0.25)];
-          const q3 = sorted[Math.floor(sorted.length*0.75)];
-          const iqr = q3 - q1;
-          if (v < q1 - 1.5*iqr || v > q3 + 1.5*iqr) outlierSet.add(d);
-        }
-      });
+      if (outlierMethod === 'z2' || outlierMethod === 'z3') {
+        const { isOutlier } = computeOutlierStats(colVals, outlierMethod === 'z2' ? 2 : 3);
+        d.vals.forEach(v => { if (isOutlier(v)) outlierSet.add(d); });
+      }
+      if (outlierMethod === 'iqr') {
+        const sorted = [...colVals].sort((a,b)=>a-b);
+        const q1 = sorted[Math.floor(sorted.length*0.25)];
+        const q3 = sorted[Math.floor(sorted.length*0.75)];
+        const iqr = q3 - q1;
+        d.vals.forEach(v => { if (v < q1 - 1.5*iqr || v > q3 + 1.5*iqr) outlierSet.add(d); });
+      }
     });
   }
 

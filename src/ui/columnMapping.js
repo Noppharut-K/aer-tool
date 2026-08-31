@@ -7,9 +7,9 @@
  */
 
 import { LANG } from '../utils/lang.js';
-import { TYPE_CFG, STD, ALIAS } from '../core/standards.js';
+import { TYPE_CFG, ALIAS } from '../core/standards.js';
 import { resP } from '../core/analysis.js';
-import { getState, setColMap, getColMap } from '../core/state.js';
+import { getState, setColMap, getColMap, getEffectiveStdAll, getStdOverrides, getRefMap, getBaselineMap } from '../core/state.js';
 
 /* Escape a raw-file column name / sample value before it goes into an HTML
    attribute or text node — a value containing a quote would otherwise
@@ -177,9 +177,10 @@ export function renderColMapSummary(t) {
   box.appendChild(row);
 }
 
-/** All canonical-name options for a tab: STD keys plus current custom value */
+/** All canonical-name options for a tab: effective standards (base ∪ user
+    overrides) keys plus current custom value */
 function canonOptions(t, current) {
-  const keys = Object.keys(STD[t] || {});
+  const keys = Object.keys(getEffectiveStdAll(t));
   if (current && !keys.includes(current)) keys.unshift(current);
   return keys;
 }
@@ -430,8 +431,10 @@ export function exportConfigTemplate(t, colMapOverride) {
       depthSummaryMethod: cm.depthSummaryMethod,
       sourceColumns: cm.sourceColumns,
     },
-    standardsLibrary: null,
-    refBaselineMapping: null,
+    standardsLibrary: getStdOverrides(t) ? { version: 1, overrides: getStdOverrides(t) } : null,
+    refBaselineMapping: (getRefMap(t) || getBaselineMap(t))
+      ? { version: 1, refMap: getRefMap(t) || {}, baselineMap: getBaselineMap(t) || {} }
+      : null,
     comparisons: null,
   };
   const blob = new Blob([JSON.stringify(envelope, null, 2)], { type: 'application/json' });
@@ -446,7 +449,10 @@ export function exportConfigTemplate(t, colMapOverride) {
   URL.revokeObjectURL(url);
 }
 
-/** Read a JSON template file and hand the draft mapping to `cb` */
+/** Read a JSON template file and hand the draft mapping (plus the full parsed
+    envelope, so the caller can also apply standardsLibrary/refBaselineMapping
+    — those apply immediately with no confirm step, unlike column mapping
+    which has auto-detection ambiguity to resolve first) to `cb` */
 export function importConfigTemplate(t, file, cb) {
   const reader = new FileReader();
   reader.onload = e => {
@@ -456,7 +462,7 @@ export function importConfigTemplate(t, file, cb) {
         alert(LANG === 'en' ? 'Invalid config template file.' : 'ไฟล์ template ไม่ถูกต้อง');
         return;
       }
-      cb(json.columnMapping);
+      cb(json.columnMapping, json);
     } catch (err) {
       alert((LANG === 'en' ? 'Failed to read template: ' : 'อ่านไฟล์ template ไม่สำเร็จ: ') + err.message);
     }

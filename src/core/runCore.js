@@ -4,21 +4,46 @@
  */
 
 import { LANG, L, T, Tf } from '../utils/lang.js';
-import { STD } from './standards.js';
-import { chkStd } from './analysis.js';
-import { getState, setRows, getColVal, getParamCols, resolveCanonical } from './state.js';
+import { chkStd, computeOutlierStats } from './analysis.js';
+import { getState, setRows, getColVal, getParamCols, resolveCanonical, getEffectiveStd, getRefMap, getBaselineMap, getRefStationsFor, getBaselineStationsFor } from './state.js';
+
+/** Fixed baseline z-score threshold for row-level dq_flag tagging — separate
+    from Overview's adjustable-threshold display filter (renders.js), which
+    recomputes live from the UI input instead of being baked in here */
+const DQ_OUTLIER_Z = 3;
 
 /** Get value from a row column, return '-' if missing */
 const gM = (row, col) => col && row[col] != null ? String(row[col]) : '-';
 
-/** Get selected REF station names for a tab */
+/** Get the tab-wide set of REF station names — the union of every Location's
+    configured REF stations (see the per-Location sidebar UI, refBaselineUI.js) */
 function getRefSet(t) {
-  return new Set([...document.querySelectorAll(`.rck-${t}:checked`)].map(c => c.value));
+  return new Set(Object.values(getRefMap(t) ?? {}).flat());
 }
 
-/** Get selected Baseline station names for a tab */
+/** Baseline equivalent of getRefSet() */
 function getBsSet(t) {
-  return new Set([...document.querySelectorAll(`.bck-${t}:checked`)].map(c => c.value));
+  return new Set(Object.values(getBaselineMap(t) ?? {}).flat());
+}
+
+/** Values for a Location's OWN configured REF stations (cross-Location
+    assignment is allowed, so these aren't necessarily physically within
+    `location`) — falls back to the whole tab-wide REF pool if no
+    per-Location mapping has been configured yet, so existing REF/Baseline
+    picks keep working exactly as before a user visits the new sidebar UI */
+export function getRefValsForLocation(t, location, pk) {
+  const refStations = getRefStationsFor(t, location);
+  return getState(t).rows
+    .filter(r => r.is_ref && r.pk === pk && (refStations === null || refStations.includes(r.st)))
+    .map(r => r.val);
+}
+
+/** Baseline equivalent of getRefValsForLocation() */
+export function getBaselineValsForLocation(t, location, pk) {
+  const bsStations = getBaselineStationsFor(t, location);
+  return getState(t).rows
+    .filter(r => r.is_baseline && r.pk === pk && (bsStations === null || bsStations.includes(r.st)))
+    .map(r => r.val);
 }
 
 /** Get report type filter */
@@ -92,7 +117,7 @@ export function runCore(t) {
         if (row[col] == null || isNaN(parseFloat(row[col]))) return;
         const v      = parseFloat(row[col]);
         const pk     = resolveCanonical(t, col);
-        const stdDef = (STD[t] || {})[pk] || {};
+        const stdDef = getEffectiveStd(t, pk) || {};
         const sc     = chkStd(t, pk, v);
         const stName = gM(row, colSt);
         const isBs   = !isRef && bsSet.size > 0 && bsSet.has(stName);
@@ -117,8 +142,19 @@ export function runCore(t) {
           is_ref:     isRef,
           is_baseline: isBs,
           exceed:     sc.status === 'exceed' && !isRef && !isBs,
+          dq_flag:    null, // set below, once each column's full value distribution is known
         });
       });
+    });
+
+    // Second pass: flag statistical outliers per parameter column, using a
+    // fixed baseline threshold — distinct from Overview's adjustable-threshold
+    // *display* filter, which is computed live at render time instead
+    const byCol = {};
+    rows.forEach(r => { (byCol[r.col] ??= []).push(r); });
+    Object.values(byCol).forEach(group => {
+      const { isOutlier } = computeOutlierStats(group.map(r => r.val), DQ_OUTLIER_Z);
+      group.forEach(r => { if (isOutlier(r.val)) r.dq_flag = 'outlier'; });
     });
 
     // Save processed rows to state

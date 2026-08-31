@@ -1,13 +1,15 @@
-import { STD, ALIAS } from './standards.js';
+import { ALIAS } from './standards.js';
+import { getEffectiveStd } from './state.js';
 
 /** Resolve parameter name via alias map */
 export function resP(c) {
   return ALIAS[c.toLowerCase().trim()] || c;
 }
 
-/** Check value against standard thresholds */
+/** Check value against standard thresholds (base STD merged with any
+    user-edited override from the Standards Library — see state.js) */
 export function chkStd(t, pk, v) {
-  const s = (STD[t] || {})[pk];
+  const s = getEffectiveStd(t, pk);
   if (!s) return { status: 'no_std', msg: '—' };
   const exc = [];
   if (s.pcd_max != null && v > s.pcd_max) exc.push(`PCD(${s.pcd_max})`);
@@ -20,6 +22,18 @@ export function chkStd(t, pk, v) {
   return exc.length
     ? { status: 'exceed', msg: 'เกิน ' + exc.join(', ') }
     : { status: 'pass',   msg: 'ผ่าน' };
+}
+
+/** Z-score outlier stats for one column's full value distribution — shared by
+    the Statistics tab's z2/z3 preset options and Overview's adjustable
+    z-multiplier input, so both read the exact same math. */
+export function computeOutlierStats(colVals, zThreshold) {
+  const mean = colVals.reduce((a, b) => a + b, 0) / colVals.length;
+  const sd   = Math.sqrt(colVals.reduce((a, b) => a + (b - mean) ** 2, 0) / colVals.length);
+  return {
+    mean, sd,
+    isOutlier: v => sd > 0 && Math.abs((v - mean) / sd) > zThreshold,
+  };
 }
 
 /** Descriptive statistics for an array of numbers */

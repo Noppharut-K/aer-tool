@@ -4,8 +4,10 @@
  */
 
 import { LANG, T, Tf } from '../utils/lang.js';
-import { getState, setRaw, getColVal, getParamCols } from '../core/state.js';
+import { getState, setRaw, getColVal, getParamCols, setStdOverrides, setRefMap, setBaselineMap } from '../core/state.js';
 import { showColumnMappingScreen, exportConfigTemplate, importConfigTemplate } from './columnMapping.js';
+import { renderStdRef } from './buildPage.js';
+import { rebuildRefBaseline } from './refBaselineUI.js';
 
 // ── Progress helpers ──────────────────────────────────────────────────────────
 
@@ -76,39 +78,13 @@ export function handleFile(t, file) {
   isCSV ? reader.readAsBinaryString(file) : reader.readAsArrayBuffer(file);
 }
 
-// ── REF / Baseline station list ───────────────────────────────────────────────
-
+// ── REF / Baseline station mapping (per Location) ────────────────────────────
+// Toggling a checkbox here updates refMap/baselineMap in state immediately,
+// but — same contract as the old flat checkbox list before it — doesn't
+// retroactively change already-analyzed rows' is_ref/is_baseline flags;
+// those are only recomputed the next time "Run Analysis" runs.
 export function rebuildRef(t) {
-  const state = getState(t);
-  const sc    = getColVal(t, 'st');
-
-  ['reflist','bslist'].forEach(listId => {
-    const el  = document.getElementById(`${t}-${listId}`);
-    if (!el) return;
-    if (!sc || !state.raw.length) {
-      el.innerHTML = `<p style="font-size:12px;color:var(--text3);padding:4px">${T('es_raw')}</p>`;
-      return;
-    }
-    const cls = listId === 'reflist' ? `rck-${t}` : `bck-${t}`;
-    const sts = [...new Set(state.raw.map(r => String(r[sc] || '')).filter(Boolean))].sort();
-    el.innerHTML = '';
-    /* Station names come from the uploaded file — build via DOM API so a
-       name containing a quote can't corrupt the checkbox's value attr
-       (which would silently misclassify that station as ref/baseline) */
-    sts.forEach(s => {
-      const label = document.createElement('label');
-      label.className = 'ref-item';
-      const cb = document.createElement('input');
-      cb.type = 'checkbox';
-      cb.value = s;
-      cb.className = cls;
-      const span = document.createElement('span');
-      span.textContent = s;
-      label.appendChild(cb);
-      label.appendChild(span);
-      el.appendChild(label);
-    });
-  });
+  rebuildRefBaseline(t);
 }
 
 // ── Report type filter ────────────────────────────────────────────────────────
@@ -258,6 +234,19 @@ export function wireEvents(t, { loadDemo, runAnalysis, renderFns, downloadTempla
     btn.addEventListener('click', () => openSettings(t))
   );
 
+  // Edit Standards (opens Settings modal directly to the Standards tab)
+  el.querySelectorAll(`[data-editstd="${t}"]`).forEach(btn =>
+    btn.addEventListener('click', () => openSettings(t, 'std'))
+  );
+
+  // Overview KPI card — click to toggle "show exceeding only"
+  el.querySelectorAll(`[data-kpi-filter="${t}"]`).forEach(card =>
+    card.addEventListener('click', () => {
+      card.classList.toggle('active');
+      if (getState(t).analyzed) renderFns?.ov?.(t);
+    })
+  );
+
   // Edit column mapping
   el.querySelectorAll(`[data-editmap="${t}"]`).forEach(btn =>
     btn.addEventListener('click', () => showColumnMappingScreen(t, {
@@ -281,16 +270,27 @@ export function wireEvents(t, { loadDemo, runAnalysis, renderFns, downloadTempla
     const f = e.target.files[0];
     e.target.value = '';
     if (!f) return;
-    importConfigTemplate(t, f, draft => showColumnMappingScreen(t, {
-      prefill: draft,
-      onConfirm: () => {
-        runDQ(t);
-        rebuildRef(t);
-        buildRtypeFilter(t);
-        document.getElementById(`${t}-btn-run`).disabled = false;
-        if (getState(t).analyzed) runAnalysis(t);
-      },
-    }));
+    importConfigTemplate(t, f, (draft, envelope) => {
+      if (envelope.standardsLibrary) {
+        setStdOverrides(t, envelope.standardsLibrary.overrides);
+        renderStdRef(t);
+        if (getState(t).analyzed) { renderFns?.ov(t); renderFns?.st(t); renderFns?.std(t); }
+      }
+      if (envelope.refBaselineMapping) {
+        setRefMap(t, envelope.refBaselineMapping.refMap || null);
+        setBaselineMap(t, envelope.refBaselineMapping.baselineMap || null);
+      }
+      showColumnMappingScreen(t, {
+        prefill: draft,
+        onConfirm: () => {
+          runDQ(t);
+          rebuildRef(t);
+          buildRtypeFilter(t);
+          document.getElementById(`${t}-btn-run`).disabled = false;
+          if (getState(t).analyzed) runAnalysis(t);
+        },
+      });
+    });
   });
 
   // Export Excel
@@ -356,6 +356,7 @@ export function wireEvents(t, { loadDemo, runAnalysis, renderFns, downloadTempla
     [`${t}-ov-loc`, renderFns?.ov],
     [`${t}-ov-p`,   renderFns?.ov],
     [`${t}-ov-wl`,  renderFns?.ov],
+    [`${t}-ov-outlier`, renderFns?.ov],
     [`${t}-st-grp`, renderFns?.st],
     [`${t}-st-yr`,  renderFns?.st],
     [`${t}-st-p`,   renderFns?.st],

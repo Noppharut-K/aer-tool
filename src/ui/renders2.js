@@ -6,6 +6,7 @@ import { LANG, L, T } from '../utils/lang.js';
 import { fmtD } from '../utils/fmt.js';
 import { getState } from '../core/state.js';
 import { calcStat, mannKendall } from '../core/analysis.js';
+import { getRefValsForLocation, getBaselineValsForLocation } from '../core/runCore.js';
 import { mkTbl } from './renders.js';
 
 // ── REF Comparison ────────────────────────────────────────────────────────────
@@ -23,13 +24,16 @@ export function renderCMP(t) {
   if (yr !== 'all') refRows = refRows.filter(r => String(r.yr) === yr);
   if (p  !== 'all') refRows = refRows.filter(r => r.col === p);
 
-  const refMap = {};
-  refRows.forEach(r => { if (!refMap[r.pk]) refMap[r.pk] = []; refMap[r.pk].push(r.val); });
-
-  if (!Object.keys(refMap).length) {
+  if (!refRows.length) {
     document.getElementById(`${t}-tbl-ref`).innerHTML = `<div class="empty-state"><p>${T('es_noref')}</p></div>`;
     return;
   }
+
+  // Tab-wide REF pool — the fallback comparison target when grouping by
+  // Station/Area, where per-Location REF resolution doesn't map cleanly
+  // (each Location's own REF picks are used instead when grouping by Location)
+  const globalRefMap = {};
+  refRows.forEach(r => { (globalRefMap[r.pk] ??= []).push(r.val); });
 
   let rows = state.rows.filter(r => !r.is_ref);
   if (locF !== 'all') rows = rows.filter(r => r.loc === locF);
@@ -45,7 +49,8 @@ export function renderCMP(t) {
   });
 
   const data = Object.values(groups).map(d => {
-    const rv = refMap[d.pk]; if (!rv) return null;
+    const rv = grpL === 'location' ? getRefValsForLocation(t, d.gn, d.pk) : globalRefMap[d.pk];
+    if (!rv || !rv.length) return null;
     const rs = calcStat(rv), gs = calcStat(d.vals);
     const pctDiff = rs.mean !== 0 ? (gs.mean - rs.mean) / Math.abs(rs.mean) * 100 : 0;
     const level   = Math.abs(pctDiff) >= cmpCVThresh ? 'diff' : 'close';
@@ -90,13 +95,14 @@ export function renderBS(t) {
   if (yr !== 'all') bsRows = bsRows.filter(r => String(r.yr) === yr);
   if (p  !== 'all') bsRows = bsRows.filter(r => r.col === p);
 
-  const bsMap = {};
-  bsRows.forEach(r => { if (!bsMap[r.pk]) bsMap[r.pk] = []; bsMap[r.pk].push(r.val); });
-
-  if (!Object.keys(bsMap).length) {
+  if (!bsRows.length) {
     document.getElementById(`${t}-tbl-bs`).innerHTML = `<div class="empty-state"><p>${isEN?'No Baseline stations selected':'ยังไม่ได้เลือก Baseline Station — เลือกใน Sidebar'}</p></div>`;
     return;
   }
+
+  // Tab-wide Baseline pool — fallback for non-Location grouping, mirrors renderCMP
+  const globalBsMap = {};
+  bsRows.forEach(r => { (globalBsMap[r.pk] ??= []).push(r.val); });
 
   let rows = state.rows.filter(r => !r.is_ref && !r.is_baseline);
   if (yr   !== 'all') rows = rows.filter(r => String(r.yr) === yr);
@@ -112,7 +118,8 @@ export function renderBS(t) {
   });
 
   const data = Object.values(groups).map(d => {
-    const bv = bsMap[d.pk]; if (!bv) return null;
+    const bv = grpL === 'location' ? getBaselineValsForLocation(t, d.gn, d.pk) : globalBsMap[d.pk];
+    if (!bv || !bv.length) return null;
     const bs = calcStat(bv), gs = calcStat(d.vals);
     if (bs.mean === 0) return null;
     const pctDiff  = (gs.mean - bs.mean) / Math.abs(bs.mean) * 100;

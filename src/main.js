@@ -11,7 +11,7 @@ import { renderCMP, renderBS, renderYR, renderMK, renderChart } from './ui/rende
 import { renderParaSea, renderParaSed, renderParaGeneric } from './ui/renderPara.js';
 import { runAnalysis } from './core/runAnalysis.js';
 import { buildBioPage } from './ui/buildBioPage.js';
-import { doExport, openSettings, downloadTemplate, getMRL, loadMRL } from './ui/actions.js';
+import { doExport, openSettings, downloadTemplate } from './ui/actions.js';
 
 const renderFns = {
   ov:    renderOV,
@@ -54,8 +54,12 @@ function loadDemo(t) {
       buildRtypeFilter(t);
       document.getElementById(`${t}-btn-run`).disabled = false;
       setTimeout(() => {
-        document.querySelectorAll(`.rck-${t}`).forEach(cb => { if (cb.value === DEMO_AUTO_TICKS.ref) cb.checked = true; });
-        document.querySelectorAll(`.bck-${t}`).forEach(cb => { if (cb.value === DEMO_AUTO_TICKS.baseline) cb.checked = true; });
+        document.querySelectorAll(`.rck-loc-${t}`).forEach(cb => {
+          if (cb.value === DEMO_AUTO_TICKS.ref) { cb.checked = true; cb.dispatchEvent(new Event('change', { bubbles: true })); }
+        });
+        document.querySelectorAll(`.bck-loc-${t}`).forEach(cb => {
+          if (cb.value === DEMO_AUTO_TICKS.baseline) { cb.checked = true; cb.dispatchEvent(new Event('change', { bubbles: true })); }
+        });
       }, 80);
     },
   });
@@ -76,7 +80,7 @@ function openPage(t) {
         runAnalysis: t => runAnalysis(t, renderFns),
         renderFns,
         downloadTemplate: t => downloadTemplate(t),
-        openSettings:     t => openSettings(t, renderFns),
+        openSettings:     (t, startTab) => openSettings(t, startTab),
         doExport:         t => doExport(t),
         copyPara:         t => {
           const box = document.getElementById(`${t}-para-box`);
@@ -143,7 +147,7 @@ document.querySelectorAll('.lang-btn').forEach(btn => {
         runAnalysis: t => runAnalysis(t, renderFns),
         renderFns,
         downloadTemplate: t => downloadTemplate(t),
-        openSettings:     t => openSettings(t, renderFns),
+        openSettings:     (t, startTab) => openSettings(t, startTab),
         doExport:         t => doExport(t),
         copyPara:         t => {
           const box = document.getElementById(`${t}-para-box`);
@@ -179,6 +183,3 @@ function updateThemeBtn() {
 }
 
 initTheme();
-
-// ── Load saved MRL ────────────────────────────────────────────────────────────
-['sea','sed'].forEach(t => loadMRL(t));

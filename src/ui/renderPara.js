@@ -5,38 +5,21 @@
 
 import { LANG, L, T } from '../utils/lang.js';
 import { STD } from '../core/standards.js';
-import { getState, getColVal } from '../core/state.js';
+import { getState, getColVal, getEffectiveMRL, getRefStationsFor, getBaselineStationsFor } from '../core/state.js';
+
+/** Rows tagged is_ref/is_baseline whose station is in this Location's own
+    configured REF/Baseline picks — falls back to the tab-wide pool if no
+    per-Location mapping has been configured yet (same fallback shape as
+    runCore.js's getRefValsForLocation/getBaselineValsForLocation) */
+function refRowsForLoc(t, state, loc) {
+  const stations = getRefStationsFor(t, loc);
+  return state.rows.filter(r => r.is_ref && (stations === null || stations.includes(r.st)));
+}
+function bsRowsForLoc(t, state, loc) {
+  const stations = getBaselineStationsFor(t, loc);
+  return state.rows.filter(r => r.is_baseline && (stations === null || stations.includes(r.st)));
+}
 import { calcStat, calcMean, calcCV } from '../core/analysis.js';
-
-/** MRL (Minimum Reporting Level) system */
-export const MRL_DEFAULTS = {
-  sea: {
-    Mercury:0.05, Lead:1.0, Cadmium:0.5, Copper:1.0, Zinc:5.0,
-    Arsenic:1.0, Manganese:5.0, Iron:10.0, TPH:0.05,
-    NO3_N:null, Salinity:null, Turbidity:null, BOD:null, TSS:null, Temp:null
-  }
-};
-export const MRL = {};
-
-export function getMRL(t, col) {
-  if (MRL[t] && MRL[t][col] != null) return MRL[t][col];
-  if (MRL_DEFAULTS[t] && MRL_DEFAULTS[t][col] != null) return MRL_DEFAULTS[t][col];
-  return null;
-}
-
-export function saveMRL(t) {
-  try { localStorage.setItem('aer-mrl-' + t, JSON.stringify(MRL[t] || {})); } catch(e) {}
-}
-
-export function loadMRL(t) {
-  try {
-    const s = localStorage.getItem('aer-mrl-' + t);
-    if (s) MRL[t] = JSON.parse(s);
-  } catch(e) {}
-}
-
-// Load saved MRL on startup
-['sea','sed'].forEach(t => loadMRL(t));
 
 
 export function renderParaSea(t){
@@ -53,9 +36,6 @@ export function renderParaSea(t){
   let rows=state.rows.filter(r=>!r.is_ref&&!r.is_baseline);
   if(yr!=='all') rows=rows.filter(r=>String(r.yr)===yr);
   if(locF!=='all') rows=rows.filter(r=>r.loc===locF);
-
-  const refRows=state.rows.filter(r=>r.is_ref);
-  const bsRows=state.rows.filter(r=>r.is_baseline);
 
   const years=[...new Set(rows.filter(r=>r.yr).map(r=>r.yr))].sort((a,b)=>b-a);
   const locs=[...new Set(rows.map(r=>r.loc))].sort();
@@ -151,7 +131,7 @@ function _calcCVLocal(arr){
       /* S3: MRL */
       const belowMRL=[];
       metalParams.forEach(col=>{
-        const mrlVal=getMRL(t,col);
+        const mrlVal=getEffectiveMRL(t,col);
         if(mrlVal==null) return;
         const vals=getVals(yrRows,col);
         if(vals.length&&vals.every(v=>v<mrlVal)) belowMRL.push(col);
@@ -164,12 +144,17 @@ function _calcCVLocal(arr){
       const exceedParams=[...new Set(yrRows.filter(r=>r.sc_status==='exceed').map(r=>r.col))];
       const stdOK=exceedParams.length===0;
 
+      /* REF/Baseline pools scoped to this Location's own configured picks
+         (falls back to the tab-wide pool if none configured yet) */
+      const refRowsL=refRowsForLoc(t,state,loc);
+      const bsRowsL=bsRowsForLoc(t,state,loc);
+
       /* REF diff */
       const refDiff=[];
-      if(refRows.length){
+      if(refRowsL.length){
         [...new Set(yrRows.map(r=>r.col))].forEach(col=>{
           const gVals=getVals(yrRows,col);
-          const rVals=getVals(refRows.filter(r=>yr==='all'||String(r.yr)===String(yr2)),col);
+          const rVals=getVals(refRowsL.filter(r=>yr==='all'||String(r.yr)===String(yr2)),col);
           if(!gVals.length||!rVals.length) return;
           const rMean=calcMean(rVals);
           if(rMean===0) return;
@@ -179,10 +164,10 @@ function _calcCVLocal(arr){
 
       /* Baseline diff */
       const bsDiff=[];
-      if(bsRows.length){
+      if(bsRowsL.length){
         [...new Set(yrRows.map(r=>r.col))].forEach(col=>{
           const gVals=getVals(yrRows,col);
-          const bVals=getVals(bsRows,col);
+          const bVals=getVals(bsRowsL,col);
           if(!gVals.length||!bVals.length) return;
           const bMean=calcMean(bVals);
           if(bMean===0) return;
@@ -192,9 +177,9 @@ function _calcCVLocal(arr){
 
       /* คำนวณ ratio REF และ Baseline */
       const allParams=[...new Set(yrRows.map(r=>r.col))];
-      const refCloseRatio=refRows.length&&allParams.length
+      const refCloseRatio=refRowsL.length&&allParams.length
         ?(allParams.length-refDiff.length)/allParams.length:1;
-      const bsCloseRatio=bsRows.length&&allParams.length
+      const bsCloseRatio=bsRowsL.length&&allParams.length
         ?(allParams.length-bsDiff.length)/allParams.length:1;
       const refMostlyClose=refCloseRatio>=0.6;
       const bsMostlyClose=bsCloseRatio>=0.6;
@@ -203,7 +188,7 @@ function _calcCVLocal(arr){
         ?(isEN?'All parameters were within standard limits.':'เมื่อเปรียบเทียบกับค่ามาตรฐานคุณภาพน้ำทะเล พบว่ามีค่าอยู่ในเกณฑ์มาตรฐาน')
         :(isEN?'Most parameters were within standard limits.':'เมื่อเปรียบเทียบกับค่ามาตรฐานคุณภาพน้ำทะเล พบว่าส่วนใหญ่มีค่าอยู่ในเกณฑ์มาตรฐาน');
 
-      if(refRows.length){
+      if(refRowsL.length){
         if(refMostlyClose){
           s4+=refDiff.length===0
             ?(isEN?' Values were close to the reference station.':', และมีค่าใกล้เคียงกับสถานีอ้างอิง')
@@ -216,7 +201,7 @@ function _calcCVLocal(arr){
             :(isEN?' Values were different from the reference station.':', มีค่าแตกต่างจากสถานีอ้างอิง');
         }
       }
-      if(bsRows.length){
+      if(bsRowsL.length){
         if(bsMostlyClose){
           s4+=bsDiff.length===0
             ?(isEN?' Values were close to Baseline.':', เมื่อเปรียบเทียบกับ Baseline พบว่ามีค่าใกล้เคียงกัน')
@@ -421,8 +406,6 @@ export function renderParaSed(t){
   if(yr!=='all') rows=rows.filter(r=>String(r.yr)===yr);
   if(locF!=='all') rows=rows.filter(r=>r.loc===locF);
 
-  const refRows=state.rows.filter(r=>r.is_ref);
-  const bsRows=state.rows.filter(r=>r.is_baseline);
   const years=[...new Set(rows.filter(r=>r.yr).map(r=>r.yr))].sort((a,b)=>b-a);
   const locs=[...new Set(rows.map(r=>r.loc))].sort();
 
@@ -510,10 +493,11 @@ function _calcCVLocal(arr){
           :`คุณภาพดินตะกอนพื้นท้องทะเลบริเวณ ${loc} ปี ${yr2} ทั้งหมด ${n} สถานี ดินตะกอนส่วนใหญ่เป็น ${dominant} โดยมีอัตราส่วนของ ${textureStr}`;
 
         /* compare texture with REF */
-        if(refRows.length){
-          const refSand=calcMean(getVals(refRows,'Sand'));
-          const refSilt=calcMean(getVals(refRows,'Silt'));
-          const refClay=calcMean(getVals(refRows,'Clay'));
+        const refRowsTex=refRowsForLoc(t,state,loc);
+        if(refRowsTex.length){
+          const refSand=calcMean(getVals(refRowsTex,'Sand'));
+          const refSilt=calcMean(getVals(refRowsTex,'Silt'));
+          const refClay=calcMean(getVals(refRowsTex,'Clay'));
           const refRanked=getDominant(refSand,refSilt,refClay);
           if(refRanked&&refRanked[0].k!==dominant){
             const refStr=refRanked.map(x=>`${x.k}(${x.v.toFixed(2)})`).join(' > ');
@@ -561,11 +545,16 @@ function _calcCVLocal(arr){
         if(!s1.endsWith('.')) s1+='.';
       }
 
+      /* REF/Baseline pools scoped to this Location's own configured picks
+         (falls back to the tab-wide pool if none configured yet) */
+      const refRowsL=refRowsForLoc(t,state,loc);
+      const bsRowsL=bsRowsForLoc(t,state,loc);
+
       /* ── S2: TPH ── */
       const tphVals=getVals(yrRows,'TPH');
       let s2='';
       if(tphVals.length){
-        const tphRef=getVals(refRows,'TPH');
+        const tphRef=getVals(refRowsL,'TPH');
         const u=getUnit('TPH');
         s2=isEN
           ?`TPH ranged from ${rng(tphVals)} ${u}.`
@@ -659,10 +648,10 @@ function _calcCVLocal(arr){
       /* ── S4: REF comparison ── */
       const allParams=[...new Set(yrRows.map(r=>r.col))].filter(c=>!textureParams.includes(c)&&c!=='TPH');
       const refDiff=[];
-      if(refRows.length){
+      if(refRowsL.length){
         allParams.forEach(col=>{
           const gVals=getVals(yrRows,col);
-          const rVals=getVals(refRows,col);
+          const rVals=getVals(refRowsL,col);
           if(!gVals.length||!rVals.length) return;
           const rMean=calcMean(rVals);
           if(rMean===0) return;
@@ -673,7 +662,7 @@ function _calcCVLocal(arr){
       const refMostlyClose=refCloseRatio>=0.6;
 
       let s4='';
-      if(refRows.length){
+      if(refRowsL.length){
         if(refMostlyClose){
           s4=refDiff.length===0
             ?(isEN?`Sediment quality at ${loc} was close to the reference station.`
@@ -692,10 +681,10 @@ function _calcCVLocal(arr){
 
       /* ── S5: Baseline comparison ── */
       const bsDiff=[];
-      if(bsRows.length){
+      if(bsRowsL.length){
         allParams.forEach(col=>{
           const gVals=getVals(yrRows,col);
-          const bVals=getVals(bsRows,col);
+          const bVals=getVals(bsRowsL,col);
           if(!gVals.length||!bVals.length) return;
           const bMean=calcMean(bVals);
           if(bMean===0) return;
@@ -706,7 +695,7 @@ function _calcCVLocal(arr){
       const bsMostlyClose=bsCloseRatio>=0.6;
 
       let s5='';
-      if(bsRows.length){
+      if(bsRowsL.length){
         if(bsMostlyClose){
           s5=bsDiff.length===0
             ?(isEN?`Values were close to Baseline.`

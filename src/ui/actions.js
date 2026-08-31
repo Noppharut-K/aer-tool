@@ -3,13 +3,15 @@
  * Migrated from AER_Program.html
  */
 import { LANG } from '../utils/lang.js';
-import { getState } from '../core/state.js';
+import { getState, getEffectiveStd, getEffectiveStdAll, setStdOverrides } from '../core/state.js';
 import { STD, TYPE_CFG } from '../core/standards.js';
+import { runCore } from '../core/runCore.js';
 import { calcStat, fmt, mannKendall } from '../core/analysis.js';
 import { setSt } from './events.js';
 import { renderOV, renderST, renderSTD } from './renders.js';
 import { renderCMP, renderMK } from './renders2.js';
 import { renderParaSea, renderParaSed, renderParaGeneric } from './renderPara.js';
+import { renderStdRef } from './buildPage.js';
 
 /* Re-render the report paragraph box — mirrors the dispatch in main.js's
    renderFns.para (there's no single exported renderPara to reuse) */
@@ -25,15 +27,6 @@ function renderPara(t) {
     console.error(e);
   }
 }
-
-var MRL_DEFAULTS={
-  sea:{
-    Mercury:0.05, Lead:1.0, Cadmium:0.5, Copper:1.0, Zinc:5.0,
-    Arsenic:1.0, Manganese:5.0, Iron:10.0, TPH:0.05,
-    NO3_N:null, Salinity:null, Turbidity:null, BOD:null, TSS:null, Temp:null
-  }
-};
-var MRL={}; /* MRL[type][paramCol] = detection limit */
 
 /* Escape a parameter/column name (from the uploaded file) before it goes
    into an HTML attribute or text node — a name containing a quote would
@@ -155,15 +148,18 @@ function copyPara(t){
 
 /* Chart */
 
-function openSettings(t){
-    if(!getState(t).rows||!getState(t).rows.length){
-    alert(LANG==='en'?'Load data first':'โหลดข้อมูลก่อน');
-    return;
-  }
+/* Threshold fields exposed in the Standards tab, per tab type — mirrors
+   buildStdRef()'s display columns in buildPage.js */
+const STD_FIELDS = {
+  sed: [['pcd_max','PCD Max'], ['erl','ERL'], ['erm','ERM']],
+  sea: [['pcd_min','PCD Min'], ['pcd_max','PCD Max'], ['who_max','WHO'], ['epa_max','EPA']],
+};
+
+function openSettings(t, startTab){
   if(!window.DEC) window.DEC={}; if(!window.DEC[t]) window.DEC[t]={};
-  if(!MRL[t]) MRL[t]={};
+  const hasRows = getState(t).rows && getState(t).rows.length;
   const paramMap={};
-  getState(t).rows.forEach(r=>{
+  if (hasRows) getState(t).rows.forEach(r=>{
     if(!paramMap[r.col]) paramMap[r.col]={unit:r.unit,vals:[]};
     if(paramMap[r.col].vals.length<50) paramMap[r.col].vals.push(r.val);
   });
@@ -186,48 +182,55 @@ function openSettings(t){
         data-col="${escHtml(col)}" data-type="${t}">
     </div>`;
   }).join('');
+  const decEmpty = hasRows ? '' : `<div style="padding:24px;text-align:center;font-size:12.5px;color:var(--text3)">${isEN?'Load data first':'โหลดข้อมูลก่อน'}</div>`;
 
-  const mrlRows=Object.entries(paramMap).map(([col,d])=>{
-    const cur=getMRL(t,col);
-    return `<div class="settings-row">
-      <div>
-        <div class="settings-param">${escHtml(col)}</div>
-        <div style="font-size:11px;color:var(--text3)">${escHtml(d.unit)}</div>
-      </div>
-      <div style="font-size:11px;color:var(--text3)">${cur!=null?'default: '+cur:'—'}</div>
-      <input type="number" class="settings-input" min="0" step="any"
-        value="${cur!=null?cur:''}" placeholder="—"
-        data-col="${escHtml(col)}" id="mrl-inp-${t}-${col.replace(/[^a-z0-9]/gi,'_')}">
+  const fields = STD_FIELDS[t] || [];
+  const stdCols = Object.keys(getEffectiveStdAll(t)).sort();
+  const stdRows=stdCols.map(col=>{
+    const s=getEffectiveStd(t,col)||{};
+    const fieldInputs=fields.map(([fk,fl])=>
+      `<input type="number" class="settings-input" step="any" placeholder="${fl}"
+        value="${s[fk]!=null?s[fk]:''}" data-col="${escHtml(col)}" data-field="${fk}">`
+    ).join('');
+    return `<div class="settings-row settings-row-std" style="grid-template-columns:1.1fr 1fr repeat(${fields.length},70px) 80px">
+      <div class="settings-param">${escHtml(col)}</div>
+      <input type="text" class="settings-input" style="width:100%;text-align:left" placeholder="${isEN?'Source':'แหล่งอ้างอิง'}"
+        value="${escHtml(s.source||'')}" data-col="${escHtml(col)}" data-field="source">
+      ${fieldInputs}
+      <input type="number" class="settings-input" step="any" placeholder="MRL"
+        value="${s.mrl!=null?s.mrl:''}" data-col="${escHtml(col)}" data-field="mrl">
     </div>`;
   }).join('');
+  const stdHd=`<div class="settings-row settings-row-std settings-row-hd" style="grid-template-columns:1.1fr 1fr repeat(${fields.length},70px) 80px">
+    <div>Parameter</div><div>${isEN?'Source':'แหล่งอ้างอิง'}</div>${fields.map(([,fl])=>`<div>${fl}</div>`).join('')}<div>MRL</div>
+  </div>`;
 
+  const isStdStart = startTab==='std';
   overlay.innerHTML=`
-    <div class="settings-box" style="max-width:560px;overflow:hidden">
+    <div class="settings-box" style="max-width:${isStdStart?'760px':'560px'};overflow:hidden">
       <div class="settings-title">${isEN?'Settings':'ตั้งค่า'}</div>
       <div style="display:flex;gap:0;border-bottom:1px solid var(--border);margin-bottom:12px;flex-shrink:0">
         <button id="stab-dec-${t}" onclick="switchSTab('${t}','dec')"
-          style="padding:7px 18px;font-size:13px;font-weight:600;border:none;background:none;cursor:pointer;color:var(--navy);border-bottom:2px solid var(--navy)">
+          style="padding:7px 18px;font-size:13px;font-weight:600;border:none;background:none;cursor:pointer;color:${isStdStart?'var(--text3)':'var(--navy)'};border-bottom:2px solid ${isStdStart?'transparent':'var(--navy)'}">
           ${isEN?'Decimals':'ทศนิยม'}
         </button>
-        <button id="stab-mrl-${t}" onclick="switchSTab('${t}','mrl')"
-          style="padding:7px 18px;font-size:13px;font-weight:600;border:none;background:none;cursor:pointer;color:var(--text3);border-bottom:2px solid transparent">
-          MRL
+        <button id="stab-std-${t}" onclick="switchSTab('${t}','std')"
+          style="padding:7px 18px;font-size:13px;font-weight:600;border:none;background:none;cursor:pointer;color:${isStdStart?'var(--navy)':'var(--text3)'};border-bottom:2px solid ${isStdStart?'var(--navy)':'transparent'}">
+          ${isEN?'Standards':'มาตรฐาน'}
         </button>
       </div>
-      <div id="spane-dec-${t}" style="flex:1;overflow:hidden;display:flex;flex-direction:column;min-height:0">
+      <div id="spane-dec-${t}" style="display:${isStdStart?'none':'flex'};flex:1;overflow:hidden;flex-direction:column;min-height:0">
         <div class="settings-sub" style="flex-shrink:0">${isEN?'Set decimal places per parameter.':'ตั้งจำนวนทศนิยมต่อ parameter'}</div>
         <div class="settings-table-wrap" style="flex:1;overflow-y:auto;min-height:0">
           <div class="settings-row settings-row-hd">
             <div>Parameter</div><div>${isEN?'Preview':'ตัวอย่าง'}</div><div>${isEN?'Decimals':'ทศนิยม'}</div>
-          </div>${decRows}
+          </div>${decRows}${decEmpty}
         </div>
       </div>
-      <div id="spane-mrl-${t}" style="display:none;flex:1;overflow:hidden;flex-direction:column;min-height:0">
-        <div class="settings-sub" style="flex-shrink:0">${isEN?'Set MRL ต่อ parameter ปล่อยว่าง = ไม่ตรวจ MRL':'Set Minimum Reporting Limit per parameter. Leave blank = no MRL check.'}</div>
-        <div class="settings-table-wrap" style="flex:1;overflow-y:auto;min-height:0">
-          <div class="settings-row settings-row-hd">
-            <div>Parameter</div><div>${isEN?'Default':'Default'}</div><div>MRL</div>
-          </div>${mrlRows}
+      <div id="spane-std-${t}" style="display:${isStdStart?'flex':'none'};flex:1;overflow:hidden;flex-direction:column;min-height:0">
+        <div class="settings-sub" style="flex-shrink:0">${isEN?'Edit threshold values, add a Source citation, and set MRL per parameter. Leave MRL blank = no MRL check.':'แก้ไขค่ามาตรฐาน เพิ่มแหล่งอ้างอิง และตั้งค่า MRL ต่อ parameter ปล่อยว่าง = ไม่ตรวจ MRL'}</div>
+        <div class="settings-table-wrap" style="flex:1;overflow-y:auto;min-height:0;overflow-x:auto">
+          ${stdHd}${stdRows}
         </div>
       </div>
       <div class="settings-footer" style="flex-shrink:0">
@@ -248,32 +251,47 @@ function openSettings(t){
 
 function applySettings(t){
   if(!window.DEC) window.DEC={}; if(!window.DEC[t]) window.DEC[t]={};
-  if(!MRL[t]) MRL[t]={};
   /* save decimals */
   document.querySelectorAll(`#settings-overlay-${t} #spane-dec-${t} .settings-input`).forEach(inp=>{
     const col=inp.dataset.col;
     const d=parseInt(inp.value);
     if(!isNaN(d)&&d>=0&&d<=8) DEC[t][col]=d;
   });
-  /* save MRL */
-  document.querySelectorAll(`#settings-overlay-${t} #spane-mrl-${t} input`).forEach(inp=>{
-    const col=inp.dataset.col;
-    const v=parseFloat(inp.value);
-    MRL[t][col]=isNaN(v)?null:v;
+  /* save standards overrides (thresholds + Source + MRL) */
+  const overrides={};
+  document.querySelectorAll(`#settings-overlay-${t} #spane-std-${t} [data-field]`).forEach(inp=>{
+    const col=inp.dataset.col, field=inp.dataset.field;
+    if(!overrides[col]) overrides[col]={};
+    if(field==='source'){
+      if(inp.value.trim()) overrides[col].source=inp.value.trim();
+    } else {
+      const v=parseFloat(inp.value);
+      if(!isNaN(v)) overrides[col][field]=v;
+    }
   });
-  saveMRL(t);
+  /* drop empty override entries so getEffectiveStd falls back cleanly to base */
+  Object.keys(overrides).forEach(col=>{ if(!Object.keys(overrides[col]).length) delete overrides[col]; });
+  setStdOverrides(t, Object.keys(overrides).length?overrides:null);
   document.getElementById('settings-overlay-'+t)?.remove();
-  if(getState(t).analyzed){renderOV(t);renderST(t);renderSTD(t);renderCMP(t);renderMK(t);renderPara(t);}
+  renderStdRef(t);
+  /* Threshold edits change sc_status/exceed/dq_flag, which are baked into
+     each analysis row at runCore() time — re-run it so exceedance badges
+     reflect the new threshold immediately instead of only on next
+     "Run Analysis" click */
+  if(getState(t).analyzed){
+    runCore(t);
+    renderOV(t);renderST(t);renderSTD(t);renderCMP(t);renderMK(t);renderPara(t);
+  }
 }
 
 function resetSettingsTab(t){
   /* check which tab is active */
-  const mrlPane=document.getElementById('spane-mrl-'+t);
-  if(mrlPane&&mrlPane.style.display!=='none'){
-    document.querySelectorAll(`#settings-overlay-${t} #spane-mrl-${t} input`).forEach(inp=>{
-      const col=inp.dataset.col;
-      const def=MRL_DEFAULTS[t]?.[col];
-      inp.value=def!=null?def:'';
+  const stdPane=document.getElementById('spane-std-'+t);
+  if(stdPane&&stdPane.style.display!=='none'){
+    document.querySelectorAll(`#settings-overlay-${t} #spane-std-${t} [data-field]`).forEach(inp=>{
+      const col=inp.dataset.col, field=inp.dataset.field;
+      const base=(STD[t]||{})[col];
+      inp.value = field==='source' ? '' : (base&&base[field]!=null?base[field]:'');
     });
   } else {
     DEC[t]={};
@@ -287,30 +305,12 @@ function resetSettingsTab(t){
 }
 
 function switchSTab(t,tab){
-  ['dec','mrl'].forEach(k=>{
+  ['dec','std'].forEach(k=>{
     document.getElementById('spane-'+k+'-'+t).style.display=k===tab?'flex':'none';
     const btn=document.getElementById('stab-'+k+'-'+t);
     btn.style.color=k===tab?'var(--navy)':'var(--text3)';
     btn.style.borderBottom=k===tab?'2px solid var(--navy)':'2px solid transparent';
   });
-}
-
-function getMRL(t,col){
-  if(MRL[t]&&MRL[t][col]!=null) return MRL[t][col];
-  if(MRL_DEFAULTS[t]&&MRL_DEFAULTS[t][col]!=null) return MRL_DEFAULTS[t][col];
-  return null;
-}
-
-function loadMRL(t){
-  try{
-    const s=localStorage.getItem('aer-mrl-'+t);
-    if(s) MRL[t]=JSON.parse(s);
-  }catch(e){}
-}
-['sea','sed'].forEach(t=>loadMRL(t));
-
-function saveMRL(t){
-  try{ localStorage.setItem('aer-mrl-'+t, JSON.stringify(MRL[t]||{})); }catch(e){}
 }
 
 function downloadTemplate(t){
@@ -323,8 +323,9 @@ function downloadTemplate(t){
     sed:   ['Area','Location','Station','Distance','Year','Date','Report_Type'],
   };
 
-  /* Parameter columns — generate from STD database */
-  const paramCols = Object.keys(STD[t]||{});
+  /* Parameter columns — generate from the effective standards (base ∪ user overrides) */
+  const effStd = getEffectiveStdAll(t);
+  const paramCols = Object.keys(effStd);
 
   const headers = [...(meta[t]||[]), ...paramCols];
 
@@ -342,7 +343,7 @@ function downloadTemplate(t){
   ex['Report_Type'] = 'EIA';
   /* Fill example parameter values */
   paramCols.forEach(function(p){
-    var std = (STD[t]||{})[p];
+    var std = effStd[p];
     if(!std) return;
     if(std.pcd_max!=null) ex[p] = parseFloat((std.pcd_max*0.5).toFixed(4));
     else if(std.pcd_min!=null) ex[p] = parseFloat((std.pcd_min*1.2).toFixed(4));
@@ -365,7 +366,7 @@ function downloadTemplate(t){
   window.XLSX.utils.book_append_sheet(wb, ws, 'Template');
 
   /* Sheet 2: Parameters reference */
-  const paramRows = Object.entries(STD[t]||{}).map(function([k,v]){
+  const paramRows = Object.entries(effStd).map(function([k,v]){
     return {
       Parameter: k,
       Label: v.label||k,
@@ -375,7 +376,7 @@ function downloadTemplate(t){
       'ERL': v.erl!=null?v.erl:'—',
       'ERM': v.erm!=null?v.erm:'—',
       'WHO Max': v.who_max!=null?v.who_max:'—',
-      Note: v.note||''
+      Source: v.source||'',
     };
   });
   if(paramRows.length){
@@ -432,4 +433,4 @@ window.switchSTab = switchSTab;
 window.resetSettingsTab = resetSettingsTab;
 window.applySettings = applySettings;
 
-export { doExport, copyPara, openSettings, downloadTemplate, getMRL, loadMRL, saveMRL };
+export { doExport, copyPara, openSettings, downloadTemplate };

@@ -4,27 +4,37 @@
  */
 
 import { LANG, L } from '../utils/lang.js';
-import { TYPE_CFG, STD } from '../core/standards.js';
+import { TYPE_CFG } from '../core/standards.js';
+import { getEffectiveStdAll } from '../core/state.js';
 import { renderColMapSummary } from './columnMapping.js';
 
-/** Build the standard reference table for tab pane 8 */
+/** Build the standard reference table for tab pane 8 — reads the effective
+    (base ∪ user-edited overrides) standards, kept live via renderStdRef().
+    Only the table itself (not the "Edit Standards" button, which is static
+    markup with its own click listener wired once by wireEvents) */
 function buildStdRef(t) {
-  const s = STD[t] || {};
+  const s = getEffectiveStdAll(t);
   if (!Object.keys(s).length)
     return `<div class="empty-state"><p>กำหนดมาตรฐานใน Sidebar</p></div>`;
 
   const isSed = t === 'sed';
   const ths = isSed
-    ? ['Parameter','Name','Unit','PCD Max','ERL','ERM']
-    : ['Parameter','Name','Unit','PCD Min','PCD Max','WHO','EPA'];
+    ? ['Parameter','Name','Unit','PCD Max','ERL','ERM','Source','MRL']
+    : ['Parameter','Name','Unit','PCD Min','PCD Max','WHO','EPA','Source','MRL'];
 
   const rows = Object.entries(s).map(([k, v]) =>
     isSed
-      ? `<tr><td class="em num">${k}</td><td>${v.label||''}</td><td>${v.unit||''}</td><td>${v.pcd_max??'—'}</td><td>${v.erl??'—'}</td><td>${v.erm??'—'}</td></tr>`
-      : `<tr><td class="em num">${k}</td><td>${v.label||''}</td><td>${v.unit||''}</td><td>${v.pcd_min??'—'}</td><td>${v.pcd_max??'—'}</td><td>${v.who_max??v.who_min??'—'}</td><td>${v.epa_max??v.epa_min??'—'}</td></tr>`
+      ? `<tr><td class="em num">${k}</td><td>${v.label||''}</td><td>${v.unit||''}</td><td>${v.pcd_max??'—'}</td><td>${v.erl??'—'}</td><td>${v.erm??'—'}</td><td>${v.source||'—'}</td><td>${v.mrl??'—'}</td></tr>`
+      : `<tr><td class="em num">${k}</td><td>${v.label||''}</td><td>${v.unit||''}</td><td>${v.pcd_min??'—'}</td><td>${v.pcd_max??'—'}</td><td>${v.who_max??v.who_min??'—'}</td><td>${v.epa_max??v.epa_min??'—'}</td><td>${v.source||'—'}</td><td>${v.mrl??'—'}</td></tr>`
   ).join('');
 
   return `<div class="tbl-wrap"><table><thead><tr>${ths.map(h=>`<th>${h}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+
+/** Re-render pane 8's Standard Reference table (called after Standards Library edits) */
+export function renderStdRef(t) {
+  const el = document.getElementById(`${t}-stdref-body`);
+  if (el) el.innerHTML = buildStdRef(t);
 }
 
 /**
@@ -111,19 +121,11 @@ export function buildPage(t, el) {
         <div class="sb-body" id="${t}-rtype-body" style="padding:4px 8px 8px"></div>
       </div>
 
-      <!-- Baseline Stations -->
+      <!-- REF / Baseline Stations (per Location) -->
       <div class="sb-block collapsible collapsed">
-        <div class="sb-title" data-toggle-sb>Baseline Stations</div>
-        <div class="sb-body">
-          <div class="ref-list" id="${t}-bslist"><p style="font-size:12px;color:var(--text3);padding:4px">${l.es_raw}</p></div>
-        </div>
-      </div>
-
-      <!-- REF Stations -->
-      <div class="sb-block collapsible collapsed">
-        <div class="sb-title" data-toggle-sb>${l.ref_sec}</div>
-        <div class="sb-body">
-          <div class="ref-list" id="${t}-reflist"><p style="font-size:12px;color:var(--text3);padding:4px">${l.es_raw}</p></div>
+        <div class="sb-title" data-toggle-sb>${l.ref_sec} / Baseline</div>
+        <div class="sb-body" id="${t}-refbaseline-body">
+          <p style="font-size:12px;color:var(--text3);padding:4px">${l.es_raw}</p>
         </div>
       </div>
 
@@ -218,7 +220,7 @@ export function buildPage(t, el) {
           <div class="stat-row">
             <div class="sc sc-blue"><div class="lbl">${l.sc[0]}</div><div class="val" id="${t}-sc-st">—</div><div class="sub">${l.sc_sub[0]}</div></div>
             <div class="sc sc-blue"><div class="lbl">${l.sc[1]}</div><div class="val" id="${t}-sc-p">—</div><div class="sub">${l.sc_sub[1]}</div></div>
-            <div class="sc sc-red"><div class="lbl">${l.sc[2]}</div><div class="val" id="${t}-sc-ep">—</div><div class="sub">${l.sc_sub[2]}</div></div>
+            <div class="sc sc-red sc-kpi" id="${t}-sc-ep-card" data-kpi-filter="${t}"><div class="lbl">${l.sc[2]}</div><div class="val" id="${t}-sc-ep">—</div><div class="sub">${l.sc_sub[2]}</div></div>
             <div class="sc sc-amber"><div class="lbl">${l.sc[3]}</div><div class="val" id="${t}-sc-es">—</div><div class="sub">${l.sc_sub[3]}</div></div>
             <div class="sc sc-green"><div class="lbl">${l.sc[4]}</div><div class="val" id="${t}-sc-ok">—</div><div class="sub">${l.sc_sub[4]}</div></div>
           </div>
@@ -230,8 +232,11 @@ export function buildPage(t, el) {
             <div class="field"><label class="fl-loc">${l.f_loc}</label><select id="${t}-ov-loc"><option value="all" class="f-all-opt">${l.f_all}</option></select></div>
             <div class="field"><label class="fl-p">${l.f_p}</label><select id="${t}-ov-p"><option value="all" class="f-all-opt">${l.f_all}</option></select></div>
             ${t==='sea'?`<div class="field"><label>${l.col_wl}</label><select id="${t}-ov-wl"><option value="all" class="f-all-opt">${l.f_all}</option></select></div>`:''}
+            <div class="field"><label>${isEN?'Outlier (σ×)':'Outlier (σ×)'}</label><input type="number" id="${t}-ov-outlier" min="0" step="0.1" value="3" style="width:64px"></div>
+            <div class="field" style="flex:1;min-width:160px"><label>${isEN?'Search':'ค้นหา'}</label><input type="text" id="${t}-ov-search" placeholder="${isEN?'Parameter, Location, Station...':'Parameter, Location, Station...'}"></div>
           </div>
           <div class="tbl-wrap" id="${t}-tbl-ov"><div class="empty-state"><p>${l.es_ov}</p></div></div>
+          <div id="${t}-ov-page" class="tbl-page"></div>
         </div>
 
         <!-- 1: Statistics -->
@@ -339,7 +344,10 @@ export function buildPage(t, el) {
 
         <!-- 8: Standard Reference -->
         <div class="tab-pane" id="${t}-pane-8">
-          ${buildStdRef(t)}
+          <div style="display:flex;justify-content:flex-end;margin-bottom:10px">
+            <button class="btn btn-outline btn-sm" data-editstd="${t}">${isEN?'Edit Standards':'แก้ไขมาตรฐาน'}</button>
+          </div>
+          <div id="${t}-stdref-body">${buildStdRef(t)}</div>
         </div>
 
       </div><!-- /content-body -->
