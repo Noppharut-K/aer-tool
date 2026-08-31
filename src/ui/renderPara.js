@@ -5,7 +5,7 @@
 
 import { LANG, L, T } from '../utils/lang.js';
 import { STD } from '../core/standards.js';
-import { getState } from '../core/state.js';
+import { getState, getColVal } from '../core/state.js';
 import { calcStat, calcMean, calcCV } from '../core/analysis.js';
 
 /** MRL (Minimum Reporting Level) system */
@@ -111,16 +111,17 @@ function _calcCVLocal(arr){
       const n=sts.length;
 
       /* depth range */
+      const cLoc=getColVal(t,'loc');
+      const cYr=getColVal(t,'year');
       const rawYrLoc=state.raw.filter(r=>{
-        const cLoc=document.getElementById(t+'-c-loc')?.value;
-        const cYr=document.getElementById(t+'-c-year')?.value;
         return cLoc&&r[cLoc]===loc&&(yr==='all'||!cYr||String(r[cYr])===String(yr2));
       });
-      const depths=rawYrLoc.map(r=>parseFloat(r['Water_Depth'])).filter(v=>!isNaN(v));
+      const colWL=getColVal(t,'wl');
+      const depths=colWL?rawYrLoc.map(r=>parseFloat(r[colWL])).filter(v=>!isNaN(v)):[];
       const depthStr=depths.length?rng(depths):null;
 
       /* date range */
-      const datCol=document.getElementById(t+'-c-date')?.value;
+      const datCol=getColVal(t,'date');
       const dates=datCol?rawYrLoc.map(r=>r[datCol]).filter(Boolean):[];
       let dateRangeStr='';
       if(dates.length){
@@ -238,8 +239,8 @@ function _calcCVLocal(arr){
           const r2=rng(excVals);
           const u=getUnit(col);
           const excSts=[...new Set(yrRows.filter(r=>r.col===col&&r.sc_status==='exceed').map(r=>r.st))];
-          const depCol=document.getElementById(t+'-c-depth')?.value;
-          const rawExc=state.raw.filter(r=>{const cs=document.getElementById(t+'-c-st')?.value;return cs&&excSts.includes(String(r[cs]));});
+          const depCol=getColVal(t,'wl');
+          const rawExc=state.raw.filter(r=>{const cs=getColVal(t,'st');return cs&&excSts.includes(String(r[cs]));});
           const excDepths=depCol?[...new Set(rawExc.map(r=>r[depCol]).filter(Boolean))]:[];
           const dp=excDepths.length?` (${excDepths.join(', ')})`:'';
           return isEN?`${col}${dp}: ${r2} ${u}`.trim():`${col}${dp} มีค่า ${r2} ${u}`.trim();
@@ -274,10 +275,10 @@ function _calcCVLocal(arr){
       [...allYrs].reverse().forEach(yr2=>{
         const yrRows2=locRows.filter(r=>String(r.yr)===String(yr2));
         const sts=[...new Set(yrRows2.map(r=>r.st))];
-        const datCol=document.getElementById(t+'-c-date')?.value;
+        const datCol=getColVal(t,'date');
         const rawYr=state.raw.filter(r=>{
-          const cLoc=document.getElementById(t+'-c-loc')?.value;
-          const cYr=document.getElementById(t+'-c-year')?.value;
+          const cLoc=getColVal(t,'loc');
+          const cYr=getColVal(t,'year');
           return cLoc&&r[cLoc]===loc&&cYr&&String(r[cYr])===String(yr2);
         });
         const dates=datCol?rawYr.map(r=>r[datCol]).filter(Boolean).sort():[];
@@ -460,10 +461,10 @@ function _calcCVLocal(arr){
 
   /* get raw vals per station from state.raw */
   function getRawVals(loc,yr2,col){
-    const cLoc=document.getElementById(t+'-c-loc')?.value;
-    const cYr=document.getElementById(t+'-c-year')?.value;
-    const cSt=document.getElementById(t+'-c-st')?.value;
-    const cDist=document.getElementById(t+'-c-dist')?.value;
+    const cLoc=getColVal(t,'loc');
+    const cYr=getColVal(t,'year');
+    const cSt=getColVal(t,'st');
+    const cDist=getColVal(t,'dist');
     return state.raw.filter(r=>
       cLoc&&r[cLoc]===loc&&
       (!cYr||String(r[cYr])===String(yr2))&&
@@ -742,10 +743,10 @@ function _calcCVLocal(arr){
       const yrInfos=[];
       [...allYrs].reverse().forEach(yr2=>{
         const sts=[...new Set(locRows.filter(r=>String(r.yr)===String(yr2)).map(r=>r.st))];
-        const datCol=document.getElementById(t+'-c-date')?.value;
+        const datCol=getColVal(t,'date');
         const rawYr=state.raw.filter(r=>{
-          const cLoc=document.getElementById(t+'-c-loc')?.value;
-          const cYr=document.getElementById(t+'-c-year')?.value;
+          const cLoc=getColVal(t,'loc');
+          const cYr=getColVal(t,'year');
           return cLoc&&r[cLoc]===loc&&cYr&&String(r[cYr])===String(yr2);
         });
         const dates=datCol?rawYr.map(r=>r[datCol]).filter(Boolean).sort():[];

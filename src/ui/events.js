@@ -4,7 +4,8 @@
  */
 
 import { LANG, T, Tf } from '../utils/lang.js';
-import { getState, setRaw } from '../core/state.js';
+import { getState, setRaw, getColVal, getParamCols } from '../core/state.js';
+import { showColumnMappingScreen, exportConfigTemplate, importConfigTemplate } from './columnMapping.js';
 
 // ── Progress helpers ──────────────────────────────────────────────────────────
 
@@ -53,16 +54,20 @@ export function handleFile(t, file) {
       const data = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
 
       setRaw(t, data);
-      setupCols(t);
-      runDQ(t);
-
-      document.getElementById(`${t}-btn-run`).disabled = false;
 
       const fi = document.getElementById(`${t}-finfo`);
       fi.style.display = 'block';
       fi.innerHTML = `<b>${file.name}</b> — ${data.length} ${T('fi_rows')}, ${getState(t).cols.length} cols`;
-
       setSt(t, Tf('loaded', file.name, data.length), 'ok');
+
+      showColumnMappingScreen(t, {
+        onConfirm: () => {
+          runDQ(t);
+          rebuildRef(t);
+          buildRtypeFilter(t);
+          document.getElementById(`${t}-btn-run`).disabled = false;
+        },
+      });
     } catch (err) {
       setSt(t, T('err') + err.message, 'err');
     }
@@ -71,58 +76,11 @@ export function handleFile(t, file) {
   isCSV ? reader.readAsBinaryString(file) : reader.readAsArrayBuffer(file);
 }
 
-// ── Column setup ──────────────────────────────────────────────────────────────
-
-export function setupCols(t) {
-  const state = getState(t);
-  const cols  = state.cols;
-
-  const kw = {
-    area:  ['area','พื้นที่'],
-    loc:   ['location','loc','บริเวณ'],
-    st:    ['station','สถานี'],
-    depth: ['depth','ความลึก'],
-    dist:  ['distance','ระยะ'],
-    wl:    ['water level','waterlevel','ระดับน้ำ'],
-    year:  ['year','ปี'],
-    date:  ['date','วันที่','sampling_date'],
-    rtype: ['report_type','reporttype','ประเภท'],
-  };
-
-  ['area','loc','st','depth','dist','wl','year','date','rtype'].forEach(k => {
-    const el = document.getElementById(`${t}-c-${k}`);
-    if (!el) return;
-    const isOptional = ['depth','dist','wl','year','date'].includes(k);
-    el.innerHTML = '';
-    const noneOpt = document.createElement('option');
-    noneOpt.value = '';
-    noneOpt.textContent = isOptional ? T('col_none') : T('col_auto');
-    el.appendChild(noneOpt);
-    /* Column headers come from the uploaded file — build options via DOM
-       API so a header containing a quote can't corrupt the value attr */
-    cols.forEach(c => {
-      const opt = document.createElement('option');
-      opt.value = c;
-      opt.textContent = c;
-      el.appendChild(opt);
-    });
-    const match = cols.find(c => (kw[k] || []).some(w => c.toLowerCase().includes(w)));
-    if (match) el.value = match;
-  });
-
-  rebuildRef(t);
-
-  // Re-build ref list when station column changes
-  document.getElementById(`${t}-c-st`)?.addEventListener('change', () => rebuildRef(t));
-  // Build rtype filter when rtype column changes
-  document.getElementById(`${t}-c-rtype`)?.addEventListener('change', () => buildRtypeFilter(t));
-}
-
 // ── REF / Baseline station list ───────────────────────────────────────────────
 
 export function rebuildRef(t) {
   const state = getState(t);
-  const sc    = document.getElementById(`${t}-c-st`)?.value;
+  const sc    = getColVal(t, 'st');
 
   ['reflist','bslist'].forEach(listId => {
     const el  = document.getElementById(`${t}-${listId}`);
@@ -157,7 +115,7 @@ export function rebuildRef(t) {
 
 export function buildRtypeFilter(t) {
   const state    = getState(t);
-  const colRtype = document.getElementById(`${t}-c-rtype`)?.value || '';
+  const colRtype = getColVal(t, 'rtype') || '';
   const block    = document.getElementById(`${t}-rtype-block`);
   const body     = document.getElementById(`${t}-rtype-body`);
   if (!block || !body) return;
@@ -194,8 +152,7 @@ export function runDQ(t) {
   const state = getState(t);
   if (!state.raw.length) return;
 
-  const metaCols  = new Set(['area','loc','st','depth','dist','wl','year','date'].map(k => document.getElementById(`${t}-c-${k}`)?.value).filter(Boolean));
-  const paramCols = state.cols.filter(c => !metaCols.has(c) && !c.toUpperCase().startsWith('MRL_'));
+  const paramCols = getParamCols(t);
   const issues    = [];
 
   paramCols.forEach(col => {
@@ -300,6 +257,41 @@ export function wireEvents(t, { loadDemo, runAnalysis, renderFns, downloadTempla
   el.querySelectorAll(`[data-settings="${t}"]`).forEach(btn =>
     btn.addEventListener('click', () => openSettings(t))
   );
+
+  // Edit column mapping
+  el.querySelectorAll(`[data-editmap="${t}"]`).forEach(btn =>
+    btn.addEventListener('click', () => showColumnMappingScreen(t, {
+      onConfirm: () => {
+        runDQ(t);
+        rebuildRef(t);
+        buildRtypeFilter(t);
+        if (getState(t).analyzed) runAnalysis(t);
+      },
+    }))
+  );
+
+  // Export / Import config template
+  el.querySelectorAll(`[data-exportmap="${t}"]`).forEach(btn =>
+    btn.addEventListener('click', () => exportConfigTemplate(t))
+  );
+  el.querySelectorAll(`[data-importmap="${t}"]`).forEach(btn =>
+    btn.addEventListener('click', () => document.getElementById(`${t}-importmap-fi`)?.click())
+  );
+  document.getElementById(`${t}-importmap-fi`)?.addEventListener('change', e => {
+    const f = e.target.files[0];
+    e.target.value = '';
+    if (!f) return;
+    importConfigTemplate(t, f, draft => showColumnMappingScreen(t, {
+      prefill: draft,
+      onConfirm: () => {
+        runDQ(t);
+        rebuildRef(t);
+        buildRtypeFilter(t);
+        document.getElementById(`${t}-btn-run`).disabled = false;
+        if (getState(t).analyzed) runAnalysis(t);
+      },
+    }));
+  });
 
   // Export Excel
   el.querySelectorAll(`[data-export="${t}"]`).forEach(btn =>

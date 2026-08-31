@@ -5,8 +5,8 @@
 
 import { LANG, L, T, Tf } from '../utils/lang.js';
 import { STD } from './standards.js';
-import { resP, chkStd } from './analysis.js';
-import { getState, setRows, getColVal } from './state.js';
+import { chkStd } from './analysis.js';
+import { getState, setRows, getColVal, getParamCols, resolveCanonical } from './state.js';
 
 /** Get value from a row column, return '-' if missing */
 const gM = (row, col) => col && row[col] != null ? String(row[col]) : '-';
@@ -23,7 +23,7 @@ function getBsSet(t) {
 
 /** Get report type filter */
 function filterByRtype(rows, t) {
-  const colRtype = document.getElementById(t + '-c-rtype')?.value || '';
+  const colRtype = getColVal(t, 'rtype') || '';
   if (!colRtype) return rows;
   const sel = document.getElementById(t + '-rtype-sel');
   const selected = sel ? [...sel.querySelectorAll('input:checked')].map(i => i.value) : [];
@@ -62,32 +62,24 @@ export function runCore(t) {
 
   try {
     // Column mappings
-    const colArea  = getColVal(t, 'area');
-    const colLoc   = getColVal(t, 'loc');
-    const colSt    = getColVal(t, 'st');
-    const colYr    = getColVal(t, 'year');
-    const colDist  = getColVal(t, 'dist');
-    const colDate  = getColVal(t, 'date');
-    const colWL    = getColVal(t, 'wl');
+    const colArea    = getColVal(t, 'area');
+    const colProject = getColVal(t, 'project');
+    const colLoc     = getColVal(t, 'loc');
+    const colSt      = getColVal(t, 'st');
+    const colYr      = getColVal(t, 'year');
+    const colDist    = getColVal(t, 'dist');
+    const colDirection = getColVal(t, 'direction');
+    const colUtmN    = getColVal(t, 'utmN');
+    const colUtmE    = getColVal(t, 'utmE');
+    const colDate    = getColVal(t, 'date');
+    const colWL      = getColVal(t, 'wl');
 
     const refSet   = getRefSet(t);
     const bsSet    = getBsSet(t);
 
-    // Identify meta vs parameter columns
-    const metaCols = new Set(
-      ['area','loc','st','depth','dist','year','date','wl']
-        .map(k => document.getElementById(`${t}-c-${k}`)?.value)
-        .filter(Boolean)
-    );
-    state.cols
-      .filter(c => ['year','round','date','วันที่','ปี'].some(k => c.toLowerCase().includes(k)))
-      .forEach(c => metaCols.add(c));
-
-    const paramCols = state.cols.filter(c =>
-      !metaCols.has(c) &&
-      !c.toUpperCase().startsWith('MRL_') &&
-      state.raw.some(r => r[c] != null && !isNaN(parseFloat(r[c])))
-    );
+    // Parameter columns come straight from the confirmed column mapping
+    // (role = "Parameter"), no more DOM-scraping/heuristic detection.
+    const paramCols = getParamCols(t);
 
     // Apply report type filter
     const rawFiltered = filterByRtype(state.raw, t);
@@ -99,7 +91,7 @@ export function runCore(t) {
       paramCols.forEach(col => {
         if (row[col] == null || isNaN(parseFloat(row[col]))) return;
         const v      = parseFloat(row[col]);
-        const pk     = resP(col);
+        const pk     = resolveCanonical(t, col);
         const stdDef = (STD[t] || {})[pk] || {};
         const sc     = chkStd(t, pk, v);
         const stName = gM(row, colSt);
@@ -107,11 +99,15 @@ export function runCore(t) {
 
         rows.push({
           area:       gM(row, colArea),
+          proj:       gM(row, colProject),
           loc:        gM(row, colLoc),
           st:         stName,
           yr:         colYr && row[colYr] ? parseFloat(row[colYr]) : null,
           date:       colDate && row[colDate] ? String(row[colDate]) : null,
           dist:       colDist && row[colDist] != null ? parseFloat(row[colDist]) : null,
+          direction:  gM(row, colDirection),
+          utmN:       colUtmN && row[colUtmN] != null ? parseFloat(row[colUtmN]) : null,
+          utmE:       colUtmE && row[colUtmE] != null ? parseFloat(row[colUtmE]) : null,
           wl:         colWL  && row[colWL]  != null ? String(row[colWL]).trim() : null,
           col, pk, val: v,
           unit:       stdDef.unit  || '',
@@ -172,7 +168,7 @@ export function runCore(t) {
     fillSel(`${t}-yr-par`, params, l.f_all);
 
     // Distance filter
-    const distColV = document.getElementById(`${t}-c-dist`)?.value;
+    const distColV = getColVal(t, 'dist');
     const dists = distColV
       ? [...new Set(state.raw.map(r => parseFloat(r[distColV])).filter(v => !isNaN(v)))].sort((a,b) => a-b)
       : [];

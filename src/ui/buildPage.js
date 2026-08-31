@@ -5,6 +5,7 @@
 
 import { LANG, L } from '../utils/lang.js';
 import { TYPE_CFG, STD } from '../core/standards.js';
+import { renderColMapSummary } from './columnMapping.js';
 
 /** Build the standard reference table for tab pane 8 */
 function buildStdRef(t) {
@@ -90,25 +91,16 @@ export function buildPage(t, el) {
       <div class="sb-block collapsible collapsed">
         <div class="sb-title" data-toggle-sb>${l.cols}</div>
         <div class="sb-body">
-          ${['area','loc','st'].map(k=>`
-            <div class="field">
-              <label>${l['col_'+k]}</label>
-              <select id="${t}-c-${k}"><option value="" class="f-all-opt">${l.col_auto}</option></select>
-            </div>`).join('')}
-          ${t==='sea' ? `<div class="field"><label>${l.col_depth}</label><select id="${t}-c-depth"><option value="">${l.col_none}</option></select></div>` : ''}
-          ${t==='sea' ? `<div class="field"><label>${l.col_wl}</label><select id="${t}-c-wl"><option value="">${l.col_none}</option></select></div>` : ''}
-          ${t==='sed' ? `<div class="field"><label>${l.col_dist}</label><select id="${t}-c-dist"><option value="">${l.col_none}</option></select></div>` : ''}
-          <div class="field">
-            <label>${l.col_year}</label>
-            <select id="${t}-c-year"><option value="">${l.col_none}</option></select>
+          <div class="colmap-summary" id="${t}-colmap-summary">
+            <p style="font-size:12px;color:var(--text3);padding:4px">${isEN?'No file loaded yet':'ยังไม่ได้โหลดไฟล์'}</p>
           </div>
-          <div class="field">
-            <label style="font-size:10.5px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.4px">${isEN?'Sampling Date':'วันที่เก็บตัวอย่าง'}</label>
-            <select id="${t}-c-date"><option value="">${l.col_none}</option></select>
-          </div>
-          <div class="field">
-            <label>${l.col_rtype}</label>
-            <select id="${t}-c-rtype"><option value="">${l.col_none}</option></select>
+          <div class="colmap-sb-btns">
+            <button class="btn btn-outline btn-sm btn-full" data-editmap="${t}">${isEN?'Edit Mapping':'แก้ไขการจับคู่'}</button>
+            <div style="display:flex;gap:6px;margin-top:6px">
+              <button class="btn btn-outline btn-sm" style="flex:1" data-exportmap="${t}">${isEN?'Export':'Export'}</button>
+              <button class="btn btn-outline btn-sm" style="flex:1" data-importmap="${t}">${isEN?'Import':'Import'}</button>
+            </div>
+            <input type="file" id="${t}-importmap-fi" accept=".json" style="display:none">
           </div>
         </div>
       </div>
@@ -387,4 +379,6 @@ export function buildPage(t, el) {
       slider.addEventListener('input', () => { label.textContent = slider.value + '%'; });
     }
   });
+
+  renderColMapSummary(t);
 }

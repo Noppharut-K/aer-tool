@@ -4,7 +4,7 @@
 
 import { LANG, L, T } from '../utils/lang.js';
 import { fmtD, fmt } from '../utils/fmt.js';
-import { getState } from '../core/state.js';
+import { getState, getColVal } from '../core/state.js';
 import { calcStat } from '../core/analysis.js';
 
 // ── Helper: filter rows by year and parameter selectors ──────────────────────
@@ -263,7 +263,7 @@ export function renderRAW(t) {
   if (!tblEl) return;
 
   const yr  = document.getElementById(`${t}-raw-yr`)?.value || 'all';
-  const yrCol = document.getElementById(`${t}-c-year`)?.value;
+  const yrCol = getColVal(t, 'year');
   let raw = state.raw;
   if (yr !== 'all' && yrCol) raw = raw.filter(r => String(r[yrCol]) === yr);
 

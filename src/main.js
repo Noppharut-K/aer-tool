@@ -4,7 +4,8 @@ import { TYPE_CFG } from './core/standards.js';
 import { getDemoData, DEMO_AUTO_TICKS } from './data/demo.js';
 import { getState, setRaw } from './core/state.js';
 import { buildPage } from './ui/buildPage.js';
-import { wireEvents, setSt, setupCols, runDQ } from './ui/events.js';
+import { wireEvents, setSt, runDQ, rebuildRef, buildRtypeFilter } from './ui/events.js';
+import { showColumnMappingScreen } from './ui/columnMapping.js';
 import { renderOV, renderST, renderSTD, renderRAW } from './ui/renders.js';
 import { renderCMP, renderBS, renderYR, renderMK, renderChart } from './ui/renders2.js';
 import { renderParaSea, renderParaSed, renderParaGeneric } from './ui/renderPara.js';
@@ -40,17 +41,24 @@ function loadDemo(t) {
   const data = getDemoData()[t];
   if (!data) return;
   setRaw(t, data);
-  setupCols(t);
-  runDQ(t);
-  document.getElementById(`${t}-btn-run`).disabled = false;
+
   const fi = document.getElementById(`${t}-finfo`);
   fi.style.display = 'block';
   fi.innerHTML = `<b>Demo: ${TYPE_CFG[t].name}</b> — ${data.length} rows · 2 locations · 10 stations · 4 yrs`;
   setSt(t, 'โหลด Demo สำเร็จ กด "วิเคราะห์ข้อมูล" เพื่อเริ่ม', 'ok');
-  setTimeout(() => {
-    document.querySelectorAll(`.rck-${t}`).forEach(cb => { if (cb.value === DEMO_AUTO_TICKS.ref) cb.checked = true; });
-    document.querySelectorAll(`.bck-${t}`).forEach(cb => { if (cb.value === DEMO_AUTO_TICKS.baseline) cb.checked = true; });
-  }, 80);
+
+  showColumnMappingScreen(t, {
+    onConfirm: () => {
+      runDQ(t);
+      rebuildRef(t);
+      buildRtypeFilter(t);
+      document.getElementById(`${t}-btn-run`).disabled = false;
+      setTimeout(() => {
+        document.querySelectorAll(`.rck-${t}`).forEach(cb => { if (cb.value === DEMO_AUTO_TICKS.ref) cb.checked = true; });
+        document.querySelectorAll(`.bck-${t}`).forEach(cb => { if (cb.value === DEMO_AUTO_TICKS.baseline) cb.checked = true; });
+      }, 80);
+    },
+  });
 }
 
 function openPage(t) {
