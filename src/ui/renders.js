@@ -1,359 +1,172 @@
 /**
- * renders.js — UI render functions for all analysis tabs
+ * renders.js — Data Overview dashboard: KPI strip, pivot-style grouped
+ * table (column picker), search + pagination, empty states.
  */
 
-import { LANG, L, T } from '../utils/lang.js';
-import { fmtD, fmt } from '../utils/fmt.js';
-import { getState, getColVal } from '../core/state.js';
-import { calcStat, computeOutlierStats } from '../core/analysis.js';
+import { LANG } from '../utils/lang.js';
+import { getState, getParamCols } from '../core/state.js';
+import { calcStat, computeOutlierStats, fmtVal } from '../core/analysis.js';
 import { wireSearch, wirePagination } from './tableControls.js';
 
-// ── Helper: filter rows by year and parameter selectors ──────────────────────
-export function flt(t, yrId, pId) {
-  let r = getState(t).rows.filter(rr => !rr.is_ref);
-  const yr = document.getElementById(`${t}-${yrId}`)?.value || 'all';
-  const p  = document.getElementById(`${t}-${pId}`)?.value  || 'all';
-  if (yr !== 'all') r = r.filter(rr => String(rr.yr) === yr);
-  if (p  !== 'all') r = r.filter(rr => rr.col === p);
-  return r;
+const PAGE_SIZE = 20;
+const FIELD_LABEL = { year: { th: 'ปี', en: 'Year' }, loc: { th: 'Location', en: 'Location' }, st: { th: 'Station', en: 'Station' }, wl: { th: 'ระดับความลึก', en: 'Depth level' } };
+const FIELD_ROWKEY = { year: 'yr', loc: 'loc', st: 'st', wl: 'wl' };
+const DIM_ORDER = ['year', 'loc', 'st', 'wl'];
+
+function checkedFields(t) {
+  return [...document.querySelectorAll(`.fp-check[data-t="${t}"]:checked`)].map(c => c.value)
+    .sort((a, b) => DIM_ORDER.indexOf(a) - DIM_ORDER.indexOf(b));
 }
 
-// ── mkTbl — build a data table, optionally with click-to-sort headers ───────
-/**
- * @param {?Array<?(string|(row:any)=>any)>} sortKeys - parallel array to
- *   `ths`; null/undefined entries are non-sortable columns, a string is a
- *   row property name, a function is a row->value accessor. Omit entirely
- *   for a plain (non-sortable) table — existing callers are unaffected.
- */
-export function mkTbl(el, ths, rows, fn, title, sortKeys) {
-  if (!rows || !rows.length) {
-    el.innerHTML = `<div class="empty-state"><p>${T('es_nodata')}</p></div>`;
-    return;
-  }
-  const txtPat = /^(location|parameter|station|area|หน่วย|unit|ชื่อ|name|label|สถานี|พื้นที่|บริเวณ|ผลเปรียบเทียบ|ผลการเปรียบเทียบ|ผลเทียบมาตรฐาน|standard|มีนัย|sig|แนวโน้ม|trend|ระดับ|level|diff)/i;
-
-  const curCol = sortKeys && el.dataset.sortCol != null ? +el.dataset.sortCol : null;
-  const curDir = el.dataset.sortDir || 'asc';
-  let sortedRows = rows;
-  if (sortKeys && curCol != null && sortKeys[curCol]) {
-    const keyFn = typeof sortKeys[curCol] === 'function' ? sortKeys[curCol] : (r => r[sortKeys[curCol]]);
-    sortedRows = [...rows].sort((a, b) => {
-      const av = keyFn(a), bv = keyFn(b);
-      const cmp = av > bv ? 1 : av < bv ? -1 : 0;
-      return curDir === 'asc' ? cmp : -cmp;
-    });
-  }
-
-  const thHtml = ths.map((h, i) => {
-    const isTxt = txtPat.test(typeof h === 'string' ? h : '');
-    const sortable = sortKeys && sortKeys[i];
-    const cls = [isTxt ? 'txt' : '', sortable ? 'sortable-th' : ''].filter(Boolean).join(' ');
-    const arrow = sortable && curCol === i ? (curDir === 'asc' ? ' ▲' : ' ▼') : '';
-    return `<th${cls ? ` class="${cls}"` : ''}${sortable ? ` data-sort-idx="${i}"` : ''}>${h}${arrow}</th>`;
-  }).join('');
-  const titleHtml = title
-    ? `<div style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;padding:8px 4px 4px">${title}</div>`
-    : '';
-  el.innerHTML = titleHtml + `<table><thead><tr>${thHtml}</tr></thead><tbody>${sortedRows.map(fn).join('')}</tbody></table>`;
-
-  if (sortKeys) {
-    el.querySelectorAll('th[data-sort-idx]').forEach(th => {
-      th.addEventListener('click', () => {
-        const idx = +th.dataset.sortIdx;
-        if (curCol === idx) el.dataset.sortDir = curDir === 'asc' ? 'desc' : 'asc';
-        else { el.dataset.sortCol = idx; el.dataset.sortDir = 'asc'; }
-        mkTbl(el, ths, rows, fn, title, sortKeys);
-      });
-    });
-  }
-}
-
-// ── Traffic Light (Overview pane) ────────────────────────────────────────────
-export function renderTL(t) {
-  const grid = document.getElementById(`${t}-tl-grid`);
-  if (!grid) return;
-
-  const yr   = document.getElementById(`${t}-ov-yr`)?.value  || 'all';
-  const locF = document.getElementById(`${t}-ov-loc`)?.value || 'all';
-
-  if (yr === 'all') {
-    grid.innerHTML = `<div style="padding:12px 16px;background:var(--blue-l);border:1px solid var(--blue-m);border-radius:var(--rm);font-size:13px;color:var(--blue);display:flex;align-items:center;gap:8px">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-      ${LANG === 'en' ? 'Select a year in the filter above to view Status Summary' : 'เลือกปีใน filter เพื่อดู Status Summary'}
-    </div>`;
-    return;
-  }
-
-  let rows = getState(t).rows.filter(r => !r.is_ref && String(r.yr ?? '—') === yr);
-  if (locF !== 'all') rows = rows.filter(r => r.loc === locF);
-
-  if (!rows.length) {
-    grid.innerHTML = `<div class="empty-state"><p>${T('es_nodata')}</p></div>`;
-    return;
-  }
-
-  const map = {};
-  rows.forEach(r => {
-    if (!map[r.loc]) map[r.loc] = { loc: r.loc, excP: new Set() };
-    if (r.exceed) map[r.loc].excP.add(r.col);
-  });
-
-  grid.innerHTML = Object.values(map).sort((a, b) => a.loc.localeCompare(b.loc)).map(d => {
-    const isRed  = d.excP.size > 0;
-    const excStr = [...d.excP].slice(0, 4).join(', ') + (d.excP.size > 4 ? ` +${d.excP.size - 4}` : '');
-    return `<div class="tl-card">
-      <div style="padding-top:4px;flex-shrink:0"><div class="${isRed ? 'tl-red' : 'tl-green'}"></div></div>
-      <div class="tl-info">
-        <div class="tl-loc">${d.loc}</div>
-        <div class="tl-yr">${LANG === 'en' ? 'Year' : 'ปี'} ${yr}</div>
-        <div class="tl-params">${isRed
-          ? `<span style="color:var(--red);font-weight:600;font-size:12px">${excStr}</span>`
-          : `<span style="color:var(--green);font-size:12px">${T('b_pass')}</span>`
-        }</div>
-      </div>
-    </div>`;
-  }).join('');
-}
-
-const OV_PAGE_SIZE = 20;
-
-// ── Overview Table ────────────────────────────────────────────────────────────
-export function renderOV(t) {
-  renderTL(t);
-  const rows = flt(t, 'ov-yr', 'ov-p');
-  const tblEl = document.getElementById(`${t}-tbl-ov`);
-  if (!tblEl) return;
-
-  if (!rows.length) {
-    tblEl.innerHTML = `<div class="empty-state"><p>${T('es_nodata')}</p></div>`;
-    document.getElementById(`${t}-ov-page`)?.replaceChildren();
-    return;
-  }
-
-  const locF = document.getElementById(`${t}-ov-loc`)?.value || 'all';
-  const wlF  = document.getElementById(`${t}-ov-wl`)?.value  || 'all';
-  let filteredRows = locF !== 'all' ? rows.filter(r => r.loc === locF) : rows;
-  if (wlF !== 'all') filteredRows = filteredRows.filter(r => r.wl === wlF);
-
-  // Text search — restricts which raw measurements feed the aggregation
-  // below, so searching a station/location name narrows the resulting
-  // param×year groups to ones that actually include it
-  const searchEl = document.getElementById(`${t}-ov-search`);
-  wireSearch(searchEl, filteredRows,
-    (r, q) => r.col.toLowerCase().includes(q) || (r.loc||'').toLowerCase().includes(q) || (r.st||'').toLowerCase().includes(q),
-    searchedRows => renderOVTable(t, tblEl, searchedRows)
-  );
-}
-
-function renderOVTable(t, tblEl, filteredRows) {
-  if (!filteredRows.length) {
-    tblEl.innerHTML = `<div class="empty-state"><p>${T('es_nodata')}</p></div>`;
-    document.getElementById(`${t}-ov-page`)?.replaceChildren();
-    return;
-  }
-
-  const zThreshold = parseFloat(document.getElementById(`${t}-ov-outlier`)?.value);
-  const showExceedOnly = document.getElementById(`${t}-sc-ep-card`)?.classList.contains('active');
-
-  const map = {};
-  filteredRows.forEach(r => {
-    const k = r.col + '||' + (r.yr ?? '—');
-    if (!map[k]) map[k] = { col: r.col, unit: r.unit, yr: r.yr ?? '—', vals: [], excSt: new Set(), total: 0 };
-    map[k].vals.push(r.val);
-    map[k].total++;
-    if (r.exceed) map[k].excSt.add(r.st);
-  });
-
-  let data = Object.values(map).sort((a, b) => a.col.localeCompare(b.col) || (a.yr > b.yr ? 1 : -1));
-  if (showExceedOnly) data = data.filter(d => d.excSt.size > 0);
-
-  const l = L[LANG] || L.th;
-  const ths = [l.th_p, l.th_yr, l.th_u, l.th_n, l.th_min, l.th_max, l.th_mean, l.th_sd, isEN()?'Outliers':'ค่าผิดปกติ', l.th_exst, l.th_exn, l.th_exfq, l.th_stat];
-  const sortKeys = [
-    d => d.col, d => d.yr, null,
-    d => calcStat(d.vals).n, d => calcStat(d.vals).min, d => calcStat(d.vals).max,
-    d => calcStat(d.vals).mean, d => calcStat(d.vals).sd,
-    d => outlierCount(d.vals, zThreshold),
-    null, d => d.excSt.size, d => d.excSt.size, d => d.excSt.size > 0 ? 1 : 0,
-  ];
-
-  const rowFn = d => {
-    const st = calcStat(d.vals);
-    const stationsInGroup = new Set(filteredRows.filter(r => r.col === d.col && String(r.yr ?? '—') === String(d.yr)).map(r => r.st)).size;
-    const excPct = stationsInGroup > 0 ? Math.round(d.excSt.size / stationsInGroup * 100) : 0;
-    const outCount = outlierCount(d.vals, zThreshold);
-    return `<tr>
-      <td class="em">${d.col}</td>
-      <td class="num">${d.yr}</td>
-      <td>${d.unit}</td>
-      <td class="num">${st.n}</td>
-      <td class="num">${fmtD(st.min, t, d.col)}</td>
-      <td class="num">${fmtD(st.max, t, d.col)}</td>
-      <td class="num">${fmtD(st.mean, t, d.col)}</td>
-      <td class="num">${fmtD(st.sd, t, d.col)}</td>
-      <td class="num">${outCount > 0 ? `<span class="badge badge-amber">${outCount}</span>` : '—'}</td>
-      <td class="num" style="font-size:12px;max-width:180px">${d.excSt.size > 0
-        ? `<span style="color:var(--red);font-weight:600">${[...d.excSt].join(', ')}</span>`
-        : '—'}</td>
-      <td class="num">${d.excSt.size > 0 ? `<span class="badge badge-red">${d.excSt.size}</span>` : '—'}</td>
-      <td class="num">${d.excSt.size > 0 ? `<span style="color:var(--red);font-weight:600">${excPct}%</span>` : '—'}</td>
-      <td class="num">${d.excSt.size > 0
-        ? `<span class="badge badge-red">${T('b_exc')}</span>`
-        : `<span class="badge badge-green">${T('b_pass')}</span>`}</td>
-    </tr>`;
-  };
-
-  wirePagination(document.getElementById(`${t}-ov-page`), data, OV_PAGE_SIZE,
-    pageData => mkTbl(tblEl, ths, pageData, rowFn, null, sortKeys)
-  );
-}
-
-function outlierCount(vals, zThreshold) {
-  if (!(zThreshold > 0)) return 0;
-  const { isOutlier } = computeOutlierStats(vals, zThreshold);
-  return vals.filter(isOutlier).length;
-}
-
-function isEN() { return LANG === 'en'; }
-
-// ── Statistics Table ──────────────────────────────────────────────────────────
-export function renderST(t) {
-  const distF         = document.getElementById(`${t}-st-dist`)?.value || 'all';
-  const wlF            = document.getElementById(`${t}-st-wl`)?.value   || 'all';
-  const grp           = document.getElementById(`${t}-st-grp`)?.value  || 'param';
-  const outlierMethod = document.getElementById(`${t}-st-outlier`)?.value || 'none';
-  const l             = L[LANG] || L.th;
-  const tblEl         = document.getElementById(`${t}-tbl-st`);
-  if (!tblEl) return;
-
-  let rows = flt(t, 'st-yr', 'st-p');
-  if (distF !== 'all') rows = rows.filter(r => String(r.dist) === distF || r.dist === parseFloat(distF));
-  if (wlF !== 'all') rows = rows.filter(r => r.wl === wlF);
-  if (!rows.length) { tblEl.innerHTML = `<div class="empty-state"><p>${T('es_nodata')}</p></div>`; return; }
-
-  const map = {};
-  rows.forEach(r => {
-    const yrKey = r.yr ? '||' + r.yr : '';
-    const k = grp === 'param' ? r.col
-            : grp === 'loc'   ? r.loc + '||' + r.col
-            :                   r.st + '||' + r.loc + '||' + r.col + yrKey;
-    if (!map[k]) map[k] = { ...r, vals: [] };
-    map[k].vals.push(r.val);
-  });
-
-  // Build per-col distribution for outlier detection
-  const rawByCol = {};
-  rows.forEach(r => {
-    if (!rawByCol[r.col]) rawByCol[r.col] = [];
-    rawByCol[r.col].push(r.val);
-  });
-
-  const data = Object.values(map).map(d => ({ ...d, ...calcStat(d.vals) }));
-
-  // Outlier detection
-  const outlierSet = new Set();
-  if (outlierMethod !== 'none') {
-    data.forEach(d => {
-      const colVals = rawByCol[d.col] || [];
-      if (outlierMethod === 'z2' || outlierMethod === 'z3') {
-        const { isOutlier } = computeOutlierStats(colVals, outlierMethod === 'z2' ? 2 : 3);
-        d.vals.forEach(v => { if (isOutlier(v)) outlierSet.add(d); });
-      }
-      if (outlierMethod === 'iqr') {
-        const sorted = [...colVals].sort((a,b)=>a-b);
-        const q1 = sorted[Math.floor(sorted.length*0.25)];
-        const q3 = sorted[Math.floor(sorted.length*0.75)];
-        const iqr = q3 - q1;
-        d.vals.forEach(v => { if (v < q1 - 1.5*iqr || v > q3 + 1.5*iqr) outlierSet.add(d); });
-      }
-    });
-  }
-
-  const hdr = grp === 'param' ? l.th_p
-            : grp === 'loc'   ? l.th_loc
-            :                   l.th_st;
-
-  mkTbl(tblEl,
-    [hdr, l.th_p, l.th_u, l.th_n, l.th_min, l.th_max, l.th_mean, l.th_med, l.th_sd],
-    data.sort((a, b) => (a.loc||'').localeCompare(b.loc||'') || a.col.localeCompare(b.col)),
-    d => {
-      const isOut = outlierSet.has(d);
-      const rowStyle = isOut ? ' style="background:var(--amber-l)"' : '';
-      const grpVal = grp === 'param' ? d.col
-                   : grp === 'loc'   ? d.loc
-                   :                   d.st;
-      return `<tr${rowStyle}>
-        <td class="em">${grpVal}${isOut ? ' <span class="badge badge-amber" style="font-size:10px">outlier</span>' : ''}</td>
-        <td>${grp === 'param' ? d.unit : d.col}</td>
-        <td>${grp === 'param' ? '' : d.unit}</td>
-        <td class="num">${d.n}</td>
-        <td class="num">${fmtD(d.min, t, d.col)}</td>
-        <td class="num">${fmtD(d.max, t, d.col)}</td>
-        <td class="num">${fmtD(d.mean, t, d.col)}</td>
-        <td class="num">${fmtD(d.med, t, d.col)}</td>
-        <td class="num">${fmtD(d.sd, t, d.col)}</td>
-      </tr>`;
-    }
-  );
-}
-
-// ── Standards Table ───────────────────────────────────────────────────────────
-export function renderSTD(t) {
-  const distF  = document.getElementById(`${t}-std-dist`)?.value  || 'all';
-  const wlF    = document.getElementById(`${t}-std-wl`)?.value    || 'all';
-  const showEx = document.getElementById(`${t}-std-show`)?.value  || 'all';
-  const locF   = document.getElementById(`${t}-std-loc`)?.value   || 'all';
-  const l      = L[LANG] || L.th;
-  const tblEl  = document.getElementById(`${t}-tbl-std`);
-  if (!tblEl) return;
-
-  let rows = flt(t, 'std-yr', 'std-p').filter(r => r.sc_status !== 'no_std');
-  if (distF  !== 'all') rows = rows.filter(r => String(r.dist) === distF);
-  if (wlF    !== 'all') rows = rows.filter(r => r.wl === wlF);
-  if (locF   !== 'all') rows = rows.filter(r => r.loc === locF);
-  if (showEx === 'exceed') rows = rows.filter(r => r.sc_status === 'exceed');
-
-  if (!rows.length) { tblEl.innerHTML = `<div class="empty-state"><p>${T('es_nodata')}</p></div>`; return; }
-
-  mkTbl(tblEl,
-    [l.th_p, l.th_yr, l.th_st, l.th_loc, l.th_u, l.th_val, l.th_res, l.th_stat],
-    rows.sort((a, b) => a.col.localeCompare(b.col) || a.loc.localeCompare(b.loc)),
-    d => `<tr>
-      <td class="em">${d.col}</td>
-      <td class="num">${d.yr ?? '—'}</td>
-      <td>${d.st}</td>
-      <td>${d.loc}</td>
-      <td>${d.unit}</td>
-      <td class="num" style="color:${d.sc_status==='exceed'?'var(--red)':'var(--text2)'}">${fmtD(d.val, t, d.col)}</td>
-      <td style="font-size:12px;color:var(--text3)">${d.sc_msg}</td>
-      <td class="num">${d.sc_status === 'exceed'
-        ? `<span class="badge badge-red">${T('b_exc')}</span>`
-        : `<span class="badge badge-green">${T('b_pass')}</span>`}</td>
-    </tr>`
-  );
-}
-
-// ── Raw Data Table ────────────────────────────────────────────────────────────
-export function renderRAW(t) {
+export function renderDashboard(t) {
+  const isEN = LANG === 'en';
   const state = getState(t);
-  const tblEl = document.getElementById(`${t}-tbl-raw`);
-  if (!tblEl) return;
+  const body = document.getElementById(`${t}-dash-body`);
+  const tableCard = document.getElementById(`${t}-table-card`);
+  if (!body || !tableCard) return;
 
-  const yr  = document.getElementById(`${t}-raw-yr`)?.value || 'all';
-  const yrCol = getColVal(t, 'year');
-  let raw = state.raw;
-  if (yr !== 'all' && yrCol) raw = raw.filter(r => String(r[yrCol]) === yr);
+  updateFieldSummary(t);
 
-  if (!raw.length) { tblEl.innerHTML = `<div class="empty-state"><p>${T('es_raw')}</p></div>`; return; }
-
-  const cols = state.cols;
-  const ths  = cols.map(c => `<th>${c}</th>`).join('');
-  const tbody = raw.slice(0, 500).map(r =>
-    `<tr>${cols.map(c => `<td>${r[c] ?? '—'}</td>`).join('')}</tr>`
-  ).join('');
-
-  tblEl.innerHTML = `<table><thead><tr>${ths}</tr></thead><tbody>${tbody}</tbody></table>`;
-  if (raw.length > 500) {
-    tblEl.innerHTML += `<div style="padding:8px 14px;font-size:12px;color:var(--text3)">แสดง 500/${raw.length} rows</div>`;
+  if (!state.analyzed || !state.rows.length) {
+    body.classList.add('is-empty');
+    tableCard.innerHTML = `<div class="empty-state">
+      <div class="empty-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/></svg></div>
+      <h2>${state.raw.length ? (isEN ? 'Ready to analyze' : 'พร้อมวิเคราะห์ข้อมูล') : (isEN ? 'No data imported yet' : 'ยังไม่มีข้อมูลนำเข้า')}</h2>
+      <p>${state.raw.length
+        ? (isEN ? 'Column mapping is confirmed — click Run analysis to build the dashboard.' : 'ยืนยันการจับคู่คอลัมน์แล้ว — กด "วิเคราะห์ข้อมูล" เพื่อเริ่ม')
+        : (isEN ? 'Upload a wide-format Excel file or load the demo dataset to start.' : 'อัปโหลดไฟล์ Excel หรือกด "ทดลอง Demo" เพื่อเริ่มต้น')}</p>
+    </div>`;
+    document.getElementById(`${t}-kpi-strip`).innerHTML = '';
+    return;
   }
+  body.classList.remove('is-empty');
+
+  renderKPIs(t);
+
+  const dims = checkedFields(t);
+  const zThreshold = parseFloat(document.getElementById(`${t}-outlier`)?.value) || 0;
+  const groups = buildGroups(state.rows, dims);
+
+  const searchEl = document.getElementById(`${t}-search`);
+  wireSearch(searchEl, groups,
+    (g, q) => g.pk.toLowerCase().includes(q) || dims.some(d => String(g.dims[d] ?? '').toLowerCase().includes(q)),
+    filtered => renderTable(t, tableCard, filtered, dims, zThreshold)
+  );
+}
+
+function updateFieldSummary(t) {
+  const isEN = LANG === 'en';
+  const dims = checkedFields(t);
+  const el = document.getElementById(`${t}-fp-summary`);
+  if (el) el.textContent = dims.length ? dims.map(d => isEN ? FIELD_LABEL[d].en : FIELD_LABEL[d].th).join(' + ') : (isEN ? 'None' : 'ไม่มี');
+}
+
+function renderKPIs(t) {
+  const isEN = LANG === 'en';
+  const state = getState(t);
+  const rows = state.rows;
+  const zThreshold = parseFloat(document.getElementById(`${t}-outlier`)?.value) || 0;
+
+  const stations = new Set(rows.map(r => r.st)).size;
+  const parameters = new Set(rows.map(r => r.pk)).size;
+  const byPk = {};
+  rows.forEach(r => { (byPk[r.pk] ??= []).push(r); });
+  let exceeding = 0, passing = 0, notSet = 0, outlierCount = 0;
+  Object.values(byPk).forEach(group => {
+    const hasStd = group.some(r => r.sc_status !== 'no_std');
+    const hasExceed = group.some(r => r.sc_status === 'exceed');
+    if (!hasStd) notSet++;
+    else if (hasExceed) exceeding++;
+    else passing++;
+    if (zThreshold > 0) {
+      const { isOutlier } = computeOutlierStats(group.map(r => r.val), zThreshold);
+      outlierCount += group.filter(r => isOutlier(r.val)).length;
+    }
+  });
+
+  const cards = [
+    { label: isEN ? 'Stations' : 'สถานี', val: stations, sub: isEN ? 'total sampled' : 'จุดเก็บตัวอย่าง', cls: '' },
+    { label: isEN ? 'Parameters' : 'Parameters', val: parameters, sub: isEN ? 'tracked' : 'ที่ติดตาม', cls: '' },
+    { label: isEN ? 'Exceeding' : 'เกินมาตรฐาน', val: exceeding, sub: isEN ? 'parameters over standard' : 'parameter ที่เกิน', cls: 'kpi-exceed' },
+    { label: isEN ? `Outliers (${zThreshold || '—'}σ)` : `ค่าผิดปกติ (${zThreshold || '—'}σ)`, val: outlierCount, sub: isEN ? 'flagged values' : 'ค่าที่ถูกตั้งค่าสถานะ', cls: 'kpi-outlier' },
+    { label: isEN ? 'Passing' : 'ผ่านมาตรฐาน', val: passing, sub: isEN ? 'within all standards' : 'อยู่ในเกณฑ์ทั้งหมด', cls: 'kpi-ok' },
+  ];
+  document.getElementById(`${t}-kpi-strip`).innerHTML = cards.map(c => `
+    <div class="kpi-card ${c.cls}">
+      <div class="kpi-top"><span class="kpi-label">${c.label}</span></div>
+      <div class="kpi-val">${c.val}</div>
+      <div class="kpi-sub">${c.sub}</div>
+    </div>`).join('');
+}
+
+function buildGroups(rows, dims) {
+  const map = {};
+  rows.forEach(r => {
+    const keyParts = [r.pk, ...dims.map(d => String(r[FIELD_ROWKEY[d]] ?? '—'))];
+    const key = keyParts.join('||');
+    if (!map[key]) {
+      map[key] = { pk: r.pk, unit: r.unit, dims: {}, vals: [], statuses: [] };
+      dims.forEach(d => { map[key].dims[d] = r[FIELD_ROWKEY[d]] ?? '—'; });
+    }
+    map[key].vals.push(r.val);
+    map[key].statuses.push(r.sc_status);
+  });
+  return Object.values(map);
+}
+
+function renderTable(t, tableCard, groups, dims, zThreshold) {
+  const isEN = LANG === 'en';
+  if (!groups.length) {
+    tableCard.innerHTML = `<div class="empty-state"><p>${isEN ? 'No rows match your filters.' : 'ไม่มีข้อมูลตรงกับเงื่อนไข'}</p></div>`;
+    return;
+  }
+  groups.sort((a, b) => a.pk.localeCompare(b.pk) || dims.some(d => a.dims[d] !== b.dims[d]));
+
+  const dimHeaders = dims.map(d => isEN ? FIELD_LABEL[d].en : FIELD_LABEL[d].th);
+  const ths = ['Parameter', ...dimHeaders, isEN ? 'Unit' : 'หน่วย', 'n', 'Min', 'Max', 'Mean', 'SD', isEN ? 'Status' : 'สถานะ'];
+
+  tableCard.innerHTML = `
+    <div class="table-scroll">
+      <table>
+        <thead><tr>${ths.map((h, i) => `<th${i > 0 && i < ths.length - 1 ? ' class="num"' : ''}>${h}</th>`).join('')}</tr></thead>
+        <tbody id="${t}-tbody"></tbody>
+      </table>
+    </div>
+    <div class="table-foot"><div id="${t}-page"></div></div>`;
+
+  const tbody = document.getElementById(`${t}-tbody`);
+  wirePagination(document.getElementById(`${t}-page`), groups, PAGE_SIZE, pageGroups => {
+    tbody.innerHTML = pageGroups.map(g => rowHtml(g, dims, zThreshold, isEN)).join('');
+  });
+}
+
+function rowHtml(g, dims, zThreshold, isEN) {
+  const st = calcStat(g.vals);
+  const hasStd = g.statuses.some(s => s !== 'no_std');
+  const exceedN = g.statuses.filter(s => s === 'exceed').length;
+  const status = !hasStd
+    ? `<span class="chip chip-unset">${isEN ? 'Not yet set' : 'ยังไม่ตั้งมาตรฐาน'}</span>`
+    : exceedN > 0
+      ? `<span class="chip chip-exceed">${isEN ? `${exceedN} exceeding` : `เกิน ${exceedN} ค่า`}</span>`
+      : `<span class="chip chip-ok">${isEN ? 'Within limits' : 'อยู่ในเกณฑ์'}</span>`;
+
+  let outlierTag = '';
+  if (zThreshold > 0) {
+    const { isOutlier } = computeOutlierStats(g.vals, zThreshold);
+    const n = g.vals.filter(isOutlier).length;
+    if (n > 0) outlierTag = `<span class="row-outlier-tag"><span class="chip chip-outlier">${n} ${isEN ? 'outlier' : 'ผิดปกติ'}${n > 1 ? 's' : ''}</span></span>`;
+  }
+
+  const dimCells = dims.map(d => `<td>${g.dims[d]}</td>`).join('');
+  return `<tr class="${exceedN > 0 ? 'row-exceed' : ''}">
+    <td class="param-cell">${g.pk}${outlierTag}</td>
+    ${dimCells}
+    <td>${g.unit || '—'}</td>
+    <td class="num">${st.n}</td>
+    <td class="num">${fmtVal(st.min)}</td>
+    <td class="num">${fmtVal(st.max)}</td>
+    <td class="num">${fmtVal(st.mean)}</td>
+    <td class="num">${fmtVal(st.sd)}</td>
+    <td>${status}</td>
+  </tr>`;
 }

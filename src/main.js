@@ -1,68 +1,27 @@
 import './style.css';
-import { L, LANG, setLang } from './utils/lang.js';
+import { LANG, setLang } from './utils/lang.js';
 import { TYPE_CFG } from './core/standards.js';
-import { getDemoData, DEMO_AUTO_TICKS } from './data/demo.js';
-import { getState, setRaw } from './core/state.js';
+import { getDemoData } from './data/demo.js';
+import { getState } from './core/state.js';
 import { buildPage } from './ui/buildPage.js';
-import { wireEvents, setSt, runDQ, rebuildRef, buildRtypeFilter } from './ui/events.js';
-import { showColumnMappingScreen } from './ui/columnMapping.js';
-import { renderOV, renderST, renderSTD, renderRAW } from './ui/renders.js';
-import { renderCMP, renderBS, renderYR, renderMK, renderChart } from './ui/renders2.js';
-import { renderParaSea, renderParaSed, renderParaGeneric } from './ui/renderPara.js';
-import { runAnalysis } from './core/runAnalysis.js';
+import { wireEvents, loadDemoInto } from './ui/events.js';
+import { renderDashboard } from './ui/renders.js';
+import { downloadTemplate, doExport } from './ui/actions.js';
 import { buildBioPage } from './ui/buildBioPage.js';
-import { doExport, openSettings, downloadTemplate } from './ui/actions.js';
-
-const renderFns = {
-  ov:    renderOV,
-  st:    renderST,
-  std:   renderSTD,
-  raw:   renderRAW,
-  ref:   renderCMP,
-  bs:    renderBS,
-  yr:    renderYR,
-  mk:    renderMK,
-  chart: renderChart,
-  para: t => {
-    const box = document.getElementById(`${t}-para-box`);
-    if (!box) return;
-    try {
-      if (t === 'sea') box.innerHTML = renderParaSea(t);
-      else if (t === 'sed') box.innerHTML = renderParaSed(t);
-      else box.innerHTML = renderParaGeneric(t);
-    } catch(e) {
-      box.innerHTML = `<span style="color:var(--red)">Error: ${e.message}</span>`;
-      console.error(e);
-    }
-  },
-};
 
 function loadDemo(t) {
   const data = getDemoData()[t];
   if (!data) return;
-  setRaw(t, data);
-
-  const fi = document.getElementById(`${t}-finfo`);
-  fi.style.display = 'block';
-  fi.innerHTML = `<b>Demo: ${TYPE_CFG[t].name}</b> — ${data.length} rows · 2 locations · 10 stations · 4 yrs`;
-  setSt(t, 'โหลด Demo สำเร็จ กด "วิเคราะห์ข้อมูล" เพื่อเริ่ม', 'ok');
-
-  showColumnMappingScreen(t, {
-    onConfirm: () => {
-      runDQ(t);
-      rebuildRef(t);
-      buildRtypeFilter(t);
-      document.getElementById(`${t}-btn-run`).disabled = false;
-      setTimeout(() => {
-        document.querySelectorAll(`.rck-loc-${t}`).forEach(cb => {
-          if (cb.value === DEMO_AUTO_TICKS.ref) { cb.checked = true; cb.dispatchEvent(new Event('change', { bubbles: true })); }
-        });
-        document.querySelectorAll(`.bck-loc-${t}`).forEach(cb => {
-          if (cb.value === DEMO_AUTO_TICKS.baseline) { cb.checked = true; cb.dispatchEvent(new Event('change', { bubbles: true })); }
-        });
-      }, 80);
-    },
+  loadDemoInto(t, data, {
+    name: `Demo: ${TYPE_CFG[t].name}`,
+    sub: `${data.length} ${LANG === 'en' ? 'rows' : 'แถว'} · 2 locations · 10 stations · 4 yrs`,
   });
+}
+
+function buildAndWire(t, el) {
+  buildPage(t, el);
+  wireEvents(t, { loadDemo, downloadTemplate, doExport });
+  renderDashboard(t);
 }
 
 function openPage(t) {
@@ -71,23 +30,8 @@ function openPage(t) {
   const el = document.getElementById('page-' + t);
   if (!el) return;
   if (!el.dataset.built) {
-    if (t === 'bio') {
-      buildBioPage(el);
-    } else {
-      buildPage(t, el);
-      wireEvents(t, {
-        loadDemo,
-        runAnalysis: t => runAnalysis(t, renderFns),
-        renderFns,
-        downloadTemplate: t => downloadTemplate(t),
-        openSettings:     (t, startTab) => openSettings(t, startTab),
-        doExport:         t => doExport(t),
-        copyPara:         t => {
-          const box = document.getElementById(`${t}-para-box`);
-          if (box) navigator.clipboard.writeText(box.textContent).then(() => setSt(t,'คัดลอกแล้ว ✓','ok'));
-        },
-      });
-    }
+    if (t === 'bio') buildBioPage(el);
+    else buildAndWire(t, el);
     el.dataset.built = '1';
   }
   el.classList.add('show');
@@ -98,7 +42,7 @@ function goHome() {
   document.getElementById('page-home').style.display = 'flex';
 }
 
-// ── Home events (delegated) ───────────────────────────────────────────────────
+// ── Home events (delegated) ──────────────────────────────────────────────
 document.querySelectorAll('.tc[data-tab]').forEach(card => {
   card.addEventListener('click', () => openPage(card.dataset.tab));
 });
@@ -108,23 +52,23 @@ document.addEventListener('click', e => {
   if (e.target.closest('.theme-toggle')) toggleTheme();
 });
 
-// ── Lang toggle ───────────────────────────────────────────────────────────────
+// ── Lang toggle ───────────────────────────────────────────────────────────
 function buildHome() {
   const isEN = LANG === 'en';
   document.getElementById('home-title').textContent = isEN ? 'Environmental Data Analysis' : 'วิเคราะห์ข้อมูลสิ่งแวดล้อม';
-  document.getElementById('home-sub').textContent   = isEN ? 'systematically' : 'อย่างมีระบบ';
-  document.getElementById('home-desc').textContent  = isEN ? 'Select data type to analyze' : 'เลือกประเภทข้อมูลที่ต้องการวิเคราะห์';
+  document.getElementById('home-sub').textContent = isEN ? 'systematically' : 'อย่างมีระบบ';
+  document.getElementById('home-desc').textContent = isEN ? 'Select data type to analyze' : 'เลือกประเภทข้อมูลที่ต้องการวิเคราะห์';
   const cards = {
-    sea:   { name:'Seawater',      subTH:'Water quality · Standards · Trends',  subEN:'Water quality · Standards · Trends' },
-    sed:   { name:'Sediment',      subTH:'Sediment quality · Standards · Trends', subEN:'Sediment quality · Standards · Trends' },
-    bio:   { name:'Biology',       subTH:'Benthos · Phyto · Zoo · Fish Larvae · Larvae', subEN:'Benthos · Phyto · Zoo · Fish Larvae · Larvae' },
+    sea: { name: 'Seawater', subTH: 'Water quality · Standards · Trends', subEN: 'Water quality · Standards · Trends' },
+    sed: { name: 'Sediment', subTH: 'Sediment quality · Standards · Trends', subEN: 'Sediment quality · Standards · Trends' },
+    bio: { name: 'Biology', subTH: 'Benthos · Phyto · Zoo · Fish Larvae · Larvae', subEN: 'Benthos · Phyto · Zoo · Fish Larvae · Larvae' },
   };
   document.querySelectorAll('.tc[data-tab]').forEach(card => {
     const cfg = cards[card.dataset.tab]; if (!cfg) return;
     const nameEl = card.querySelector('.tc-name');
-    const subEl  = card.querySelector('.tc-sub');
+    const subEl = card.querySelector('.tc-sub');
     if (nameEl) nameEl.textContent = cfg.name;
-    if (subEl)  subEl.innerHTML = isEN ? cfg.subEN : cfg.subTH;
+    if (subEl) subEl.innerHTML = isEN ? cfg.subEN : cfg.subTH;
   });
 }
 
@@ -141,28 +85,27 @@ document.querySelectorAll('.lang-btn').forEach(btn => {
       const state = getState(t);
       el.innerHTML = '';
       delete el.dataset.built;
-      buildPage(t, el);
-      wireEvents(t, {
-        loadDemo,
-        runAnalysis: t => runAnalysis(t, renderFns),
-        renderFns,
-        downloadTemplate: t => downloadTemplate(t),
-        openSettings:     (t, startTab) => openSettings(t, startTab),
-        doExport:         t => doExport(t),
-        copyPara:         t => {
-          const box = document.getElementById(`${t}-para-box`);
-          if (box) navigator.clipboard.writeText(box.textContent).then(() => setSt(t,'คัดลอกแล้ว ✓','ok'));
-        },
-      });
+      buildAndWire(t, el);
       el.dataset.built = '1';
-      if (state.analyzed) runAnalysis(t, renderFns);
+      // Re-render whatever was already loaded, in the new language
+      if (state.raw.length) {
+        document.getElementById(`${t}-cmd-file`).style.display = 'flex';
+        document.getElementById(`${t}-file-name`).textContent = TYPE_CFG[t].name;
+        document.getElementById(`${t}-file-meta`).textContent = `${state.raw.length} rows`;
+      }
+      if (state.colMap) {
+        document.getElementById(`${t}-cmd-map`).style.display = 'flex';
+        document.getElementById(`${t}-btn-run`).disabled = false;
+      }
+      document.getElementById(`${t}-btn-export`).disabled = !state.analyzed;
+      renderDashboard(t);
     });
   });
 });
 
 buildHome();
 
-// ── Theme toggle ──────────────────────────────────────────────────────────────
+// ── Theme toggle ──────────────────────────────────────────────────────────
 function initTheme() {
   const saved = localStorage.getItem('aer-theme');
   if (saved === 'dark') document.body.classList.add('dark');

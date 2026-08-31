@@ -1,397 +1,171 @@
 /**
- * events.js — wires up all event handlers for analysis pages
- * Called after buildPage() for each tab
+ * events.js — wires up all event handlers for the redesigned sea/sed pages
  */
 
-import { LANG, T, Tf } from '../utils/lang.js';
-import { getState, setRaw, getColVal, getParamCols, setStdOverrides, setRefMap, setBaselineMap } from '../core/state.js';
+import { LANG } from '../utils/lang.js';
+import { getState, setRaw, getParamCols, resolveCanonical } from '../core/state.js';
 import { showColumnMappingScreen, exportConfigTemplate, importConfigTemplate } from './columnMapping.js';
-import { renderStdRef } from './buildPage.js';
-import { rebuildRefBaseline } from './refBaselineUI.js';
+import { renderDashboard } from './renders.js';
+import { renderStandardsUI } from './standardsUI.js';
+import { runAnalysis } from '../core/runAnalysis.js';
 
-// ── Progress helpers ──────────────────────────────────────────────────────────
-
-export function showProgress(title) {
-  const ov = document.getElementById('progress-overlay');
-  if (ov) { ov.style.display = 'flex'; }
-  const pl = document.getElementById('progress-label');
-  if (pl) pl.textContent = title || 'กำลังวิเคราะห์ข้อมูล...';
-  const pb = document.getElementById('progress-bar');
-  if (pb) pb.style.width = '0%';
+export function setSt(t, msg, kind = 'idle') {
+  // Lightweight status surface — currently just console; command bar shows
+  // file/mapping state directly, so a persistent status bar isn't needed
+  // in the new layout. Kept as a hook for future toast-style messages.
+  if (kind === 'err') console.error(`[${t}]`, msg);
 }
 
-export function updateProgress(pct, step) {
-  const pb = document.getElementById('progress-bar');
-  if (pb) pb.style.width = pct + '%';
-  const ps = document.getElementById('progress-sub');
-  if (ps) ps.textContent = step || '';
+// ── File / demo loading ──────────────────────────────────────────────────
+
+function afterDataLoaded(t, meta) {
+  const cmdFile = document.getElementById(`${t}-cmd-file`);
+  document.getElementById(`${t}-file-name`).textContent = meta.name;
+  document.getElementById(`${t}-file-meta`).textContent = meta.sub;
+  cmdFile.style.display = 'flex';
+
+  showColumnMappingScreen(t, {
+    onConfirm: () => {
+      document.getElementById(`${t}-cmd-map`).style.display = 'flex';
+      document.getElementById(`${t}-btn-run`).disabled = false;
+      runDQ(t);
+      runAnalysis(t, () => renderDashboard(t));
+      document.getElementById(`${t}-btn-export`).disabled = !getState(t).analyzed;
+      renderDashboard(t);
+    },
+  });
 }
-
-export function hideProgress() {
-  const ov = document.getElementById('progress-overlay');
-  if (ov) ov.style.display = 'none';
-}
-
-// ── Status bar ────────────────────────────────────────────────────────────────
-
-export function setSt(t, msg, v = 'idle') {
-  const el = document.getElementById(`${t}-status`);
-  if (!el) return;
-  el.className = `sbar sbar-${v}`;
-  el.innerHTML = (v === 'loading' ? '<span class="spinner"></span>' : '') + msg;
-}
-
-// ── File handling ─────────────────────────────────────────────────────────────
 
 export function handleFile(t, file) {
   if (!file) return;
   const reader = new FileReader();
   const isCSV = file.name.endsWith('.csv');
-
   reader.onload = e => {
     try {
-      const wb = isCSV
-        ? XLSX.read(e.target.result, { type: 'binary' })
-        : XLSX.read(e.target.result, { type: 'array' });
+      const wb = isCSV ? XLSX.read(e.target.result, { type: 'binary' }) : XLSX.read(e.target.result, { type: 'array' });
       const data = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
-
       setRaw(t, data);
-
-      const fi = document.getElementById(`${t}-finfo`);
-      fi.style.display = 'block';
-      fi.innerHTML = `<b>${file.name}</b> — ${data.length} ${T('fi_rows')}, ${getState(t).cols.length} cols`;
-      setSt(t, Tf('loaded', file.name, data.length), 'ok');
-
-      showColumnMappingScreen(t, {
-        onConfirm: () => {
-          runDQ(t);
-          rebuildRef(t);
-          buildRtypeFilter(t);
-          document.getElementById(`${t}-btn-run`).disabled = false;
-        },
-      });
+      afterDataLoaded(t, { name: file.name, sub: `${data.length} ${LANG === 'en' ? 'rows' : 'แถว'} · ${getState(t).cols.length} cols` });
     } catch (err) {
-      setSt(t, T('err') + err.message, 'err');
+      alert((LANG === 'en' ? 'Load failed: ' : 'โหลดไม่สำเร็จ: ') + err.message);
     }
   };
-
   isCSV ? reader.readAsBinaryString(file) : reader.readAsArrayBuffer(file);
 }
 
-// ── REF / Baseline station mapping (per Location) ────────────────────────────
-// Toggling a checkbox here updates refMap/baselineMap in state immediately,
-// but — same contract as the old flat checkbox list before it — doesn't
-// retroactively change already-analyzed rows' is_ref/is_baseline flags;
-// those are only recomputed the next time "Run Analysis" runs.
-export function rebuildRef(t) {
-  rebuildRefBaseline(t);
+export function loadDemoInto(t, data, meta) {
+  setRaw(t, data);
+  afterDataLoaded(t, meta);
 }
 
-// ── Report type filter ────────────────────────────────────────────────────────
-
-export function buildRtypeFilter(t) {
-  const state    = getState(t);
-  const colRtype = getColVal(t, 'rtype') || '';
-  const block    = document.getElementById(`${t}-rtype-block`);
-  const body     = document.getElementById(`${t}-rtype-body`);
-  if (!block || !body) return;
-  if (!colRtype) { block.style.display = 'none'; return; }
-
-  const raw    = state.raw;
-  const types  = [...new Set(raw.map(r => String(r[colRtype] || '').trim()).filter(Boolean))].sort();
-  const blanks = raw.filter(r => !String(r[colRtype] || '').trim()).length;
-
-  block.style.display = 'block';
-  body.innerHTML = blanks > 0
-    ? `<div style="font-size:11px;color:var(--amber);background:var(--amber-l);padding:6px 8px;border-radius:var(--rs);margin-bottom:8px;border:1px solid var(--amber-m)">⚠️ พบ ${blanks} rows ที่ไม่มีค่า Report_Type — จะถูก exclude</div>`
-    : '';
-  /* Report type values come from the uploaded file — build checkboxes via
-     DOM API so a value containing a quote can't corrupt the value attr */
-  types.forEach(tp => {
-    const label = document.createElement('label');
-    label.style.cssText = 'display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text2);padding:4px 0;cursor:pointer';
-    const cb = document.createElement('input');
-    cb.type = 'checkbox';
-    cb.id = `rtype-${t}-${tp.replace(/[^a-zA-Z0-9]/g,'_')}`;
-    cb.value = tp;
-    cb.checked = true;
-    cb.style.accentColor = 'var(--navy)';
-    label.appendChild(cb);
-    label.appendChild(document.createTextNode(' ' + tp));
-    body.appendChild(label);
-  });
-}
-
-// ── Data Quality Check ────────────────────────────────────────────────────────
+// ── Data Quality check ───────────────────────────────────────────────────
 
 export function runDQ(t) {
   const state = getState(t);
-  if (!state.raw.length) return;
-
+  const wrap = document.getElementById(`${t}-dq-wrap`);
+  if (!wrap || !state.raw.length) return;
+  const isEN = LANG === 'en';
   const paramCols = getParamCols(t);
-  const issues    = [];
+  const issues = [];
 
   paramCols.forEach(col => {
-    const missing    = state.raw.filter(r => r[col] == null || r[col] === '').length;
-    const missingPct = Math.round(missing / state.raw.length * 100);
-    if (missingPct > 0) issues.push({ type: 'missing', col, count: missing, pct: missingPct });
-
-    const nonNum = state.raw.filter(r => r[col] != null && r[col] !== '' && isNaN(parseFloat(r[col]))).map(r => String(r[col]));
-    if (nonNum.length > 0) issues.push({ type: 'nonnumeric', col, vals: [...new Set(nonNum)].slice(0, 3) });
-
-    const nums = state.raw.map(r => parseFloat(r[col])).filter(v => !isNaN(v));
-    if (nums.length >= 3) {
-      const mean = nums.reduce((a, b) => a + b, 0) / nums.length;
-      const sd   = Math.sqrt(nums.reduce((a, b) => a + (b - mean) ** 2, 0) / nums.length);
-      if (sd > 0) {
-        const ext = nums.filter(v => Math.abs((v - mean) / sd) > 5);
-        if (ext.length > 0) issues.push({ type: 'extreme', col, vals: ext.slice(0, 3) });
-      }
-    }
+    const nonNum = [];
+    state.raw.forEach((r, i) => {
+      const v = r[col];
+      if (v != null && v !== '' && isNaN(parseFloat(v))) nonNum.push({ row: i + 2, val: v });
+    });
+    if (nonNum.length) issues.push({ col: resolveCanonical(t, col), samples: nonNum.slice(0, 3) });
   });
 
-  const wrap = document.getElementById(`${t}-dq-wrap`);
-  if (!wrap) return;
-
   if (!issues.length) {
-    wrap.innerHTML = `<div class="dq-wrap dq-ok"><div class="dq-title"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>${T('dq_ok')}</div></div>`;
+    wrap.innerHTML = `<div class="dq-wrap dq-ok"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>${isEN ? 'Data quality check passed — no issues' : 'ข้อมูลผ่านการตรวจสอบ — ไม่พบปัญหา'}</div>`;
     return;
   }
-
-  const items = issues.map(i => {
-    if (i.type === 'missing')     return `<div class="dq-item">⚠️ <b>${i.col}</b>: ${T('dq_missing')} (${i.count} rows, ${i.pct}%)</div>`;
-    if (i.type === 'nonnumeric')  return `<div class="dq-item">⚠️ <b>${i.col}</b>: ${T('dq_nonnumeric')} — ${i.vals.join(', ')}</div>`;
-    if (i.type === 'extreme')     return `<div class="dq-item">⚠️ <b>${i.col}</b>: ${T('dq_extreme')} — ${i.vals.map(v => v.toFixed(3)).join(', ')}</div>`;
-    return '';
-  }).join('');
-
-  wrap.innerHTML = `<div class="dq-wrap"><div class="dq-title"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>${T('dq_title')}</div>${items}</div>`;
+  wrap.innerHTML = `<div class="dq-wrap dq-warn">
+    <div class="dq-title"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>${isEN ? 'Non-numeric values found' : 'พบค่าที่ไม่ใช่ตัวเลข'}</div>
+    ${issues.map(i => `<div class="dq-item"><b>${i.col}</b>: ${i.samples.map(s => `${isEN ? 'row' : 'แถว'} ${s.row} = "${s.val}"`).join(', ')}</div>`).join('')}
+  </div>`;
 }
 
-// ── Tab switching ─────────────────────────────────────────────────────────────
+// ── Field-picker popover ─────────────────────────────────────────────────
 
-/* Tab pane index (0-8, see buildPage.js) -> renderFns key (see main.js).
-   Pane 8 (Standard Reference) is static HTML built once and never
-   re-rendered, so it has no entry here. */
-export const TAB_IDX_MAP = { 0:'ov', 1:'st', 2:'std', 3:'ref', 4:'mk', 5:'para', 6:'chart', 7:'raw' };
-
-export function swTab(t, i, renderFns) {
-  document.querySelectorAll(`#page-${t} .tab-pane`).forEach(p => p.classList.remove('active'));
-  document.querySelectorAll(`#page-${t} .tab-btn`).forEach(b => b.classList.remove('active'));
-  document.getElementById(`${t}-pane-${i}`)?.classList.add('active');
-  document.querySelectorAll(`#page-${t} .tab-btn`)[i]?.classList.add('active');
-
-  const state = getState(t);
-  if (state.analyzed && renderFns) {
-    const fn = renderFns[TAB_IDX_MAP[i]];
-    if (fn) fn(t);
-  }
+function wireFieldPicker(t) {
+  const btn = document.querySelector(`[data-fp-toggle="${t}"]`);
+  const popover = document.getElementById(`${t}-fp-popover`);
+  if (!btn || !popover) return;
+  btn.addEventListener('click', e => { e.stopPropagation(); popover.classList.toggle('open'); });
+  document.addEventListener('click', e => {
+    if (popover.classList.contains('open') && !popover.contains(e.target) && e.target !== btn) popover.classList.remove('open');
+  });
+  popover.querySelectorAll('.fp-check').forEach(cb => cb.addEventListener('change', () => renderDashboard(t)));
 }
 
-// ── Comparison sub-tab switching ──────────────────────────────────────────────
+// ── View nav (Data Overview / Standards) ─────────────────────────────────
 
-export function swCmp(t, mode) {
-  document.getElementById(`${t}-cmp-ref`).style.display = mode === 'ref' ? 'block' : 'none';
-  document.getElementById(`${t}-cmp-bs`).style.display  = mode === 'bs'  ? 'block' : 'none';
-  document.getElementById(`${t}-cmp-yr`).style.display  = mode === 'yr'  ? 'block' : 'none';
-  document.querySelectorAll(`#page-${t} .cmp-btn`).forEach(b => b.classList.remove('active'));
+function wireViewNav(t) {
+  document.querySelectorAll(`#page-${t} .view-nav-btn`).forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll(`#page-${t} .view-nav-btn`).forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      document.querySelectorAll(`#page-${t} .view-pane`).forEach(p => p.classList.remove('active'));
+      document.getElementById(`${t}-view-${btn.dataset.viewBtn}`).classList.add('active');
+      if (btn.dataset.viewBtn === 'standards') renderStandardsUI(t);
+    });
+  });
 }
 
-// ── Wire all event listeners for a tab ───────────────────────────────────────
+// ── Main wiring entry point ──────────────────────────────────────────────
 
-export function wireEvents(t, { loadDemo, runAnalysis, renderFns, downloadTemplate, openSettings, doExport, copyPara }) {
+export function wireEvents(t, { loadDemo, downloadTemplate, doExport }) {
   const el = document.getElementById(`page-${t}`);
   if (!el) return;
 
-  // File input
   const fi = document.getElementById(`${t}-fi`);
-  if (fi) fi.addEventListener('change', () => handleFile(t, fi.files[0]));
+  fi.addEventListener('change', () => handleFile(t, fi.files[0]));
+  document.getElementById(`${t}-btn-upload`).addEventListener('click', () => fi.click());
 
-  // Drag and drop
-  const dz = document.getElementById(`${t}-dz`);
-  if (dz) {
-    dz.addEventListener('click', () => fi?.click());
-    dz.addEventListener('file-dropped', e => handleFile(t, e.detail));
-  }
+  el.querySelectorAll(`[data-demo="${t}"]`).forEach(btn => btn.addEventListener('click', () => loadDemo(t)));
+  el.querySelectorAll(`[data-template="${t}"]`).forEach(btn => btn.addEventListener('click', () => downloadTemplate(t)));
+  el.querySelectorAll(`[data-export="${t}"]`).forEach(btn => btn.addEventListener('click', () => doExport(t)));
 
-  // Demo button
-  el.querySelectorAll(`[data-demo="${t}"]`).forEach(btn =>
-    btn.addEventListener('click', () => loadDemo(t))
-  );
+  el.querySelectorAll(`[data-run="${t}"]`).forEach(btn => btn.addEventListener('click', () => {
+    runAnalysis(t, () => renderDashboard(t));
+    document.getElementById(`${t}-btn-export`).disabled = !getState(t).analyzed;
+  }));
 
-  // Run analysis
-  el.querySelectorAll(`[data-run="${t}"]`).forEach(btn =>
-    btn.addEventListener('click', () => runAnalysis(t))
-  );
-
-  // Download template
-  el.querySelectorAll(`[data-template="${t}"]`).forEach(btn =>
-    btn.addEventListener('click', () => downloadTemplate(t))
-  );
-
-  // Settings
-  el.querySelectorAll(`[data-settings="${t}"]`).forEach(btn =>
-    btn.addEventListener('click', () => openSettings(t))
-  );
-
-  // Edit Standards (opens Settings modal directly to the Standards tab)
-  el.querySelectorAll(`[data-editstd="${t}"]`).forEach(btn =>
-    btn.addEventListener('click', () => openSettings(t, 'std'))
-  );
-
-  // Overview KPI card — click to toggle "show exceeding only"
-  el.querySelectorAll(`[data-kpi-filter="${t}"]`).forEach(card =>
-    card.addEventListener('click', () => {
-      card.classList.toggle('active');
-      if (getState(t).analyzed) renderFns?.ov?.(t);
-    })
-  );
-
-  // Edit column mapping
-  el.querySelectorAll(`[data-editmap="${t}"]`).forEach(btn =>
-    btn.addEventListener('click', () => showColumnMappingScreen(t, {
+  el.querySelectorAll(`[data-editmap="${t}"]`).forEach(a => a.addEventListener('click', e => {
+    e.preventDefault();
+    showColumnMappingScreen(t, {
+      prefill: getState(t).colMap,
       onConfirm: () => {
         runDQ(t);
-        rebuildRef(t);
-        buildRtypeFilter(t);
-        if (getState(t).analyzed) runAnalysis(t);
+        runAnalysis(t, () => renderDashboard(t));
       },
-    }))
-  );
+    });
+  }));
 
-  // Export / Import config template
-  el.querySelectorAll(`[data-exportmap="${t}"]`).forEach(btn =>
-    btn.addEventListener('click', () => exportConfigTemplate(t))
-  );
-  el.querySelectorAll(`[data-importmap="${t}"]`).forEach(btn =>
-    btn.addEventListener('click', () => document.getElementById(`${t}-importmap-fi`)?.click())
-  );
+  el.querySelectorAll(`[data-exportmap="${t}"]`).forEach(btn => btn.addEventListener('click', () => exportConfigTemplate(t)));
   document.getElementById(`${t}-importmap-fi`)?.addEventListener('change', e => {
     const f = e.target.files[0];
     e.target.value = '';
     if (!f) return;
-    importConfigTemplate(t, f, (draft, envelope) => {
-      if (envelope.standardsLibrary) {
-        setStdOverrides(t, envelope.standardsLibrary.overrides);
-        renderStdRef(t);
-        if (getState(t).analyzed) { renderFns?.ov(t); renderFns?.st(t); renderFns?.std(t); }
-      }
-      if (envelope.refBaselineMapping) {
-        setRefMap(t, envelope.refBaselineMapping.refMap || null);
-        setBaselineMap(t, envelope.refBaselineMapping.baselineMap || null);
-      }
-      showColumnMappingScreen(t, {
-        prefill: draft,
-        onConfirm: () => {
-          runDQ(t);
-          rebuildRef(t);
-          buildRtypeFilter(t);
-          document.getElementById(`${t}-btn-run`).disabled = false;
-          if (getState(t).analyzed) runAnalysis(t);
-        },
-      });
-    });
+    importConfigTemplate(t, f, draft => showColumnMappingScreen(t, {
+      prefill: draft,
+      onConfirm: () => {
+        document.getElementById(`${t}-cmd-map`).style.display = 'flex';
+        document.getElementById(`${t}-btn-run`).disabled = false;
+        runDQ(t);
+        runAnalysis(t, () => renderDashboard(t));
+      },
+    }));
   });
 
-  // Export Excel
-  el.querySelectorAll(`[data-export="${t}"]`).forEach(btn =>
-    btn.addEventListener('click', () => doExport(t))
-  );
+  document.getElementById(`${t}-outlier`)?.addEventListener('input', () => renderDashboard(t));
+  wireFieldPicker(t);
+  wireViewNav(t);
 
-  // Copy paragraph
-  el.querySelectorAll(`[data-copy-para="${t}"]`).forEach(btn =>
-    btn.addEventListener('click', () => copyPara(t))
-  );
-
-  // Tab buttons
-  el.querySelectorAll('.tab-btn[data-idx]').forEach(btn =>
-    btn.addEventListener('click', () => swTab(t, parseInt(btn.dataset.idx), renderFns))
-  );
-
-  // Comparison sub-tabs
-  el.querySelectorAll(`.cmp-btn[data-cmp="${t}"]`).forEach(btn => {
-    btn.addEventListener('click', () => {
-      swCmp(t, btn.dataset.mode);
-      btn.classList.add('active');
-      const state = getState(t);
-      if (state.analyzed) {
-        if (btn.dataset.mode === 'yr' && renderFns?.yr)   renderFns.yr(t);
-        if (btn.dataset.mode === 'bs' && renderFns?.bs)   renderFns.bs(t);
-        if (btn.dataset.mode === 'ref' && renderFns?.ref) renderFns.ref(t);
-      }
-    });
-  });
-
-  // Slider live updates + re-render
-  const sliders = [
-    { id: `${t}-bs-cv`,  label: `${t}-bs-cvv`,  render: renderFns?.bs  },
-    { id: `${t}-ref-cv`, label: `${t}-ref-cvv`, render: renderFns?.ref },
-    { id: `${t}-yr-cv`,  label: `${t}-yr-cvv`,  render: renderFns?.yr  },
-  ];
-  sliders.forEach(({ id, label, render }) => {
-    const slider = document.getElementById(id);
-    const lbl    = document.getElementById(label);
-    if (!slider) return;
-    slider.addEventListener('input', () => {
-      if (lbl) lbl.textContent = slider.value + '%';
-      const state = getState(t);
-      if (state.analyzed && render) render(t);
-    });
-  });
-
-  // REF/BS group selectors
-  [`${t}-bs-grp`, `${t}-ref-grp`, `${t}-yr-grp`].forEach(id => {
-    document.getElementById(id)?.addEventListener('change', () => {
-      const state = getState(t);
-      if (!state.analyzed) return;
-      if (id.includes('-bs-'))  renderFns?.bs?.(t);
-      if (id.includes('-ref-')) renderFns?.ref?.(t);
-      if (id.includes('-yr-'))  renderFns?.yr?.(t);
-    });
-  });
-
-  // Filter dropdowns — re-render on change
-  const filterMap = [
-    [`${t}-ov-yr`,  renderFns?.ov],
-    [`${t}-ov-loc`, renderFns?.ov],
-    [`${t}-ov-p`,   renderFns?.ov],
-    [`${t}-ov-wl`,  renderFns?.ov],
-    [`${t}-ov-outlier`, renderFns?.ov],
-    [`${t}-st-grp`, renderFns?.st],
-    [`${t}-st-yr`,  renderFns?.st],
-    [`${t}-st-p`,   renderFns?.st],
-    [`${t}-st-outlier`, renderFns?.st],
-    [`${t}-st-dist`, renderFns?.st],
-    [`${t}-st-wl`,  renderFns?.st],
-    [`${t}-std-yr`, renderFns?.std],
-    [`${t}-std-loc`,renderFns?.std],
-    [`${t}-std-p`,  renderFns?.std],
-    [`${t}-std-show`,renderFns?.std],
-    [`${t}-std-dist`, renderFns?.std],
-    [`${t}-std-wl`, renderFns?.std],
-    [`${t}-ref-yr`, renderFns?.ref],
-    [`${t}-ref-p`,  renderFns?.ref],
-    [`${t}-ref-loc`,renderFns?.ref],
-    [`${t}-bs-yr`,  renderFns?.bs],
-    [`${t}-bs-p`,   renderFns?.bs],
-    [`${t}-bs-loc`, renderFns?.bs],
-    [`${t}-yr-loc`, renderFns?.yr],
-    [`${t}-yr-par`, renderFns?.yr],
-    [`${t}-mk-p`,   renderFns?.mk],
-    [`${t}-mk-loc`, renderFns?.mk],
-    [`${t}-mk-sig`, renderFns?.mk],
-    [`${t}-para-yr`,  renderFns?.para],
-    [`${t}-para-loc`, renderFns?.para],
-    [`${t}-ch-p`,   renderFns?.chart],
-    [`${t}-ch-grp`, renderFns?.chart],
-    [`${t}-ch-yr`,  renderFns?.chart],
-    [`${t}-raw-yr`, renderFns?.raw],
-  ];
-  filterMap.forEach(([id, fn]) => {
-    if (!fn) return;
-    const sel = document.getElementById(id);
-    if (!sel) return;
-    const evt = sel.type === 'checkbox' ? 'change' : 'change';
-    sel.addEventListener(evt, () => { if (getState(t).analyzed) fn(t); });
+  window.addEventListener('aer-standards-changed', e => {
+    if (e.detail?.t !== t) return;
+    runAnalysis(t, () => renderDashboard(t));
   });
 }

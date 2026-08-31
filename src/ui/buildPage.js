@@ -1,392 +1,103 @@
 /**
- * buildPage — generates the HTML for each analysis tab page
- * Called once when user clicks a type card on the home screen
+ * buildPage.js — page shell for the redesigned Seawater / Sediment modules
  */
 
-import { LANG, L } from '../utils/lang.js';
+import { LANG } from '../utils/lang.js';
 import { TYPE_CFG } from '../core/standards.js';
-import { getEffectiveStdAll } from '../core/state.js';
-import { renderColMapSummary } from './columnMapping.js';
 
-/** Build the standard reference table for tab pane 8 — reads the effective
-    (base ∪ user-edited overrides) standards, kept live via renderStdRef().
-    Only the table itself (not the "Edit Standards" button, which is static
-    markup with its own click listener wired once by wireEvents) */
-function buildStdRef(t) {
-  const s = getEffectiveStdAll(t);
-  if (!Object.keys(s).length)
-    return `<div class="empty-state"><p>กำหนดมาตรฐานใน Sidebar</p></div>`;
+const ICONS = {
+  sea: `<path d="M2 12c1.5-2 3-2 4.5 0s3 2 4.5 0 3-2 4.5 0 3 2 4.5 0"/><path d="M2 17c1.5-2 3-2 4.5 0s3 2 4.5 0 3-2 4.5 0 3 2 4.5 0"/><path d="M2 7c1.5-2 3-2 4.5 0s3 2 4.5 0 3-2 4.5 0 3 2 4.5 0"/>`,
+  sed: `<ellipse cx="12" cy="17" rx="9" ry="3"/><path d="M3 17V7a9 3 0 0118 0v10"/><path d="M12 14V4"/>`,
+};
 
-  const isSed = t === 'sed';
-  const ths = isSed
-    ? ['Parameter','Name','Unit','PCD Max','ERL','ERM','Source','MRL']
-    : ['Parameter','Name','Unit','PCD Min','PCD Max','WHO','EPA','Source','MRL'];
-
-  const rows = Object.entries(s).map(([k, v]) =>
-    isSed
-      ? `<tr><td class="em num">${k}</td><td>${v.label||''}</td><td>${v.unit||''}</td><td>${v.pcd_max??'—'}</td><td>${v.erl??'—'}</td><td>${v.erm??'—'}</td><td>${v.source||'—'}</td><td>${v.mrl??'—'}</td></tr>`
-      : `<tr><td class="em num">${k}</td><td>${v.label||''}</td><td>${v.unit||''}</td><td>${v.pcd_min??'—'}</td><td>${v.pcd_max??'—'}</td><td>${v.who_max??v.who_min??'—'}</td><td>${v.epa_max??v.epa_min??'—'}</td><td>${v.source||'—'}</td><td>${v.mrl??'—'}</td></tr>`
-  ).join('');
-
-  return `<div class="tbl-wrap"><table><thead><tr>${ths.map(h=>`<th>${h}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table></div>`;
-}
-
-/** Re-render pane 8's Standard Reference table (called after Standards Library edits) */
-export function renderStdRef(t) {
-  const el = document.getElementById(`${t}-stdref-body`);
-  if (el) el.innerHTML = buildStdRef(t);
-}
-
-/**
- * Build and inject HTML for an analysis page
- * @param {string} t  - Tab ID (sea, sed)
- * @param {HTMLElement} el - Target container element
- */
 export function buildPage(t, el) {
   const cfg = TYPE_CFG[t];
-  const l   = L[LANG] || L.th;
   const isEN = LANG === 'en';
 
   el.innerHTML = `
-  <!-- Page Header -->
   <div class="ph">
     <button class="ph-back" data-back="${t}">
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
-      ${l.back}
+      ${isEN ? 'Home' : 'หน้าหลัก'}
     </button>
     <div class="ph-div"></div>
-    <div style="display:flex;flex-direction:column;gap:1px">
-      <span class="ph-title">${cfg.name}</span>
-      <span class="ph-sub">${(l.type_th||{})[t]||''}</span>
+    <span class="ph-title">${cfg.name}</span>
+  </div>
+
+  <div class="module-shell accent-${cfg.accent}">
+    <div class="page-head">
+      <span class="module-tag"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">${ICONS[t]}</svg>${cfg.name}</span>
+      <h1 id="${t}-view-title">${isEN ? 'Data Overview' : 'ข้อมูลพื้นฐาน'}</h1>
     </div>
-    <div style="margin-left:auto;display:flex;gap:8px;align-items:center;">
-      <button class="btn btn-outline btn-sm" data-settings="${t}">
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93l-1.41 1.41M4.93 4.93l1.41 1.41M12 2v2m0 16v2m7.07-5.07l-1.41-1.41M4.93 19.07l1.41-1.41M22 12h-2M4 12H2"/></svg>
-        Settings
-      </button>
-      <button class="btn btn-outline btn-sm demo-btn" data-demo="${t}">${l.demo}</button>
-      <button class="btn btn-outline btn-sm" id="${t}-btn-xl" disabled data-export="${t}">
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-        ${l.export}
-      </button>
+
+    <div class="view-nav">
+      <button class="view-nav-btn active" data-view-btn="dashboard">${isEN ? 'Data Overview' : 'ข้อมูลพื้นฐาน'}</button>
+      <button class="view-nav-btn" data-view-btn="standards">${isEN ? 'Standards' : 'มาตรฐานอ้างอิง'}</button>
+    </div>
+
+    <div class="view-pane active" id="${t}-view-dashboard">
+      <div class="command-bar">
+        <input type="file" id="${t}-fi" accept=".xlsx,.xls,.csv" style="display:none">
+        <div class="cmd-file" id="${t}-cmd-file" style="display:none">
+          <span class="file-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/></svg></span>
+          <span><div class="file-name" id="${t}-file-name"></div><div class="file-meta" id="${t}-file-meta"></div></span>
+        </div>
+        <button class="btn" id="${t}-btn-upload" data-upload="${t}">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          ${isEN ? 'Upload file' : 'อัปโหลดไฟล์'}
+        </button>
+        <button class="btn" data-demo="${t}">${isEN ? 'Load demo' : 'ทดลอง Demo'}</button>
+        <div class="cmd-map" id="${t}-cmd-map" style="display:none">
+          <span class="dot"></span> <span id="${t}-cmd-map-text">${isEN ? 'Columns mapped' : 'จับคู่คอลัมน์แล้ว'}</span>
+          <a href="#" data-editmap="${t}">— ${isEN ? 'edit' : 'แก้ไข'}</a>
+        </div>
+        <div class="cmd-spacer"></div>
+        <button class="btn" data-template="${t}">${isEN ? 'Download Template' : 'Download Template'}</button>
+        <button class="btn" id="${t}-btn-export" data-export="${t}" disabled>${isEN ? 'Export' : 'Export'}</button>
+        <button class="btn btn-primary" id="${t}-btn-run" data-run="${t}" disabled>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+          ${isEN ? 'Run analysis' : 'วิเคราะห์ข้อมูล'}
+        </button>
+      </div>
+
+      <div id="${t}-dq-wrap"></div>
+
+      <div id="${t}-dash-body">
+      <div id="${t}-kpi-strip" class="kpi-strip"></div>
+
+      <div class="toolbar" id="${t}-toolbar">
+        <div class="field-picker">
+          <button type="button" class="btn field-picker-btn" data-fp-toggle="${t}">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+            ${isEN ? 'Columns:' : 'จัดกลุ่ม:'} <b id="${t}-fp-summary">Year + Location</b>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:11px;height:11px;margin-left:1px"><polyline points="6 9 12 15 18 9"/></svg>
+          </button>
+          <div class="field-popover" id="${t}-fp-popover">
+            <div class="field-popover-hd">${isEN ? 'Group table by' : 'จัดกลุ่มตาราง'}</div>
+            <label><input type="checkbox" class="fp-check" data-t="${t}" value="year" checked> ${isEN ? 'Year' : 'ปี'}</label>
+            <label><input type="checkbox" class="fp-check" data-t="${t}" value="loc" checked> Location</label>
+            <label><input type="checkbox" class="fp-check" data-t="${t}" value="st"> Station</label>
+            ${t === 'sea' ? `<label><input type="checkbox" class="fp-check" data-t="${t}" value="wl"> ${isEN ? 'Depth level' : 'ระดับความลึก'}</label>` : ''}
+            <div class="field-popover-hint">${isEN ? 'Parameter is always shown.' : 'Parameter จะแสดงอยู่ในตารางเสมอ'}</div>
+          </div>
+        </div>
+        <div class="toolbar-divider"></div>
+        <div class="pill-field"><label>${isEN ? 'Outlier σ×' : 'Outlier σ×'}</label><input type="number" id="${t}-outlier" min="0" step="0.5" value="3"></div>
+        <div class="search-field">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input type="text" id="${t}-search" placeholder="${isEN ? 'Search parameter, station, location…' : 'ค้นหา parameter, station, location…'}">
+        </div>
+      </div>
+
+      <div class="table-card" id="${t}-table-card"></div>
+      </div>
+    </div>
+
+    <div class="view-pane" id="${t}-view-standards">
+      <div id="${t}-standards-root"></div>
     </div>
   </div>
 
-  <!-- Layout: Sidebar + Content -->
-  <div class="layout">
-
-    <!-- ── SIDEBAR ─────────────────────────────────────────────── -->
-    <aside class="sb">
-
-      <!-- Upload -->
-      <div class="sb-block">
-        <div class="sb-title sb-upload-lbl">${l.upload}</div>
-        <div class="dropzone" id="${t}-dz">
-          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="color:var(--text3);margin:0 auto;display:block"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
-          <p class="dz-p">${l.dz_p}</p>
-          <small class="dz-s">${l.dz_s}</small>
-          <input type="file" id="${t}-fi" accept=".xlsx,.xls,.csv">
-        </div>
-        <div id="${t}-finfo" style="display:none;margin-top:8px;font-size:12px;color:var(--blue);background:var(--blue-l);padding:7px 10px;border-radius:var(--rs);border:1px solid var(--blue-m);"></div>
-        <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border)">
-          <button class="btn btn-outline btn-sm btn-full" data-template="${t}">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-            Download Template
-          </button>
-          <div style="margin-top:5px;font-size:11px;color:var(--text3)">ดาวน์โหลด template Excel พร้อม headers</div>
-        </div>
-      </div>
-
-      <!-- Column Mapping -->
-      <div class="sb-block collapsible collapsed">
-        <div class="sb-title" data-toggle-sb>${l.cols}</div>
-        <div class="sb-body">
-          <div class="colmap-summary" id="${t}-colmap-summary">
-            <p style="font-size:12px;color:var(--text3);padding:4px">${isEN?'No file loaded yet':'ยังไม่ได้โหลดไฟล์'}</p>
-          </div>
-          <div class="colmap-sb-btns">
-            <button class="btn btn-outline btn-sm btn-full" data-editmap="${t}">${isEN?'Edit Mapping':'แก้ไขการจับคู่'}</button>
-            <div style="display:flex;gap:6px;margin-top:6px">
-              <button class="btn btn-outline btn-sm" style="flex:1" data-exportmap="${t}">${isEN?'Export':'Export'}</button>
-              <button class="btn btn-outline btn-sm" style="flex:1" data-importmap="${t}">${isEN?'Import':'Import'}</button>
-            </div>
-            <input type="file" id="${t}-importmap-fi" accept=".json" style="display:none">
-          </div>
-        </div>
-      </div>
-
-      <!-- Report Type Filter -->
-      <div class="sb-block" id="${t}-rtype-block" style="display:none">
-        <div class="sb-title">${l.rtype_sec}</div>
-        <div class="sb-body" id="${t}-rtype-body" style="padding:4px 8px 8px"></div>
-      </div>
-
-      <!-- REF / Baseline Stations (per Location) -->
-      <div class="sb-block collapsible collapsed">
-        <div class="sb-title" data-toggle-sb>${l.ref_sec} / Baseline</div>
-        <div class="sb-body" id="${t}-refbaseline-body">
-          <p style="font-size:12px;color:var(--text3);padding:4px">${l.es_raw}</p>
-        </div>
-      </div>
-
-      <!-- Baseline Comparison -->
-      <div class="sb-block collapsible collapsed">
-        <div class="sb-title" data-toggle-sb>${isEN?'Baseline Comparison':'เทียบ Baseline'}</div>
-        <div class="sb-body">
-          <div class="field">
-            <label class="bs-grp-lbl">${l.ref_grp_lbl}</label>
-            <select id="${t}-bs-grp">
-              <option value="location" selected>${l.o_loc}</option>
-              <option value="station">${l.o_st}</option>
-              <option value="area">${l.o_area}</option>
-            </select>
-          </div>
-          <div class="field">
-            <label style="font-size:10.5px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.4px">CV THRESHOLD</label>
-            <div class="range-row">
-              <input type="range" id="${t}-bs-cv" min="5" max="100" step="5" value="30">
-              <span class="range-val" id="${t}-bs-cvv">30%</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- REF Comparison -->
-      <div class="sb-block collapsible collapsed">
-        <div class="sb-title sb-rc-title" data-toggle-sb>${l.refcmp}</div>
-        <div class="sb-body">
-          <div class="field">
-            <label class="rc-grp-lbl">${l.ref_grp_lbl}</label>
-            <select id="${t}-ref-grp">
-              <option value="location" selected>${l.o_loc}</option>
-              <option value="station">${l.o_st}</option>
-              <option value="area">${l.o_area}</option>
-            </select>
-          </div>
-          <div class="field">
-            <label style="font-size:10.5px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.4px">CV THRESHOLD</label>
-            <div class="range-row">
-              <input type="range" id="${t}-ref-cv" min="5" max="100" step="5" value="30">
-              <span class="range-val" id="${t}-ref-cvv">30%</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Year Comparison -->
-      <div class="sb-block collapsible collapsed">
-        <div class="sb-title sb-yr-title" data-toggle-sb>${l.yrcmp}</div>
-        <div class="sb-body">
-          <div class="field">
-            <label class="yr-grp-lbl">${l.ref_grp_lbl}</label>
-            <select id="${t}-yr-grp">
-              <option value="location" selected>${l.o_loc}</option>
-              <option value="station">${l.o_st}</option>
-              <option value="area">${l.o_area}</option>
-            </select>
-          </div>
-          <div class="field">
-            <label style="font-size:10.5px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.4px">CV THRESHOLD</label>
-            <div class="range-row">
-              <input type="range" id="${t}-yr-cv" min="5" max="100" step="5" value="20">
-              <span class="range-val" id="${t}-yr-cvv">20%</span>
-            </div>
-            <div style="font-size:10px;color:var(--text3);margin-top:2px">ต่างกันเกินนี้ = แสดงรายละเอียด</div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Run Analysis -->
-      <div class="sb-block">
-        <button class="btn btn-primary btn-full" id="${t}-btn-run" disabled data-run="${t}">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-          ${l.run}
-        </button>
-        <div class="sbar sbar-idle" id="${t}-status" style="margin-top:8px">${l.wait}</div>
-      </div>
-
-    </aside>
-
-    <!-- ── CONTENT ──────────────────────────────────────────────── -->
-    <div class="content">
-      <div class="tabs-bar">
-        ${l.tabs.map((tab,i) => `<button class="tab-btn${i===0?' active':''}" data-tab="${t}" data-idx="${i}">${tab}</button>`).join('')}
-      </div>
-      <div class="content-body">
-
-        <!-- 0: Overview -->
-        <div class="tab-pane active" id="${t}-pane-0">
-          <div id="${t}-dq-wrap"></div>
-          <div class="stat-row">
-            <div class="sc sc-blue"><div class="lbl">${l.sc[0]}</div><div class="val" id="${t}-sc-st">—</div><div class="sub">${l.sc_sub[0]}</div></div>
-            <div class="sc sc-blue"><div class="lbl">${l.sc[1]}</div><div class="val" id="${t}-sc-p">—</div><div class="sub">${l.sc_sub[1]}</div></div>
-            <div class="sc sc-red sc-kpi" id="${t}-sc-ep-card" data-kpi-filter="${t}"><div class="lbl">${l.sc[2]}</div><div class="val" id="${t}-sc-ep">—</div><div class="sub">${l.sc_sub[2]}</div></div>
-            <div class="sc sc-amber"><div class="lbl">${l.sc[3]}</div><div class="val" id="${t}-sc-es">—</div><div class="sub">${l.sc_sub[3]}</div></div>
-            <div class="sc sc-green"><div class="lbl">${l.sc[4]}</div><div class="val" id="${t}-sc-ok">—</div><div class="sub">${l.sc_sub[4]}</div></div>
-          </div>
-          <div class="sh tl-sh">${l.tl_title}</div>
-          <div class="tl-grid" id="${t}-tl-grid"><div class="empty-state"><p>${l.es_ov}</p><small>${l.es_ov2}</small></div></div>
-          <div class="sh" style="margin-top:16px">Overview Table</div>
-          <div class="filter-bar">
-            <div class="field"><label class="fl-yr">${l.f_yr}</label><select id="${t}-ov-yr"><option value="all" class="f-all-opt">${l.f_all}</option></select></div>
-            <div class="field"><label class="fl-loc">${l.f_loc}</label><select id="${t}-ov-loc"><option value="all" class="f-all-opt">${l.f_all}</option></select></div>
-            <div class="field"><label class="fl-p">${l.f_p}</label><select id="${t}-ov-p"><option value="all" class="f-all-opt">${l.f_all}</option></select></div>
-            ${t==='sea'?`<div class="field"><label>${l.col_wl}</label><select id="${t}-ov-wl"><option value="all" class="f-all-opt">${l.f_all}</option></select></div>`:''}
-            <div class="field"><label>${isEN?'Outlier (σ×)':'Outlier (σ×)'}</label><input type="number" id="${t}-ov-outlier" min="0" step="0.1" value="3" style="width:64px"></div>
-            <div class="field" style="flex:1;min-width:160px"><label>${isEN?'Search':'ค้นหา'}</label><input type="text" id="${t}-ov-search" placeholder="${isEN?'Parameter, Location, Station...':'Parameter, Location, Station...'}"></div>
-          </div>
-          <div class="tbl-wrap" id="${t}-tbl-ov"><div class="empty-state"><p>${l.es_ov}</p></div></div>
-          <div id="${t}-ov-page" class="tbl-page"></div>
-        </div>
-
-        <!-- 1: Statistics -->
-        <div class="tab-pane" id="${t}-pane-1">
-          <div class="filter-bar">
-            <div class="field"><label class="fl-grp">${l.f_grp}</label><select id="${t}-st-grp"><option value="param">${l.g_p}</option><option value="loc">${l.g_lp}</option><option value="station">${l.g_sp}</option></select></div>
-            <div class="field"><label>Outlier</label><select id="${t}-st-outlier"><option value="none">None</option><option value="z2">Z-score &gt; 2σ</option><option value="z3">Z-score &gt; 3σ</option><option value="iqr">IQR (1.5×)</option></select></div>
-            <div class="field"><label class="fl-yr">${l.f_yr}</label><select id="${t}-st-yr"><option value="all" class="f-all-opt">${l.f_all}</option></select></div>
-            <div class="field"><label class="fl-p">${l.f_p}</label><select id="${t}-st-p"><option value="all" class="f-all-opt">${l.f_all}</option></select></div>
-            ${t==='sed'?`<div class="field"><label>Distance</label><select id="${t}-st-dist"><option value="all" class="f-all-opt">${l.f_all}</option></select></div>`:''}
-            ${t==='sea'?`<div class="field"><label>${l.col_wl}</label><select id="${t}-st-wl"><option value="all" class="f-all-opt">${l.f_all}</option></select></div>`:''}
-          </div>
-          <div class="tbl-wrap" id="${t}-tbl-st"><div class="empty-state"><p>${l.es_ana}</p></div></div>
-        </div>
-
-        <!-- 2: Standards -->
-        <div class="tab-pane" id="${t}-pane-2">
-          <div class="filter-bar">
-            <div class="field"><label class="fl-yr">${l.f_yr}</label><select id="${t}-std-yr"><option value="all" class="f-all-opt">${l.f_all}</option></select></div>
-            <div class="field"><label class="fl-loc">${l.f_loc}</label><select id="${t}-std-loc"><option value="all" class="f-all-opt">${l.f_all}</option></select></div>
-            <div class="field"><label class="fl-p">${l.f_p}</label><select id="${t}-std-p"><option value="all" class="f-all-opt">${l.f_all}</option></select></div>
-            <div class="field"><label>${l.f_show}</label><select id="${t}-std-show"><option value="all">${l.f_all}</option><option value="exceed">${l.f_exc}</option></select></div>
-            ${t==='sed'?`<div class="field"><label>Distance</label><select id="${t}-std-dist"><option value="all" class="f-all-opt">${l.f_all}</option></select></div>`:''}
-            ${t==='sea'?`<div class="field"><label>${l.col_wl}</label><select id="${t}-std-wl"><option value="all" class="f-all-opt">${l.f_all}</option></select></div>`:''}
-          </div>
-          <div class="tbl-wrap" id="${t}-tbl-std"><div class="empty-state"><p>${l.es_ana}</p></div></div>
-        </div>
-
-        <!-- 3: Comparison -->
-        <div class="tab-pane" id="${t}-pane-3">
-          <div style="display:flex;gap:8px;margin-bottom:14px;">
-            <button class="btn btn-outline btn-sm cmp-btn active" data-cmp="${t}" data-mode="ref">${isEN?'vs REF':'เทียบ REF'}</button>
-            <button class="btn btn-outline btn-sm cmp-btn" data-cmp="${t}" data-mode="bs">${isEN?'vs Baseline':'เทียบ Baseline'}</button>
-            <button class="btn btn-outline btn-sm cmp-btn" data-cmp="${t}" data-mode="yr">${isEN?'Year Comparison':'เทียบรายปี'}</button>
-          </div>
-          <div id="${t}-cmp-ref">
-            <div class="filter-bar">
-              <div class="field"><label class="fl-yr">${l.f_yr}</label><select id="${t}-ref-yr"><option value="all" class="f-all-opt">${l.f_all}</option></select></div>
-              <div class="field"><label>${l.th_loc}</label><select id="${t}-ref-loc"><option value="all" class="f-all-opt">${l.f_all}</option></select></div>
-              <div class="field"><label class="fl-p">${l.f_p}</label><select id="${t}-ref-p"><option value="all" class="f-all-opt">${l.f_all}</option></select></div>
-            </div>
-            <div class="tbl-wrap" id="${t}-tbl-ref"><div class="empty-state"><p>${l.es_ref}</p></div></div>
-          </div>
-          <div id="${t}-cmp-bs" style="display:none">
-            <div class="filter-bar">
-              <div class="field"><label class="fl-yr">${l.f_yr}</label><select id="${t}-bs-yr"><option value="all" class="f-all-opt">${l.f_all}</option></select></div>
-              <div class="field"><label>${l.th_loc}</label><select id="${t}-bs-loc"><option value="all" class="f-all-opt">${l.f_all}</option></select></div>
-              <div class="field"><label class="fl-p">${l.f_p}</label><select id="${t}-bs-p"><option value="all" class="f-all-opt">${l.f_all}</option></select></div>
-            </div>
-            <div class="tbl-wrap" id="${t}-tbl-bs"><div class="empty-state"><p>${isEN?'Select Baseline Stations in the sidebar first':'เลือก Baseline Station ใน Sidebar ก่อน'}</p></div></div>
-          </div>
-          <div id="${t}-cmp-yr" style="display:none">
-            <div class="filter-bar">
-              <div class="field"><label class="fl-loc">${l.f_loc}</label><select id="${t}-yr-loc"><option value="all" class="f-all-opt">${l.f_all}</option></select></div>
-              <div class="field"><label class="fl-p">${l.f_p}</label><select id="${t}-yr-par"><option value="all" class="f-all-opt">${l.f_all}</option></select></div>
-            </div>
-            <div class="tbl-wrap" id="${t}-tbl-yr"><div class="empty-state"><p>${l.es_yr}</p></div></div>
-          </div>
-        </div>
-
-        <!-- 4: Trend -->
-        <div class="tab-pane" id="${t}-pane-4">
-          <div class="filter-bar">
-            <div class="field"><label class="fl-p">${l.f_p}</label><select id="${t}-mk-p"><option value="all" class="f-all-opt">${l.f_all}</option></select></div>
-            <div class="field"><label class="fl-loc">${l.f_loc}</label><select id="${t}-mk-loc"><option value="all" class="f-all-opt">${l.f_all}</option></select></div>
-            <div class="field" style="align-self:flex-end">
-              <label style="display:flex;align-items:center;gap:6px;cursor:pointer;text-transform:none;font-size:12.5px;color:var(--text2)">
-                <input type="checkbox" id="${t}-mk-sig" style="accent-color:var(--blue);width:14px;height:14px">
-                <span class="fl-mk-sig">${l.mk_sig_lbl}</span>
-              </label>
-            </div>
-          </div>
-          <div class="tbl-wrap" id="${t}-tbl-mk"><div class="empty-state"><p>${l.es_mk}</p></div></div>
-          <div class="chart-box" style="height:340px;margin-top:14px;"><canvas id="${t}-mk-chart"></canvas></div>
-        </div>
-
-        <!-- 5: Report -->
-        <div class="tab-pane" id="${t}-pane-5">
-          <div class="filter-bar">
-            <div class="field"><label class="fl-yr para-yr-lbl">${l.para_yr_lbl}</label><select id="${t}-para-yr"><option value="all" class="f-all-opt">${l.f_all}</option></select></div>
-            <div class="field"><label class="fl-loc para-loc-lbl">${l.para_loc_lbl}</label><select id="${t}-para-loc"><option value="all" class="f-all-opt">${l.f_all}</option></select></div>
-            <button class="btn btn-outline btn-sm para-copy-btn" style="align-self:flex-end" data-copy-para="${t}">${l.para_copy}</button>
-          </div>
-          <div class="para-draft-notice para-notice-text">${l.para_notice}</div>
-          <div class="para-box" id="${t}-para-box"><span style="color:var(--text3)">${l.es_ana}</span></div>
-        </div>
-
-        <!-- 6: Chart -->
-        <div class="tab-pane" id="${t}-pane-6">
-          <div class="filter-bar">
-            <div class="field"><label class="fl-p">${l.f_p}</label><select id="${t}-ch-p"><option value="">${l.f_sel}</option></select></div>
-            <div class="field"><label class="fl-grp">${l.f_grp}</label><select id="${t}-ch-grp"><option value="station">${l.o_st}</option><option value="location">${l.o_loc}</option></select></div>
-            <div class="field"><label class="fl-yr">${l.f_yr}</label><select id="${t}-ch-yr"><option value="all" class="f-all-opt">${l.f_all}</option></select></div>
-          </div>
-          <div class="chart-box" style="height:420px;"><canvas id="${t}-main-chart"></canvas></div>
-        </div>
-
-        <!-- 7: Raw Data -->
-        <div class="tab-pane" id="${t}-pane-7">
-          <div class="filter-bar">
-            <div class="field"><label class="fl-yr">${l.f_yr}</label><select id="${t}-raw-yr"><option value="all" class="f-all-opt">${l.f_all}</option></select></div>
-          </div>
-          <div class="tbl-wrap" id="${t}-tbl-raw"><div class="empty-state"><p>${l.es_raw}</p></div></div>
-        </div>
-
-        <!-- 8: Standard Reference -->
-        <div class="tab-pane" id="${t}-pane-8">
-          <div style="display:flex;justify-content:flex-end;margin-bottom:10px">
-            <button class="btn btn-outline btn-sm" data-editstd="${t}">${isEN?'Edit Standards':'แก้ไขมาตรฐาน'}</button>
-          </div>
-          <div id="${t}-stdref-body">${buildStdRef(t)}</div>
-        </div>
-
-      </div><!-- /content-body -->
-    </div><!-- /content -->
-  </div><!-- /layout -->
+  <input type="file" id="${t}-importmap-fi" accept=".json" style="display:none">
   `;
-
-  // Setup drag-and-drop on dropzone
-  const dz = document.getElementById(`${t}-dz`);
-  if (dz) {
-    dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('drag'); });
-    dz.addEventListener('dragleave', () => dz.classList.remove('drag'));
-    dz.addEventListener('drop', e => {
-      e.preventDefault();
-      dz.classList.remove('drag');
-      const file = e.dataTransfer.files[0];
-      if (file) dz.dispatchEvent(new CustomEvent('file-dropped', { detail: file }));
-    });
-  }
-
-  // Setup collapsible sidebar blocks
-  el.querySelectorAll('[data-toggle-sb]').forEach(title => {
-    title.addEventListener('click', () => {
-      title.closest('.sb-block')?.classList.toggle('collapsed');
-    });
-  });
-
-  // Setup slider live updates
-  [
-    [`${t}-bs-cv`, `${t}-bs-cvv`],
-    [`${t}-ref-cv`, `${t}-ref-cvv`],
-    [`${t}-yr-cv`, `${t}-yr-cvv`],
-  ].forEach(([sliderId, labelId]) => {
-    const slider = document.getElementById(sliderId);
-    const label  = document.getElementById(labelId);
-    if (slider && label) {
-      slider.addEventListener('input', () => { label.textContent = slider.value + '%'; });
-    }
-  });
-
-  renderColMapSummary(t);
 }
