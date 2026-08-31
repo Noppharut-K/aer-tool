@@ -94,21 +94,29 @@ function renderFormat(t) {
       <div class="search-field"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><input type="text" id="${t}-cmp-search" placeholder="${isEN ? 'Search parameter, location…' : 'ค้นหา parameter, location…'}"></div>`;
     document.getElementById(`${t}-cmp-baseyear`).addEventListener('change', e => { updateCmpSettings(t, activeFormat, { baseYear: e.target.value || null }); renderFormat(t); });
   } else {
+    const refWord = isEN ? fmt.refLabel.en.replace(' value', '') : (activeFormat === 'stRef' ? 'REF' : 'Baseline');
+    const matchHint = isEN
+      ? `${refWord} value is taken from the same year as the row being compared.`
+      : `ดึงค่า ${refWord} จากปีเดียวกับข้อมูลที่นำมาเทียบ (ปีไหนก็เทียบกับปีนั้น)`;
+    const fixedHint = isEN
+      ? `${refWord} value always comes from one year you pick below, no matter which year is being compared.`
+      : `ดึงค่า ${refWord} จากปีที่เลือกไว้ปีเดียวเสมอ ไม่ว่าข้อมูลที่เทียบจะเป็นปีไหนก็ตาม`;
     stripEl.innerHTML = `
-      <div class="pill-field"><label>${isEN ? 'Year' : 'ปี'}</label>
+      <div class="pill-field"><label>${isEN ? 'Reference year' : 'ปีของค่าอ้างอิง'}</label>
         <select id="${t}-cmp-yearmode">
-          <option value="match" ${settings.yearMode === 'match' ? 'selected' : ''}>${isEN ? 'Match same year' : 'ปีเดียวกัน'}</option>
-          <option value="fixed" ${settings.yearMode === 'fixed' ? 'selected' : ''}>${isEN ? 'Fixed year' : 'ปีคงที่'}</option>
+          <option value="match" ${settings.yearMode === 'match' ? 'selected' : ''}>${isEN ? 'Same year as data' : 'ปีเดียวกับข้อมูล'}</option>
+          <option value="fixed" ${settings.yearMode === 'fixed' ? 'selected' : ''}>${isEN ? 'One fixed year' : 'ปีที่เลือกไว้ตายตัว'}</option>
         </select>
       </div>
-      ${settings.yearMode === 'fixed' ? `<div class="pill-field"><label>${isEN ? 'Ref./Baseline year' : 'ปีของ REF/Baseline'}</label>
+      ${settings.yearMode === 'fixed' ? `<div class="pill-field"><label>${isEN ? `${refWord} year` : `ปีของ ${refWord}`}</label>
         <select id="${t}-cmp-fixedyear">
           <option value="">${isEN ? '— select —' : '— เลือก —'}</option>
           ${getAvailableYears(t).map(y => `<option value="${y}" ${String(settings.fixedYear) === String(y) ? 'selected' : ''}>${y}</option>`).join('')}
         </select>
       </div>` : ''}
       <div class="pill-field"><label>${isEN ? 'Threshold %' : 'Threshold %'}</label><input type="number" id="${t}-cmp-threshold" min="0" step="1" value="${settings.threshold}"></div>
-      <div class="search-field"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><input type="text" id="${t}-cmp-search" placeholder="${isEN ? 'Search parameter, group…' : 'ค้นหา parameter, group…'}"></div>`;
+      <div class="search-field"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><input type="text" id="${t}-cmp-search" placeholder="${isEN ? 'Search parameter, group…' : 'ค้นหา parameter, group…'}"></div>
+      <div class="cmp-yearmode-hint">${settings.yearMode === 'fixed' ? fixedHint : matchHint}</div>`;
     document.getElementById(`${t}-cmp-yearmode`).addEventListener('change', e => { updateCmpSettings(t, activeFormat, { yearMode: e.target.value }); renderFormat(t); });
     document.getElementById(`${t}-cmp-fixedyear`)?.addEventListener('change', e => { updateCmpSettings(t, activeFormat, { fixedYear: e.target.value || null }); renderFormat(t); });
   }
