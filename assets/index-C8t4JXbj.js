@@ -297,21 +297,22 @@
         </select>
       </div>
       <div class="pill-field"><label>Threshold %</label><input type="number" id="${e}-cmp-threshold" min="0" step="1" value="${i.threshold}"></div>
-      <div class="search-field"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><input type="text" id="${e}-cmp-search" placeholder="${n?`Search parameter, location…`:`ค้นหา parameter, location…`}"></div>`,document.getElementById(`${e}-cmp-baseyear`).addEventListener(`change`,t=>{F(e,U,{baseYear:t.target.value||null}),W(e)})}else a.innerHTML=`
-      <div class="pill-field"><label>${n?`Year`:`ปี`}</label>
+      <div class="search-field"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><input type="text" id="${e}-cmp-search" placeholder="${n?`Search parameter, location…`:`ค้นหา parameter, location…`}"></div>`,document.getElementById(`${e}-cmp-baseyear`).addEventListener(`change`,t=>{F(e,U,{baseYear:t.target.value||null}),W(e)})}else{let t=n?r.refLabel.en.replace(` value`,``):U===`stRef`?`REF`:`Baseline`,o=n?`${t} value is taken from the same year as the row being compared.`:`ดึงค่า ${t} จากปีเดียวกับข้อมูลที่นำมาเทียบ (ปีไหนก็เทียบกับปีนั้น)`,s=n?`${t} value always comes from one year you pick below, no matter which year is being compared.`:`ดึงค่า ${t} จากปีที่เลือกไว้ปีเดียวเสมอ ไม่ว่าข้อมูลที่เทียบจะเป็นปีไหนก็ตาม`;a.innerHTML=`
+      <div class="pill-field"><label>${n?`Reference year`:`ปีของค่าอ้างอิง`}</label>
         <select id="${e}-cmp-yearmode">
-          <option value="match" ${i.yearMode===`match`?`selected`:``}>${n?`Match same year`:`ปีเดียวกัน`}</option>
-          <option value="fixed" ${i.yearMode===`fixed`?`selected`:``}>${n?`Fixed year`:`ปีคงที่`}</option>
+          <option value="match" ${i.yearMode===`match`?`selected`:``}>${n?`Same year as data`:`ปีเดียวกับข้อมูล`}</option>
+          <option value="fixed" ${i.yearMode===`fixed`?`selected`:``}>${n?`One fixed year`:`ปีที่เลือกไว้ตายตัว`}</option>
         </select>
       </div>
-      ${i.yearMode===`fixed`?`<div class="pill-field"><label>${n?`Ref./Baseline year`:`ปีของ REF/Baseline`}</label>
+      ${i.yearMode===`fixed`?`<div class="pill-field"><label>${n?`${t} year`:`ปีของ ${t}`}</label>
         <select id="${e}-cmp-fixedyear">
           <option value="">${n?`— select —`:`— เลือก —`}</option>
           ${lt(e).map(e=>`<option value="${e}" ${String(i.fixedYear)===String(e)?`selected`:``}>${e}</option>`).join(``)}
         </select>
       </div>`:``}
       <div class="pill-field"><label>Threshold %</label><input type="number" id="${e}-cmp-threshold" min="0" step="1" value="${i.threshold}"></div>
-      <div class="search-field"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><input type="text" id="${e}-cmp-search" placeholder="${n?`Search parameter, group…`:`ค้นหา parameter, group…`}"></div>`,document.getElementById(`${e}-cmp-yearmode`).addEventListener(`change`,t=>{F(e,U,{yearMode:t.target.value}),W(e)}),document.getElementById(`${e}-cmp-fixedyear`)?.addEventListener(`change`,t=>{F(e,U,{fixedYear:t.target.value||null}),W(e)});document.getElementById(`${e}-cmp-threshold`).addEventListener(`input`,t=>{let n=parseFloat(t.target.value);isNaN(n)||(F(e,U,{threshold:n}),W(e))});let s=ht(e,U,me(e)[U]);Pe(document.getElementById(`${e}-cmp-search`),s,(e,t)=>e.pk.toLowerCase().includes(t)||e.group.toLowerCase().includes(t),t=>gt(e,o,t,r))}function mt(e){return{stRef:ot,locBase:st,locYear:ct}[e]}function ht(e,t,n){let r=mt(t),i=[];return ft(e).forEach(t=>{r(e,t,n).forEach(e=>i.push({pk:t,...e}))}),i}function gt(e,n,r,i){let a=t===`en`;if(!r.length){n.innerHTML=`<div class="empty-state"><p>${a?`No rows match.`:`ไม่มีข้อมูลตรงกับเงื่อนไข`}</p></div>`;return}r.sort((e,t)=>e.pk.localeCompare(t.pk)||e.group.localeCompare(t.group)||(e.yr??0)-(t.yr??0));let o=a?i.groupLabel.en:i.groupLabel.th,s=a?i.refLabel.en:i.refLabel.th;n.innerHTML=`
+      <div class="search-field"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><input type="text" id="${e}-cmp-search" placeholder="${n?`Search parameter, group…`:`ค้นหา parameter, group…`}"></div>
+      <div class="cmp-yearmode-hint">${i.yearMode===`fixed`?s:o}</div>`,document.getElementById(`${e}-cmp-yearmode`).addEventListener(`change`,t=>{F(e,U,{yearMode:t.target.value}),W(e)}),document.getElementById(`${e}-cmp-fixedyear`)?.addEventListener(`change`,t=>{F(e,U,{fixedYear:t.target.value||null}),W(e)})}document.getElementById(`${e}-cmp-threshold`).addEventListener(`input`,t=>{let n=parseFloat(t.target.value);isNaN(n)||(F(e,U,{threshold:n}),W(e))});let s=ht(e,U,me(e)[U]);Pe(document.getElementById(`${e}-cmp-search`),s,(e,t)=>e.pk.toLowerCase().includes(t)||e.group.toLowerCase().includes(t),t=>gt(e,o,t,r))}function mt(e){return{stRef:ot,locBase:st,locYear:ct}[e]}function ht(e,t,n){let r=mt(t),i=[];return ft(e).forEach(t=>{r(e,t,n).forEach(e=>i.push({pk:t,...e}))}),i}function gt(e,n,r,i){let a=t===`en`;if(!r.length){n.innerHTML=`<div class="empty-state"><p>${a?`No rows match.`:`ไม่มีข้อมูลตรงกับเงื่อนไข`}</p></div>`;return}r.sort((e,t)=>e.pk.localeCompare(t.pk)||e.group.localeCompare(t.group)||(e.yr??0)-(t.yr??0));let o=a?i.groupLabel.en:i.groupLabel.th,s=a?i.refLabel.en:i.refLabel.th;n.innerHTML=`
     <div class="table-scroll">
       <table>
         <thead><tr>
