@@ -1,13 +1,13 @@
 /**
- * reportUI.js — Report tab: narrative summary of Data Overview + Comparison
- * findings, grouped by Station, Location, or Year (one grain at a time).
- * Brief/key-points tone — mentions exceedances and significant comparison
- * differences, not every parameter's full detail.
+ * reportUI.js — Report tab: structured narrative per Station or Location
+ * (single-select grain toggle). Each card has labeled subsections (not one
+ * run-on paragraph) so a long list — e.g. every year's REF comparison for
+ * every parameter — stays scannable instead of becoming a wall of text.
  */
 
 import { LANG } from '../utils/lang.js';
 import { getState } from '../core/state.js';
-import { getReportGroups, hasAnyComparisonConfigured } from '../core/report.js';
+import { getReportGroups } from '../core/report.js';
 import { fmtVal } from '../core/analysis.js';
 import { wireSearch, wirePagination } from './tableControls.js';
 
@@ -21,7 +21,14 @@ function escHtml(s) {
 const GRAIN_LABEL = {
   station: { th: 'ตาม Station', en: 'By Station' },
   location: { th: 'ตาม Location', en: 'By Location' },
-  year: { th: 'ตามปี', en: 'By Year' },
+};
+
+const SEC = {
+  overall: { th: 'สถานะเทียบกับมาตรฐาน', en: 'Standards status' },
+  minmax: { th: 'ช่วงค่า Min–Max', en: 'Min–Max range' },
+  selfTrend: { th: 'แนวโน้มเทียบกับตัวเอง (ข้ามปี)', en: 'Trend vs itself (across years)' },
+  refTrend: { th: 'แนวโน้มเทียบกับ REF', en: 'Trend vs Reference' },
+  baseTrend: { th: 'แนวโน้มเทียบกับ Baseline', en: 'Trend vs Baseline' },
 };
 
 export function renderReportUI(t) {
@@ -56,7 +63,6 @@ export function renderReportUI(t) {
   const listEl = document.getElementById(`${t}-report-list`);
   const pageEl = document.getElementById(`${t}-report-page`);
   const searchEl = document.getElementById(`${t}-report-search`);
-  const configured = hasAnyComparisonConfigured(t);
 
   wireSearch(searchEl, groups,
     (g, q) => String(g.key).toLowerCase().includes(q),
@@ -67,75 +73,91 @@ export function renderReportUI(t) {
         return;
       }
       wirePagination(pageEl, filtered, PAGE_SIZE, pageGroups => {
-        listEl.innerHTML = pageGroups.map(g => cardHtml(g, isEN, configured)).join('');
+        listEl.innerHTML = pageGroups.map(g => g.grain === 'station' ? stationCardHtml(g, isEN) : locationCardHtml(g, isEN)).join('');
       });
     }
   );
 }
 
-function cardHtml(g, isEN, configured) {
-  return `<div class="report-card">
-    <div class="report-card-title">${escHtml(g.key)}${g.loc ? ` <span class="report-card-title-sub">(${isEN ? 'Location' : 'Location'}: ${escHtml(g.loc)})</span>` : ''}</div>
-    <div class="report-card-meta">${metaLine(g, isEN)}</div>
-    <p class="report-para">${standardsSentence(g, isEN)}</p>
-    ${configured ? `<p class="report-para">${comparisonSentence(g, isEN)}</p>` : ''}
+function section(titleObj, isEN, bodyHtml) {
+  return `<div class="report-section">
+    <div class="report-section-title">${isEN ? titleObj.en : titleObj.th}</div>
+    ${bodyHtml}
   </div>`;
 }
 
 function metaLine(g, isEN) {
-  const parts = [];
-  parts.push(isEN ? `${g.n} readings` : `${g.n} รายการข้อมูล`);
-  parts.push(isEN ? `${g.paramCount} parameters` : `${g.paramCount} parameter`);
-  if (g.grain !== 'year' && g.years.length) parts.push(isEN ? `${g.years[0]}–${g.years[g.years.length - 1]}` : `ปี ${g.years[0]}–${g.years[g.years.length - 1]}`);
-  if (g.grain !== 'station') parts.push(isEN ? `${g.stationCount} stations` : `${g.stationCount} สถานี`);
-  if (g.grain === 'year') parts.push(isEN ? `${g.locationCount} locations` : `${g.locationCount} พื้นที่`);
+  const parts = [
+    isEN ? `${g.n} readings` : `${g.n} รายการข้อมูล`,
+    isEN ? `${g.paramCount} parameters` : `${g.paramCount} parameter`,
+  ];
+  if (g.years.length) parts.push(isEN ? `${g.years[0]}–${g.years[g.years.length - 1]}` : `ปี ${g.years[0]}–${g.years[g.years.length - 1]}`);
+  if (g.grain === 'location') parts.push(isEN ? `${g.stationCount} stations` : `${g.stationCount} สถานี`);
   return parts.join(' · ');
 }
 
-const LIST_CAP = 5;
-
-/** Joins up to LIST_CAP rendered items with "; ", appending a "+N more"
-    note when the list was truncated — keeps narrative sentences readable
-    even when a group has many exceedances/differences (e.g. every
-    parameter at a heavily-impacted station). */
-function joinCapped(items, renderFn, isEN) {
-  const shown = items.slice(0, LIST_CAP).map(renderFn).join('; ');
-  const rest = items.length - LIST_CAP;
-  if (rest <= 0) return shown;
-  return shown + (isEN ? `; and ${rest} more` : ` และอีก ${rest} รายการ`);
+function overallStatusHtml(g, isEN) {
+  const exceedParamCount = new Set(g.exceeding.map(e => e.pk)).size;
+  const parts = [];
+  if (exceedParamCount) parts.push(isEN ? `${exceedParamCount} exceeding` : `เกินมาตรฐาน ${exceedParamCount} parameter`);
+  parts.push(isEN ? `${g.passCount} within limits` : `ผ่านมาตรฐาน ${g.passCount} parameter`);
+  if (g.notSetCount) parts.push(isEN ? `${g.notSetCount} no standard set` : `ยังไม่ตั้งมาตรฐาน ${g.notSetCount} parameter`);
+  return `<p class="report-para">${parts.join(' · ')}</p>`;
 }
 
-function standardsSentence(g, isEN) {
-  let s;
-  if (g.exceeding.length) {
-    const sorted = [...g.exceeding].sort((a, b) => Math.abs(b.value - b.std.value) / Math.abs(b.std.value || 1) - Math.abs(a.value - a.std.value) / Math.abs(a.std.value || 1));
-    const list = joinCapped(sorted, e => {
-      const limitWord = e.std.direction === 'min' ? (isEN ? 'not below' : 'ไม่ต่ำกว่า') : (isEN ? 'not exceed' : 'ไม่เกิน');
-      return isEN
-        ? `${e.pk} (${fmtVal(e.value, e.std.decimals)} ${e.unit || ''}, limit ${limitWord} ${e.std.value} ${e.std.unit || ''})`
-        : `${e.pk} (${fmtVal(e.value, e.std.decimals)} ${e.unit || ''}, มาตรฐาน${limitWord} ${e.std.value} ${e.std.unit || ''})`;
-    }, isEN);
-    s = isEN
-      ? `${g.exceeding.length} parameter(s) exceeded their standard: ${list}.`
-      : `พบ ${g.exceeding.length} parameter ที่มีค่าเกินมาตรฐานที่ตั้งไว้: ${list}`;
-  } else {
-    s = isEN ? 'All parameters with a standard set were within limits.' : 'ทุก parameter ที่มีมาตรฐานอยู่ในเกณฑ์ปกติ';
-  }
-  if (g.notSetCount) {
-    s += isEN
-      ? ` (${g.notSetCount} parameter(s) have no standard configured.)`
-      : ` (อีก ${g.notSetCount} parameter ยังไม่ได้ตั้งค่ามาตรฐานอ้างอิง)`;
-  }
-  return s;
+function exceedingListHtml(exceeding, isEN, attributeStation) {
+  if (!exceeding.length) return `<p class="report-para">${isEN ? 'No parameters exceeded their standard.' : 'ไม่มี parameter ที่เกินมาตรฐาน'}</p>`;
+  return `<ul class="report-list">${exceeding.map(e => {
+    const limitWord = e.std.direction === 'min' ? (isEN ? 'not below' : 'ไม่ต่ำกว่า') : (isEN ? 'not exceed' : 'ไม่เกิน');
+    const stPart = attributeStation ? ` — ${escHtml(e.st)}` : '';
+    return `<li>${escHtml(e.pk)}${stPart}: ${fmtVal(e.value, e.std.decimals)} ${e.unit || ''} (${isEN ? `limit ${limitWord}` : `มาตรฐาน${limitWord}`} ${e.std.value} ${e.std.unit || ''})</li>`;
+  }).join('')}</ul>`;
 }
 
-function comparisonSentence(g, isEN) {
-  if (!g.diffing.length) {
-    return isEN ? 'All comparison results were close to their reference value.' : 'ผลเปรียบเทียบทั้งหมดอยู่ในเกณฑ์ใกล้เคียงค่าอ้างอิง';
-  }
-  const sorted = [...g.diffing].sort((a, b) => Math.abs(b.pctDiff) - Math.abs(a.pctDiff));
-  const list = joinCapped(sorted, d => `${d.pk} (${d.fmt}, ${d.pctDiff >= 0 ? '+' : ''}${d.pctDiff.toFixed(1)}%)`, isEN);
-  return isEN
-    ? `${g.diffing.length} comparison(s) differed significantly from their reference: ${list}.`
-    : `ผลเปรียบเทียบพบความแตกต่างอย่างมีนัยสำคัญ ${g.diffing.length} รายการ: ${list}`;
+function minMaxListHtml(minMax, isEN) {
+  return `<ul class="report-list">${minMax.map(m => `<li>${escHtml(m.pk)}: ${fmtVal(m.min)}–${fmtVal(m.max)} ${m.unit || ''}</li>`).join('')}</ul>`;
+}
+
+function trendSuffix(trend, isEN) {
+  if (!trend) return '';
+  if (trend.label === 'stable') return isEN ? ' (stable)' : ' (ค่อนข้างคงที่)';
+  const word = trend.label === 'up' ? (isEN ? 'increasing' : 'เพิ่มขึ้น') : (isEN ? 'decreasing' : 'ลดลง');
+  return ` (${word} ${trend.pct >= 0 ? '+' : ''}${trend.pct.toFixed(1)}%)`;
+}
+
+function selfTrendListHtml(selfTrend, isEN) {
+  if (!selfTrend.length) return `<p class="report-para">${isEN ? 'Not enough years of data for a trend (need at least 2).' : 'ข้อมูลไม่พอสำหรับดูแนวโน้ม (ต้องมีอย่างน้อย 2 ปี)'}</p>`;
+  return `<ul class="report-list">${selfTrend.map(s =>
+    `<li>${escHtml(s.pk)}: ${s.points.map(p => `${p.yr}=${fmtVal(p.val)}`).join(', ')}${trendSuffix(s.trend, isEN)}</li>`
+  ).join('')}</ul>`;
+}
+
+function refBaselineTrendListHtml(trendList, hasFlag, isEN) {
+  if (!hasFlag) return `<p class="report-para">${isEN ? 'Reference/Baseline not configured for this Location.' : 'ยังไม่ได้กำหนด REF/Baseline สำหรับพื้นที่นี้'}</p>`;
+  if (!trendList.length) return `<p class="report-para">${isEN ? 'No comparable data.' : 'ไม่มีข้อมูลที่เปรียบเทียบได้'}</p>`;
+  return `<ul class="report-list">${trendList.map(s =>
+    `<li>${escHtml(s.pk)}: ${s.points.map(p => `${p.yr} ${isFinite(p.pctDiff) ? (p.pctDiff >= 0 ? '+' : '') + p.pctDiff.toFixed(1) + '%' : '—'}`).join(', ')}${trendSuffix(s.trend, isEN)}</li>`
+  ).join('')}</ul>`;
+}
+
+function stationCardHtml(g, isEN) {
+  return `<div class="report-card">
+    <div class="report-card-title">${escHtml(g.key)}${g.loc ? ` <span class="report-card-title-sub">(${isEN ? 'Location' : 'Location'}: ${escHtml(g.loc)})</span>` : ''}</div>
+    <div class="report-card-meta">${metaLine(g, isEN)}</div>
+    ${section(SEC.overall, isEN, overallStatusHtml(g, isEN) + exceedingListHtml(g.exceeding, isEN, false))}
+    ${section(SEC.selfTrend, isEN, selfTrendListHtml(g.selfTrend, isEN))}
+    ${section(SEC.refTrend, isEN, refBaselineTrendListHtml(g.refTrend, g.hasRef, isEN))}
+    ${section(SEC.baseTrend, isEN, refBaselineTrendListHtml(g.baselineTrend, g.hasBaseline, isEN))}
+  </div>`;
+}
+
+function locationCardHtml(g, isEN) {
+  return `<div class="report-card">
+    <div class="report-card-title">${escHtml(g.key)}</div>
+    <div class="report-card-meta">${metaLine(g, isEN)}</div>
+    ${section(SEC.overall, isEN, overallStatusHtml(g, isEN) + exceedingListHtml(g.exceeding, isEN, true))}
+    ${section(SEC.minmax, isEN, minMaxListHtml(g.minMax, isEN))}
+    ${section(SEC.selfTrend, isEN, selfTrendListHtml(g.selfTrend, isEN))}
+    ${section(SEC.baseTrend, isEN, refBaselineTrendListHtml(g.baselineTrend, g.hasBaseline, isEN))}
+  </div>`;
 }
