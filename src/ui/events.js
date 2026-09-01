@@ -10,6 +10,7 @@ import { isNumericValue } from '../core/analysis.js';
 import { renderStandardsUI } from './standardsUI.js';
 import { renderRefBaselineUI } from './refBaselineUI.js';
 import { renderComparisonUI } from './comparisonUI.js';
+import { renderReportUI } from './reportUI.js';
 import { runAnalysis } from '../core/runAnalysis.js';
 
 export function setSt(t, msg, kind = 'idle') {
@@ -128,6 +129,7 @@ function wireViewNav(t) {
       if (btn.dataset.viewBtn === 'standards') renderStandardsUI(t);
       if (btn.dataset.viewBtn === 'refmap') renderRefBaselineUI(t);
       if (btn.dataset.viewBtn === 'comparison') renderComparisonUI(t);
+      if (btn.dataset.viewBtn === 'report') renderReportUI(t);
     });
   });
 }

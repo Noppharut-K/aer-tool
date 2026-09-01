@@ -35,6 +35,7 @@ export function buildPage(t, el) {
       <button class="view-nav-btn" data-view-btn="standards">${isEN ? 'Standards' : 'มาตรฐานอ้างอิง'}</button>
       <button class="view-nav-btn" data-view-btn="refmap">${isEN ? 'REF / Baseline' : 'REF / Baseline'}</button>
       <button class="view-nav-btn" data-view-btn="comparison">${isEN ? 'Comparison' : 'เปรียบเทียบ'}</button>
+      <button class="view-nav-btn" data-view-btn="report">${isEN ? 'Report' : 'รายงาน'}</button>
     </div>
 
     <div class="view-pane active" id="${t}-view-dashboard">
@@ -111,6 +112,10 @@ export function buildPage(t, el) {
 
     <div class="view-pane" id="${t}-view-comparison">
       <div id="${t}-comparison-root"></div>
+    </div>
+
+    <div class="view-pane" id="${t}-view-report">
+      <div id="${t}-report-root"></div>
     </div>
   </div>
 
