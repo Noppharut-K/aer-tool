@@ -11,7 +11,7 @@ import {
   getState, setColMap, getColMap,
   getStandards, getRefMap, getBaselineMap, getDepthSummaryMethod, getCmpSettings, getCustomCmp,
 } from '../core/state.js';
-import { isNumericValue } from '../core/analysis.js';
+import { isNumericOrBdl } from '../core/analysis.js';
 
 function escHtml(s) {
   return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -96,12 +96,21 @@ function mappableCols(state) {
   return state.cols.filter(col => !isDateLikeColumn(col, state.raw));
 }
 
+/** "Distance"-named columns are no longer a mappable role (removed per the
+    client's request), but a numeric distance-from-platform column would
+    otherwise still auto-detect as a Parameter, since nothing else claims
+    it — exclude it by name so it defaults to "Ignore" like it did before,
+    instead of silently polluting the Parameter list. */
+function isDistanceLikeColumn(col) {
+  return /distance/i.test(col);
+}
+
 function autoDetectParams(cols, raw, used) {
   const params = {};
   cols.forEach(col => {
-    if (used.has(col)) return;
+    if (used.has(col) || isDistanceLikeColumn(col)) return;
     const sample = raw.find(r => r[col] != null && r[col] !== '');
-    if (sample == null || !isNumericValue(sample[col])) return;
+    if (sample == null || !isNumericOrBdl(sample[col])) return;
     params[col] = col;
   });
   return params;

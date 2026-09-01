@@ -2,8 +2,8 @@
  * runCore.js — wide → long unpivot + per-row standard/outlier evaluation
  */
 
-import { getState, setRows, getColVal, getParamCols, resolveCanonical, getStandardFor } from './state.js';
-import { checkStandard, computeOutlierStats, isNumericValue } from './analysis.js';
+import { getState, setRows, getColVal, getParamCols, resolveCanonical, getStandardFor, getBdlMethod } from './state.js';
+import { checkStandard, computeOutlierStats, isNumericValue, parseBdl } from './analysis.js';
 
 /** Fixed baseline z-score threshold for the row-level dq_flag tag — distinct
     from the dashboard's adjustable-threshold display filter, which
@@ -24,12 +24,17 @@ export function runCore(t) {
   const colUtmE = getColVal(t, 'utmE');
   const colWl = getColVal(t, 'wl');
   const paramCols = getParamCols(t);
+  const bdlMethod = getBdlMethod(t);
 
   const rows = [];
   state.raw.forEach(raw => {
     paramCols.forEach(col => {
-      if (!isNumericValue(raw[col])) return;
-      const val = parseFloat(raw[col]);
+      const cell = raw[col];
+      const bdl = parseBdl(cell);
+      if (!isNumericValue(cell) && !bdl) return;
+      if (bdl && bdlMethod === 'exclude') return;
+
+      const val = bdl ? (bdlMethod === 'half' && bdl.limit != null ? bdl.limit / 2 : 0) : parseFloat(cell);
       const pk = resolveCanonical(t, col);
       const std = getStandardFor(t, pk);
       rows.push({
@@ -46,6 +51,8 @@ export function runCore(t) {
         unit: std?.unit || '',
         sc_status: checkStandard(std, val).status,
         dq_flag: null,
+        is_bdl: !!bdl,
+        bdl_limit: bdl?.limit ?? null,
       });
     });
   });

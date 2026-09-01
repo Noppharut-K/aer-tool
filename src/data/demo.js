@@ -90,6 +90,15 @@ function buildSea() {
   SEA_DEPTHS.forEach(dep => rows.push(seaRow('Baseline','BL-01',2019,dep,55,BASE_BL,0)));
   SEA_STS_A.forEach((st,i) => SEA_YRS.forEach(yr => SEA_DEPTHS.forEach(dep => rows.push(seaRow('Loc-A',st,yr,dep,75+i,BASE_A[i],i)))));
   SEA_STS_B.forEach((st,i) => SEA_YRS.forEach(yr => SEA_DEPTHS.forEach(dep => rows.push(seaRow('Loc-B',st,yr,dep,52+i,BASE_B[i],i)))));
+
+  // A couple of illustrative below-detection-limit readings, so the "BDL:"
+  // toolbar control has something to demonstrate on the built-in dataset
+  // without it dominating any station's story.
+  const m1 = rows.find(r => r.Location === 'Loc-A' && r.Station === 'ST-A02' && r.Year === 2020 && r.Depth === 'Surface');
+  if (m1) m1.Mercury = '<0.01';
+  const m2 = rows.find(r => r.Location === 'Loc-B' && r.Station === 'ST-B05' && r.Year === 2021 && r.Depth === 'Surface');
+  if (m2) m2.Lead = 'ND';
+
   return rows;
 }
 
@@ -159,6 +168,14 @@ function buildSed() {
       Barium:  parseFloat((135+i*18+_dr(-8,8)).toFixed(1)),
     }));
   });
+
+  // A couple of illustrative below-detection-limit readings — same purpose
+  // as the Seawater ones above.
+  const m1 = rows.find(r => r.Location === 'Loc-A' && r.Station === 'ST-A04' && r.Year === 2020);
+  if (m1) m1.Mercury = '<0.02';
+  const m2 = rows.find(r => r.Location === 'Loc-B' && r.Station === 'ST-B03' && r.Year === 2022);
+  if (m2) m2.Cadmium = 'ND';
+
   return rows;
 }
 

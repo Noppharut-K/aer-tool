@@ -105,11 +105,12 @@ function buildGroups(rows, dims) {
     const keyParts = [r.pk, ...dims.map(d => String(r[FIELD_ROWKEY[d]] ?? '—'))];
     const key = keyParts.join('||');
     if (!map[key]) {
-      map[key] = { pk: r.pk, unit: r.unit, dims: {}, vals: [], statuses: [] };
+      map[key] = { pk: r.pk, unit: r.unit, dims: {}, vals: [], statuses: [], bdlCount: 0 };
       dims.forEach(d => { map[key].dims[d] = r[FIELD_ROWKEY[d]] ?? '—'; });
     }
     map[key].vals.push(r.val);
     map[key].statuses.push(r.sc_status);
+    if (r.is_bdl) map[key].bdlCount++;
   });
   return Object.values(map);
 }
@@ -156,10 +157,11 @@ function rowHtml(g, dims, zThreshold, isEN) {
     const n = g.vals.filter(isOutlier).length;
     if (n > 0) outlierTag = `<span class="row-outlier-tag"><span class="chip chip-outlier">${n} ${isEN ? 'outlier' : 'ผิดปกติ'}${n > 1 ? 's' : ''}</span></span>`;
   }
+  const bdlTag = g.bdlCount > 0 ? `<span class="row-outlier-tag"><span class="chip chip-outlier">${g.bdlCount} BDL</span></span>` : '';
 
   const dimCells = dims.map(d => `<td>${g.dims[d]}</td>`).join('');
   return `<tr class="${exceedN > 0 ? 'row-exceed' : ''}">
-    <td class="param-cell">${g.pk}${outlierTag}</td>
+    <td class="param-cell">${g.pk}${outlierTag}${bdlTag}</td>
     ${dimCells}
     <td>${g.unit || '—'}</td>
     <td class="num">${st.n}</td>

@@ -94,6 +94,13 @@ export function buildPage(t, el) {
         </div>
         <div class="toolbar-divider"></div>
         <div class="pill-field"><label>${isEN ? 'Outlier σ×' : 'Outlier σ×'}</label><input type="number" id="${t}-outlier" min="0" step="0.5" value="3"></div>
+        <div class="pill-field"><label>${isEN ? 'BDL:' : 'BDL:'}</label>
+          <select id="${t}-bdl-method">
+            <option value="exclude" selected>${isEN ? 'Exclude' : 'ไม่รวมคำนวณ'}</option>
+            <option value="zero">${isEN ? 'Zero' : 'แทนด้วย 0'}</option>
+            <option value="half">${isEN ? 'Half limit' : 'ครึ่งหนึ่งของ limit'}</option>
+          </select>
+        </div>
         <div class="search-field">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
           <input type="text" id="${t}-search" placeholder="${isEN ? 'Search parameter, station, location…' : 'ค้นหา parameter, station, location…'}">

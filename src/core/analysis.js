@@ -14,6 +14,31 @@ export function isNumericValue(v) {
   return String(v).trim() !== '' && !isNaN(Number(v));
 }
 
+const BDL_LIMIT_PATTERN = /^<\s*([\d.]+)$/;
+const BDL_BARE_PATTERN = /^(nd|n\.d\.|bdl)$/i;
+
+/** Whether a raw cell value is a below-detection-limit marker rather than
+    a genuine number or a data error — "<0.01" (captures the limit) or a
+    bare "ND"/"N.D."/"BDL" (no limit available). Returns { limit:
+    number|null } or null if the value doesn't look like a BDL marker. */
+export function parseBdl(v) {
+  if (v == null) return null;
+  const s = String(v).trim();
+  if (!s) return null;
+  const m = s.match(BDL_LIMIT_PATTERN);
+  if (m) return { limit: parseFloat(m[1]) };
+  if (BDL_BARE_PATTERN.test(s)) return { limit: null };
+  return null;
+}
+
+/** Whether a raw cell value is either a genuine number or a recognized
+    BDL marker — used where a column only needs a yes/no "does this look
+    like a parameter value" check (e.g. auto-detecting Parameter columns),
+    as opposed to isNumericValue's stricter "is this a number right now". */
+export function isNumericOrBdl(v) {
+  return isNumericValue(v) || !!parseBdl(v);
+}
+
 /** Descriptive statistics for an array of numbers */
 export function calcStat(arr) {
   if (!arr || !arr.length) return null;

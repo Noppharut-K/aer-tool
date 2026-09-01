@@ -6,10 +6,11 @@ import { LANG } from '../utils/lang.js';
 import {
   getState, setRaw, getParamCols, resolveCanonical,
   setStandards, setRefMap, setBaselineMap, setDepthSummaryMethod, setCmpSettings, setCustomCmp,
+  setBdlMethod, getBdlMethod,
 } from '../core/state.js';
 import { showColumnMappingScreen, exportConfigTemplate, importConfigTemplate } from './columnMapping.js';
 import { renderDashboard } from './renders.js';
-import { isNumericValue } from '../core/analysis.js';
+import { isNumericValue, parseBdl } from '../core/analysis.js';
 import { renderStandardsUI } from './standardsUI.js';
 import { renderRefBaselineUI } from './refBaselineUI.js';
 import { renderComparisonUI } from './comparisonUI.js';
@@ -51,7 +52,12 @@ export function handleFile(t, file) {
   const isCSV = file.name.endsWith('.csv');
   reader.onload = e => {
     try {
-      const wb = isCSV ? XLSX.read(e.target.result, { type: 'binary' }) : XLSX.read(e.target.result, { type: 'array' });
+      // raw:true for CSV only — without it, SheetJS's per-cell type-guessing
+      // can silently mangle ambiguous text like "<0.02" into a bogus date
+      // serial number (confirmed: "<0.01" parses fine as text but "<0.02"
+      // gets guessed as a date and corrupted to 36557). XLSX/XLS files carry
+      // real cell types from the binary format, so they don't need this.
+      const wb = isCSV ? XLSX.read(e.target.result, { type: 'binary', raw: true }) : XLSX.read(e.target.result, { type: 'array' });
       const data = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
       setRaw(t, data);
       afterDataLoaded(t, { name: file.name, sub: `${data.length} ${LANG === 'en' ? 'rows' : 'แถว'} · ${getState(t).cols.length} cols` });
@@ -69,30 +75,51 @@ export function loadDemoInto(t, data, meta) {
 
 // ── Data Quality check ───────────────────────────────────────────────────
 
+const BDL_METHOD_LABEL = {
+  exclude: { th: 'ไม่รวมในการคำนวณ', en: 'Exclude' },
+  zero: { th: 'แทนด้วย 0', en: 'Zero' },
+  half: { th: 'ครึ่งหนึ่งของ detection limit', en: 'Half detection limit' },
+};
+
+function bdlNoteHtml(count, method, isEN) {
+  if (!count || method !== 'exclude') return '';
+  const methodLabel = isEN ? BDL_METHOD_LABEL.exclude.en : BDL_METHOD_LABEL.exclude.th;
+  return `<div class="dq-item">${isEN
+    ? `${count} BDL reading(s) excluded from calculations (method: ${methodLabel}).`
+    : `พบค่า BDL ${count} รายการ ถูกไม่รวมในการคำนวณ (วิธี: ${methodLabel})`}</div>`;
+}
+
 export function runDQ(t) {
   const state = getState(t);
   const wrap = document.getElementById(`${t}-dq-wrap`);
   if (!wrap || !state.raw.length) return;
   const isEN = LANG === 'en';
   const paramCols = getParamCols(t);
+  const bdlMethod = getBdlMethod(t);
   const issues = [];
+  let bdlCount = 0;
 
   paramCols.forEach(col => {
     const nonNum = [];
     state.raw.forEach((r, i) => {
       const v = r[col];
-      if (v != null && v !== '' && !isNumericValue(v)) nonNum.push({ row: i + 2, val: v });
+      if (v == null || v === '') return;
+      if (parseBdl(v)) { bdlCount++; return; }
+      if (!isNumericValue(v)) nonNum.push({ row: i + 2, val: v });
     });
     if (nonNum.length) issues.push({ col: resolveCanonical(t, col), samples: nonNum.slice(0, 3) });
   });
 
+  const bdlNote = bdlNoteHtml(bdlCount, bdlMethod, isEN);
+
   if (!issues.length) {
-    wrap.innerHTML = `<div class="dq-wrap dq-ok"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>${isEN ? 'Data quality check passed — no issues' : 'ข้อมูลผ่านการตรวจสอบ — ไม่พบปัญหา'}</div>`;
+    wrap.innerHTML = `<div class="dq-wrap dq-ok"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>${isEN ? 'Data quality check passed — no issues' : 'ข้อมูลผ่านการตรวจสอบ — ไม่พบปัญหา'}${bdlNote}</div>`;
     return;
   }
   wrap.innerHTML = `<div class="dq-wrap dq-warn">
     <div class="dq-title"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>${isEN ? 'Non-numeric values found' : 'พบค่าที่ไม่ใช่ตัวเลข'}</div>
     ${issues.map(i => `<div class="dq-item"><b>${i.col}</b>: ${i.samples.map(s => `${isEN ? 'row' : 'แถว'} ${s.row} = "${s.val}"`).join(', ')}</div>`).join('')}
+    ${bdlNote}
   </div>`;
 }
 
@@ -196,6 +223,11 @@ export function wireEvents(t, { loadDemo, downloadTemplate, doExport }) {
   });
 
   document.getElementById(`${t}-outlier`)?.addEventListener('input', () => renderDashboard(t));
+  document.getElementById(`${t}-bdl-method`)?.addEventListener('change', e => {
+    setBdlMethod(t, e.target.value);
+    runAnalysis(t, () => renderDashboard(t));
+    runDQ(t);
+  });
   wireFieldPicker(t);
   wireViewNav(t);
 

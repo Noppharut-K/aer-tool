@@ -47,6 +47,7 @@ function createTabState() {
     depthSummaryMethod: 'avg',
     cmpSettings: defaultCmpSettings(),
     customCmp: [],
+    bdlMethod: 'exclude',
   };
 }
 
@@ -169,6 +170,15 @@ export function setDepthSummaryMethod(t, method) {
 }
 export function getDepthSummaryMethod(t) {
   return getState(t).depthSummaryMethod;
+}
+
+// ── Below-detection-limit (BDL) handling ──────────────────────────────────
+
+export function setBdlMethod(t, method) {
+  getState(t).bdlMethod = method;
+}
+export function getBdlMethod(t) {
+  return getState(t).bdlMethod;
 }
 
 // ── Comparison format settings ────────────────────────────────────────────
