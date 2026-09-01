@@ -30,11 +30,13 @@ function afterDataLoaded(t, meta) {
   document.getElementById(`${t}-file-name`).textContent = meta.name;
   document.getElementById(`${t}-file-meta`).textContent = meta.sub;
   cmdFile.style.display = 'flex';
+  document.getElementById(`${t}-btn-importcfg`).disabled = false;
 
   showColumnMappingScreen(t, {
     onConfirm: () => {
       document.getElementById(`${t}-cmd-map`).style.display = 'flex';
       document.getElementById(`${t}-btn-run`).disabled = false;
+      document.getElementById(`${t}-btn-exportcfg`).disabled = false;
       runDQ(t);
       runAnalysis(t, () => renderDashboard(t));
       document.getElementById(`${t}-btn-export`).disabled = !getState(t).analyzed;
@@ -167,7 +169,8 @@ export function wireEvents(t, { loadDemo, downloadTemplate, doExport }) {
     });
   }));
 
-  el.querySelectorAll(`[data-exportmap="${t}"]`).forEach(btn => btn.addEventListener('click', () => exportConfigTemplate(t)));
+  el.querySelectorAll(`[data-exportcfg="${t}"]`).forEach(btn => btn.addEventListener('click', () => exportConfigTemplate(t)));
+  el.querySelectorAll(`[data-importcfg="${t}"]`).forEach(btn => btn.addEventListener('click', () => document.getElementById(`${t}-importmap-fi`)?.click()));
   document.getElementById(`${t}-importmap-fi`)?.addEventListener('change', e => {
     const f = e.target.files[0];
     e.target.value = '';
@@ -184,6 +187,7 @@ export function wireEvents(t, { loadDemo, downloadTemplate, doExport }) {
         onConfirm: () => {
           document.getElementById(`${t}-cmd-map`).style.display = 'flex';
           document.getElementById(`${t}-btn-run`).disabled = false;
+          document.getElementById(`${t}-btn-exportcfg`).disabled = false;
           runDQ(t);
           runAnalysis(t, () => renderDashboard(t));
         },

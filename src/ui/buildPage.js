@@ -56,6 +56,8 @@ export function buildPage(t, el) {
         </div>
         <div class="cmd-spacer"></div>
         <button class="btn" data-template="${t}">${isEN ? 'Download Template' : 'Download Template'}</button>
+        <button class="btn" id="${t}-btn-importcfg" data-importcfg="${t}" disabled>${isEN ? 'Import Config' : 'นำเข้าการตั้งค่า'}</button>
+        <button class="btn" id="${t}-btn-exportcfg" data-exportcfg="${t}" disabled>${isEN ? 'Export Config' : 'ส่งออกการตั้งค่า'}</button>
         <button class="btn" id="${t}-btn-export" data-export="${t}" disabled>${isEN ? 'Export' : 'Export'}</button>
         <button class="btn btn-primary" id="${t}-btn-run" data-run="${t}" disabled>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
