@@ -30,11 +30,10 @@ export function aggregate(vals, method) {
 }
 
 /** Station-level values for one parameter: groups raw rows by (station,
-    year) and aggregates — collapses Seawater's depth-level readings via
-    the tab's chosen method; a no-op aggregation for Sediment (or for any
+    year) and aggregates via the given method — collapses Seawater's
+    depth-level readings; a no-op aggregation for Sediment (or for any
     station/year with only one raw reading either way). */
-export function getStationLevelValues(t, pk) {
-  const method = getDepthSummaryMethod(t);
+export function getStationLevelValues(t, pk, method) {
   const rows = getState(t).rows.filter(r => r.pk === pk);
   const groups = {};
   rows.forEach(r => {
@@ -46,9 +45,8 @@ export function getStationLevelValues(t, pk) {
 
 /** Location-level values for one parameter: aggregates station-level
     values (from getStationLevelValues) again, grouped by (location, year) */
-export function getLocationLevelValues(t, pk) {
-  const method = getDepthSummaryMethod(t);
-  const stationVals = getStationLevelValues(t, pk);
+export function getLocationLevelValues(t, pk, method) {
+  const stationVals = getStationLevelValues(t, pk, method);
   const groups = {};
   stationVals.forEach(sv => {
     const k = sv.loc + '||' + sv.yr;
@@ -59,24 +57,25 @@ export function getLocationLevelValues(t, pk) {
 
 /** Resolve a Location's configured REF (or Baseline) value for a parameter
     at a given year — aggregates the assigned station(s)' station-level
-    values together. Returns null if the Location has no stations assigned
-    for this role, or no data exists for the requested year. */
-function resolveRoleValue(t, map, loc, pk, yr, yearMode, fixedYear) {
+    values together, via the given method. Returns null if the Location has
+    no stations assigned for this role, or no data exists for the
+    requested year. */
+function resolveRoleValue(t, map, loc, pk, yr, yearMode, fixedYear, method) {
   const stations = map?.[loc];
   if (!stations || !stations.length) return null;
   const targetYr = yearMode === 'fixed' && fixedYear != null ? fixedYear : yr;
-  const stationVals = getStationLevelValues(t, pk).filter(
+  const stationVals = getStationLevelValues(t, pk, method).filter(
     sv => stations.includes(sv.st) && String(sv.yr) === String(targetYr)
   );
   if (!stationVals.length) return null;
-  return aggregate(stationVals.map(sv => sv.val), getDepthSummaryMethod(t));
+  return aggregate(stationVals.map(sv => sv.val), method);
 }
 
-export function getRefValueFor(t, loc, pk, yr, yearMode, fixedYear) {
-  return resolveRoleValue(t, getRefMap(t), loc, pk, yr, yearMode, fixedYear);
+export function getRefValueFor(t, loc, pk, yr, yearMode, fixedYear, method) {
+  return resolveRoleValue(t, getRefMap(t), loc, pk, yr, yearMode, fixedYear, method);
 }
-export function getBaselineValueFor(t, loc, pk, yr, yearMode, fixedYear) {
-  return resolveRoleValue(t, getBaselineMap(t), loc, pk, yr, yearMode, fixedYear);
+export function getBaselineValueFor(t, loc, pk, yr, yearMode, fixedYear, method) {
+  return resolveRoleValue(t, getBaselineMap(t), loc, pk, yr, yearMode, fixedYear, method);
 }
 
 function pctDiff(compareVal, refVal) {
@@ -91,9 +90,10 @@ function statusFor(diff, threshold) {
 
 /** Station vs Reference: each station's own value vs its Location's REF */
 export function compareStationVsRef(t, pk, settings) {
-  const stationVals = getStationLevelValues(t, pk);
+  const method = getDepthSummaryMethod(t);
+  const stationVals = getStationLevelValues(t, pk, method);
   return stationVals.map(sv => {
-    const refVal = getRefValueFor(t, sv.loc, pk, sv.yr, settings.yearMode, settings.fixedYear);
+    const refVal = getRefValueFor(t, sv.loc, pk, sv.yr, settings.yearMode, settings.fixedYear, method);
     const diff = refVal != null ? pctDiff(sv.val, refVal) : null;
     return { group: sv.st, loc: sv.loc, yr: sv.yr, compareVal: sv.val, refVal, pctDiff: diff, status: statusFor(diff, settings.threshold) };
   });
@@ -101,9 +101,10 @@ export function compareStationVsRef(t, pk, settings) {
 
 /** Location vs Baseline: each Location's own value vs its Baseline */
 export function compareLocationVsBaseline(t, pk, settings) {
-  const locVals = getLocationLevelValues(t, pk);
+  const method = getDepthSummaryMethod(t);
+  const locVals = getLocationLevelValues(t, pk, method);
   return locVals.map(lv => {
-    const baseVal = getBaselineValueFor(t, lv.loc, pk, lv.yr, settings.yearMode, settings.fixedYear);
+    const baseVal = getBaselineValueFor(t, lv.loc, pk, lv.yr, settings.yearMode, settings.fixedYear, method);
     const diff = baseVal != null ? pctDiff(lv.val, baseVal) : null;
     return { group: lv.loc, loc: lv.loc, yr: lv.yr, compareVal: lv.val, refVal: baseVal, pctDiff: diff, status: statusFor(diff, settings.threshold) };
   });
@@ -113,7 +114,8 @@ export function compareLocationVsBaseline(t, pk, settings) {
     value for that same Location */
 export function compareLocationVsYear(t, pk, settings) {
   if (settings.baseYear == null) return [];
-  const locVals = getLocationLevelValues(t, pk);
+  const method = getDepthSummaryMethod(t);
+  const locVals = getLocationLevelValues(t, pk, method);
   const byLoc = {};
   locVals.forEach(lv => { (byLoc[lv.loc] ??= []).push(lv); });
   const out = [];
@@ -127,6 +129,46 @@ export function compareLocationVsYear(t, pk, settings) {
     });
   });
   return out;
+}
+
+/** Custom comparison: a user-defined combination of subject (Station or
+    Location, the side that iterates and produces one row per subject) vs
+    a chosen reference kind (its Location's Reference, its Location's
+    Baseline, or its own value in a chosen base year). Covers the 3
+    combinations above plus 3 new ones (Location vs Reference, Station vs
+    Baseline, Station vs Year) — same underlying machinery, just a free
+    pairing of subject × reference kind, each with its own aggregation
+    method and threshold (`def.aggMethod` / `def.threshold`). */
+export function compareCustom(t, pk, def) {
+  const method = def.aggMethod;
+  const subjectVals = (def.subjectKind === 'station'
+    ? getStationLevelValues(t, pk, method)
+    : getLocationLevelValues(t, pk, method)
+  ).map(v => ({ group: def.subjectKind === 'station' ? v.st : v.loc, loc: v.loc, yr: v.yr, val: v.val }));
+
+  if (def.refKind === 'year') {
+    if (def.baseYear == null) return [];
+    const byGroup = {};
+    subjectVals.forEach(v => { (byGroup[v.group] ??= []).push(v); });
+    const out = [];
+    Object.entries(byGroup).forEach(([group, vals]) => {
+      const base = vals.find(v => String(v.yr) === String(def.baseYear));
+      if (!base) return;
+      vals.forEach(v => {
+        if (String(v.yr) === String(def.baseYear)) return;
+        const diff = pctDiff(v.val, base.val);
+        out.push({ group, loc: v.loc, yr: v.yr, compareVal: v.val, refVal: base.val, pctDiff: diff, status: statusFor(diff, def.threshold) });
+      });
+    });
+    return out;
+  }
+
+  const resolveFn = def.refKind === 'reference' ? getRefValueFor : getBaselineValueFor;
+  return subjectVals.map(v => {
+    const refVal = resolveFn(t, v.loc, pk, v.yr, def.yearMode, def.fixedYear, method);
+    const diff = refVal != null ? pctDiff(v.val, refVal) : null;
+    return { group: v.group, loc: v.loc, yr: v.yr, compareVal: v.val, refVal, pctDiff: diff, status: statusFor(diff, def.threshold) };
+  });
 }
 
 /** All years present across a tab's analyzed rows, sorted ascending —

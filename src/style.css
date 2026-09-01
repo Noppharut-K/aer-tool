@@ -613,7 +613,13 @@ body:not(.dark) .lang-btn.active{color:#fff;}
 .cmp-pill{font-family:var(--font);font-size:13px;font-weight:600;color:var(--text2);background:var(--white);border:1px solid var(--border2);border-radius:999px;padding:8px 16px;cursor:pointer;}
 .cmp-pill:hover{border-color:var(--accent);}
 .cmp-pill.active{background:var(--accent);border-color:var(--accent);color:#fff;}
+.cmp-pill-add{border-style:dashed;color:var(--text3);background:transparent;box-shadow:none;}
+.cmp-pill-add:hover{color:var(--accent-deep);border-color:var(--accent);}
+.cmp-pill-add:disabled{cursor:not-allowed;opacity:.5;}
+.cmp-pill-add:disabled:hover{color:var(--text3);border-color:var(--border2);}
+.cmp-builder-card{margin-bottom:14px;}
 .cmp-settings-strip{display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:var(--white);border:1px solid var(--border);border-radius:var(--rm);box-shadow:var(--sh-s);padding:10px 12px;margin-bottom:14px;}
 .cmp-settings-strip input[type=number]{width:70px;border-radius:999px;padding:6px 12px;font-size:12.5px;}
 .cmp-yearmode-hint{flex-basis:100%;font-size:11.5px;color:var(--text3);line-height:1.4;padding-top:6px;border-top:1px solid var(--border);margin-top:2px;}
+.cmp-item-actions{display:flex;gap:2px;margin-left:auto;}
 

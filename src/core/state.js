@@ -46,6 +46,7 @@ function createTabState() {
     baselineMap: null,
     depthSummaryMethod: 'avg',
     cmpSettings: defaultCmpSettings(),
+    customCmp: [],
   };
 }
 
@@ -72,6 +73,7 @@ export function setRaw(t, raw) {
   s.refMap = null;
   s.baselineMap = null;
   s.cmpSettings = defaultCmpSettings();
+  s.customCmp = [];
 }
 
 export function setColMap(t, colMap) {
@@ -177,6 +179,37 @@ export function getCmpSettings(t) {
 export function updateCmpSettings(t, formatKey, patch) {
   const s = getState(t);
   s.cmpSettings[formatKey] = { ...s.cmpSettings[formatKey], ...patch };
+}
+
+// ── Custom comparisons (items 4–10) ───────────────────────────────────────
+
+const CUSTOM_CMP_MAX = 7; // + 3 defaults = 10 total per module, per spec
+
+export function getCustomCmp(t) {
+  return getState(t).customCmp;
+}
+
+export function addCustomCmp(t, entry) {
+  const s = getState(t);
+  if (s.customCmp.length >= CUSTOM_CMP_MAX) return null;
+  const id = 'cc_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  s.customCmp.push({
+    id, yearMode: 'match', fixedYear: null, baseYear: null, aggMethod: 'avg', threshold: 20,
+    ...entry,
+  });
+  return id;
+}
+
+export function updateCustomCmp(t, id, patch) {
+  const s = getState(t);
+  const i = s.customCmp.findIndex(x => x.id === id);
+  if (i === -1) return;
+  s.customCmp[i] = { ...s.customCmp[i], ...patch };
+}
+
+export function removeCustomCmp(t, id) {
+  const s = getState(t);
+  s.customCmp = s.customCmp.filter(x => x.id !== id);
 }
 
 export { TABS };
