@@ -19,7 +19,6 @@ export function runCore(t) {
   const colLoc = getColVal(t, 'loc');
   const colSt = getColVal(t, 'st');
   const colYr = getColVal(t, 'year');
-  const colDist = getColVal(t, 'dist');
   const colDir = getColVal(t, 'direction');
   const colUtmN = getColVal(t, 'utmN');
   const colUtmE = getColVal(t, 'utmE');
@@ -39,7 +38,6 @@ export function runCore(t) {
         loc: gM(raw, colLoc),
         st: gM(raw, colSt),
         yr: colYr && raw[colYr] != null ? parseFloat(raw[colYr]) : null,
-        dist: colDist && raw[colDist] != null ? parseFloat(raw[colDist]) : null,
         direction: gM(raw, colDir),
         utmN: colUtmN && raw[colUtmN] != null ? parseFloat(raw[colUtmN]) : null,
         utmE: colUtmE && raw[colUtmE] != null ? parseFloat(raw[colUtmE]) : null,

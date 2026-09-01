@@ -6,7 +6,7 @@ import { LANG } from '../utils/lang.js';
 import { getState, getStandards } from '../core/state.js';
 import { TYPE_CFG } from '../core/standards.js';
 
-const CORE_HEADERS = ['Year', 'Project', 'Location', 'Station', 'N_UTM', 'E_UTM', 'Distance from platform', 'Direction from platform'];
+const CORE_HEADERS = ['Year', 'Project', 'Location', 'Station', 'N_UTM', 'E_UTM', 'Direction from platform'];
 
 export function downloadTemplate(t) {
   const isEN = LANG === 'en';
@@ -24,7 +24,6 @@ export function downloadTemplate(t) {
   example['Location'] = 'Loc-A';
   example['Station'] = 'ST-A01';
   example['N_UTM'] = 0; example['E_UTM'] = 0;
-  example['Distance from platform'] = 500;
   example['Direction from platform'] = 'N';
   if (t === 'sea') example['Depth level'] = 'Surface';
   paramHeaders.forEach(p => { example[p] = ''; });
@@ -44,7 +43,7 @@ export function doExport(t) {
   const rows = state.rows.map(r => ({
     Year: r.yr, Location: r.loc, Station: r.st,
     ...(t === 'sea' ? { 'Depth level': r.wl } : {}),
-    Distance: r.dist, Direction: r.direction,
+    Direction: r.direction,
     Parameter: r.pk, Value: r.val, Unit: r.unit,
     Status: r.sc_status === 'exceed' ? (isEN ? 'Exceeding' : 'เกิน') : r.sc_status === 'pass' ? (isEN ? 'Within limits' : 'ปกติ') : (isEN ? 'Not yet set' : 'ยังไม่ตั้งมาตรฐาน'),
   }));

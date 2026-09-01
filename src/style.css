@@ -499,11 +499,9 @@ body:not(.dark) .lang-btn.active{color:#fff;}
 /* ── Data table card ── */
 .table-card{background:var(--white);border:1px solid var(--border);border-radius:var(--rm);box-shadow:var(--sh-s);overflow:hidden;}
 .table-card .table-scroll{overflow-x:auto;}
-.table-card table{min-width:720px;}
-.table-card thead th{text-align:left!important;font-size:11px;position:sticky;top:0;}
-.table-card thead th.num{text-align:right!important;}
-.table-card td{text-align:left!important;white-space:nowrap;}
-.table-card td.num{text-align:right!important;}
+.table-card table{width:100%;table-layout:fixed;min-width:720px;}
+.table-card thead th{text-align:center!important;font-size:11px;position:sticky;top:0;}
+.table-card td{text-align:center!important;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .table-card .param-cell{font-weight:600;color:var(--text);}
 .table-card tr.row-exceed td:first-child{box-shadow:inset 3px 0 0 var(--red);}
 .row-outlier-tag{display:inline-flex;align-items:center;gap:4px;margin-left:6px;}

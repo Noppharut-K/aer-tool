@@ -15,7 +15,7 @@ function escHtml(s) {
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
-const SINGULAR_FIELDS = ['year', 'project', 'loc', 'st', 'utmN', 'utmE', 'dist', 'direction', 'wl'];
+const SINGULAR_FIELDS = ['year', 'project', 'loc', 'st', 'utmN', 'utmE', 'direction', 'wl'];
 
 function ROLES(t, isEN) {
   const roles = [
@@ -26,7 +26,6 @@ function ROLES(t, isEN) {
     { v: 'st', l: 'Station' },
     { v: 'utmN', l: 'N_UTM' },
     { v: 'utmE', l: 'E_UTM' },
-    { v: 'dist', l: isEN ? 'Distance from platform' : 'ระยะห่างจาก platform' },
     { v: 'direction', l: isEN ? 'Direction from platform' : 'ทิศทางจาก platform' },
   ];
   if (t === 'sea') roles.push({ v: 'wl', l: isEN ? 'Depth level' : 'ระดับความลึก (Depth level)' });
@@ -41,7 +40,6 @@ const EXACT = {
   st: ['station', 'st'],
   utmN: ['n_utm', 'n_utm ind75', 'n_utm_ind75', 'utm_n'],
   utmE: ['e_utm', 'e_utm ind75', 'e_utm_ind75', 'utm_e'],
-  dist: ['distance from platform', 'distance'],
   direction: ['direction from platform', 'direction'],
   wl: ['depth level', 'depth level of sampling', 'depth', 'ระดับความลึก'],
 };
@@ -49,7 +47,7 @@ const FUZZY = {
   year: ['year', 'ปี'], project: ['project', 'โครงการ'],
   loc: ['location', 'บริเวณ'], st: ['station', 'สถานี'],
   utmN: ['utm_n', 'northing', ' n '], utmE: ['utm_e', 'easting', ' e '],
-  dist: ['distance', 'ระยะ'], direction: ['direction', 'ทิศ'],
+  direction: ['direction', 'ทิศ'],
   wl: ['depth', 'ความลึก'],
 };
 
