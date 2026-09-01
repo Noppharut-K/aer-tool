@@ -14,13 +14,17 @@ export function isNumericValue(v) {
   return String(v).trim() !== '' && !isNaN(Number(v));
 }
 
-const BDL_LIMIT_PATTERN = /^<\s*([\d.]+)$/;
-const BDL_BARE_PATTERN = /^(nd|n\.d\.|bdl)$/i;
+// "<0.01", "<=0.01", "< 0.01 mg/L" — captures the leading number, tolerant
+// of trailing units/text since lab reports commonly append them
+const BDL_LIMIT_PATTERN = /^<\s*=?\s*([\d.]+)/;
+// Bare non-detect markers with no usable limit number
+const BDL_BARE_PATTERN = /^(nd|n\.d\.|bdl|<\s*loq|<\s*dl|<\s*mdl|trace|not[\s-]?detected|non[\s-]?detect(?:ed)?)$/i;
 
 /** Whether a raw cell value is a below-detection-limit marker rather than
     a genuine number or a data error — "<0.01" (captures the limit) or a
-    bare "ND"/"N.D."/"BDL" (no limit available). Returns { limit:
-    number|null } or null if the value doesn't look like a BDL marker. */
+    bare non-detect marker like "ND"/"N.D."/"BDL"/"<LOQ"/"trace" (no limit
+    available). Returns { limit: number|null } or null if the value
+    doesn't look like a BDL marker. */
 export function parseBdl(v) {
   if (v == null) return null;
   const s = String(v).trim();

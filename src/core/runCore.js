@@ -34,9 +34,17 @@ export function runCore(t) {
       if (!isNumericValue(cell) && !bdl) return;
       if (bdl && bdlMethod === 'exclude') return;
 
-      const val = bdl ? (bdlMethod === 'half' && bdl.limit != null ? bdl.limit / 2 : 0) : parseFloat(cell);
       const pk = resolveCanonical(t, col);
       const std = getStandardFor(t, pk);
+      let val;
+      if (!bdl) {
+        val = parseFloat(cell);
+      } else if (bdlMethod === 'half') {
+        const limit = bdl.limit != null ? bdl.limit : std?.bdlFallbackLimit;
+        val = limit != null ? limit / 2 : 0;
+      } else {
+        val = 0; // 'zero' method
+      }
       rows.push({
         area: gM(raw, colArea),
         proj: gM(raw, colProj),

@@ -54,6 +54,10 @@ export function renderStandardsUI(t) {
           <label>${isEN ? 'Decimals' : 'ทศนิยม'}</label>
           <input type="number" min="0" max="8" id="${t}-std-dec" placeholder="auto">
         </div>
+        <div class="field-g field-g-sm">
+          <label title="${isEN ? 'Used for BDL readings reported with no limit (e.g. bare \'ND\'), when the BDL method is \'Half detection limit\'' : 'ใช้เมื่อค่า BDL ในไฟล์ไม่ระบุตัวเลข limit มาด้วย (เช่น "ND" เฉยๆ) และเลือกวิธี BDL เป็น "ครึ่งหนึ่งของ limit"'}">${isEN ? 'Fallback DL' : 'DL สำรอง'}</label>
+          <input type="number" step="any" min="0" id="${t}-std-bdl" placeholder="${isEN ? 'none' : 'ไม่มี'}">
+        </div>
         <div class="field-g field-g-lg">
           <label>${isEN ? 'Source' : 'แหล่งที่มา'}</label>
           <input type="text" id="${t}-std-source" placeholder="${isEN ? 'e.g. PCD 2564, Marine Water Quality Standard' : 'เช่น ประกาศ คพ. 2564'}">
@@ -77,6 +81,7 @@ export function renderStandardsUI(t) {
             <th>${isEN ? 'Parameter' : 'Parameter'}</th><th>${isEN ? 'Direction' : 'ทิศทาง'}</th>
             <th class="num">${isEN ? 'Value' : 'ค่า'}</th><th>${isEN ? 'Unit' : 'หน่วย'}</th>
             <th>${isEN ? 'Source' : 'แหล่งที่มา'}</th><th class="num">${isEN ? 'Decimals' : 'ทศนิยม'}</th>
+            <th class="num">${isEN ? 'Fallback DL' : 'DL สำรอง'}</th>
             <th></th>
           </tr></thead>
           <tbody id="${t}-std-tbody"></tbody>
@@ -98,6 +103,7 @@ function wireAddForm(t) {
     const unitEl = document.getElementById(`${t}-std-unit`);
     const sourceEl = document.getElementById(`${t}-std-source`);
     const decEl = document.getElementById(`${t}-std-dec`);
+    const bdlEl = document.getElementById(`${t}-std-bdl`);
     const dirEl = document.getElementById(`${t}-std-dir`);
     const errEl = document.getElementById(`${t}-std-err`);
     errEl.textContent = '';
@@ -114,8 +120,9 @@ function wireAddForm(t) {
       parameter, direction: dirEl.value, value,
       unit: unitEl.value.trim(), source: sourceEl.value.trim(),
       decimals: decEl.value !== '' ? parseInt(decEl.value) : null,
+      bdlFallbackLimit: bdlEl.value !== '' ? parseFloat(bdlEl.value) : null,
     });
-    paramEl.value = ''; valueEl.value = ''; unitEl.value = ''; sourceEl.value = ''; decEl.value = '';
+    paramEl.value = ''; valueEl.value = ''; unitEl.value = ''; sourceEl.value = ''; decEl.value = ''; bdlEl.value = '';
     renderStandardsUI(t);
     window.dispatchEvent(new CustomEvent('aer-standards-changed', { detail: { t } }));
   });
@@ -134,7 +141,7 @@ function renderTable(t) {
     (s, q) => s.parameter.toLowerCase().includes(q) || (s.source || '').toLowerCase().includes(q),
     filtered => {
       if (!filtered.length) {
-        tbody.innerHTML = `<tr><td colspan="7"><div class="empty-state empty-state-inline">
+        tbody.innerHTML = `<tr><td colspan="8"><div class="empty-state empty-state-inline">
           <p>${all.length ? (isEN ? 'No standards match your search.' : 'ไม่พบรายการที่ค้นหา') : (isEN ? 'No standards entered yet — add one above.' : 'ยังไม่มีมาตรฐาน — เพิ่มด้านบนเพื่อเริ่มต้น')}</p>
         </div></td></tr>`;
         pageEl.innerHTML = '';
@@ -148,6 +155,7 @@ function renderTable(t) {
           <td>${escHtml(s.unit) || '—'}</td>
           <td>${escHtml(s.source) || '—'}</td>
           <td class="num">${s.decimals ?? '—'}</td>
+          <td class="num">${s.bdlFallbackLimit ?? '—'}</td>
           <td class="std-row-actions">
             <button class="icon-btn std-edit" data-id="${s.id}" title="${isEN ? 'Edit' : 'แก้ไข'}">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 013 3L7 19l-4 1 1-4z"/></svg>
@@ -185,6 +193,7 @@ function startEdit(t, id) {
     <td><input type="text" class="edit-in" value="${escHtml(std.unit || '')}" data-f="unit"></td>
     <td><input type="text" class="edit-in" value="${escHtml(std.source || '')}" data-f="source"></td>
     <td class="num"><input type="number" min="0" max="8" class="edit-in num-in" value="${std.decimals ?? ''}" data-f="decimals"></td>
+    <td class="num"><input type="number" step="any" min="0" class="edit-in num-in" value="${std.bdlFallbackLimit ?? ''}" data-f="bdlFallbackLimit"></td>
     <td class="std-row-actions">
       <button class="icon-btn std-save" title="${isEN ? 'Save' : 'บันทึก'}">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
@@ -198,7 +207,10 @@ function startEdit(t, id) {
     const patch = {};
     row.querySelectorAll('.edit-in').forEach(inp => {
       const f = inp.dataset.f;
-      patch[f] = f === 'value' ? parseFloat(inp.value) : f === 'decimals' ? (inp.value !== '' ? parseInt(inp.value) : null) : inp.value.trim();
+      patch[f] = f === 'value' ? parseFloat(inp.value)
+        : f === 'decimals' ? (inp.value !== '' ? parseInt(inp.value) : null)
+        : f === 'bdlFallbackLimit' ? (inp.value !== '' ? parseFloat(inp.value) : null)
+        : inp.value.trim();
     });
     if (!patch.parameter || isNaN(patch.value)) return;
     updateStandard(t, id, patch);
