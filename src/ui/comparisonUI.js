@@ -37,17 +37,20 @@ export function renderComparisonUI(t) {
   }
 
   const isSea = TYPE_CFG[t].hasDepth;
+  const aggTopbarHint = isSea
+    ? (isEN ? 'Applies to every comparison below — depth readings are summarized per station first, then stations are summarized per Location.' : 'มีผลกับทุกรูปแบบด้านล่าง — สรุปค่าแต่ละความลึกในสถานีก่อน แล้วจึงสรุปค่าสถานีรวมเป็น Location')
+    : (isEN ? 'Applies whenever multiple stations are combined into one Location value (e.g. Location vs Baseline/Year, or multiple REF/Baseline stations).' : 'มีผลเมื่อรวมค่าจากหลายสถานีเป็นค่าเดียวของ Location (เช่น Location vs Baseline/Year หรือเมื่อกำหนด REF/Baseline หลายสถานี)');
   root.innerHTML = `
-    ${isSea ? `<div class="cmp-topbar">
-      <div class="pill-field"><label>${isEN ? 'Depth summary' : 'สรุปตามความลึก'}</label>
+    <div class="cmp-topbar">
+      <div class="pill-field"><label>${isEN ? 'Value summary method' : 'วิธีสรุปค่า'}</label>
         <select id="${t}-depth-method">
           <option value="avg">${isEN ? 'Average' : 'ค่าเฉลี่ย'}</option>
           <option value="mode">${isEN ? 'Mode' : 'ฐานนิยม'}</option>
           <option value="median">${isEN ? 'Median' : 'มัธยฐาน'}</option>
         </select>
       </div>
-      <div class="cmp-topbar-hint">${isEN ? 'Applies to every comparison below — every station value is depth-summarized first.' : 'มีผลกับทุกรูปแบบด้านล่าง — ทุกค่าของสถานีจะถูกสรุปตามความลึกก่อนเสมอ'}</div>
-    </div>` : ''}
+      <div class="cmp-topbar-hint">${aggTopbarHint}</div>
+    </div>
 
     <div class="cmp-pills">
       ${Object.entries(FORMATS).map(([key, f]) => `<button type="button" class="cmp-pill ${key === activeFormat ? 'active' : ''}" data-cmp-fmt="${key}">${isEN ? f.en : f.th}</button>`).join('')}
@@ -57,11 +60,9 @@ export function renderComparisonUI(t) {
     <div class="table-card" id="${t}-cmp-table-card"></div>
   `;
 
-  if (isSea) {
-    const sel = document.getElementById(`${t}-depth-method`);
-    sel.value = getDepthSummaryMethod(t);
-    sel.addEventListener('change', () => { setDepthSummaryMethod(t, sel.value); renderFormat(t); });
-  }
+  const depthSel = document.getElementById(`${t}-depth-method`);
+  depthSel.value = getDepthSummaryMethod(t);
+  depthSel.addEventListener('change', () => { setDepthSummaryMethod(t, depthSel.value); renderFormat(t); });
 
   root.querySelectorAll('.cmp-pill').forEach(btn => btn.addEventListener('click', () => {
     activeFormat = btn.dataset.cmpFmt;
