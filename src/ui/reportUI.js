@@ -125,19 +125,48 @@ function trendSuffix(trend, isEN) {
   return ` (${word} ${trend.pct >= 0 ? '+' : ''}${trend.pct.toFixed(1)}%)`;
 }
 
+/** Compact inline line chart (~120x32) built from a { yr, [valueKey] }
+    points array — no charting library, matches this app's existing
+    hand-written inline SVG. Each point carries a native <title> tooltip
+    for the exact year/value, since the chart itself has no axis labels.
+    Returns '' when there's nothing meaningful to draw. */
+function sparklineSvg(points, valueKey, isEN) {
+  // Infinity shows up in pctDiff when a reference value is exactly 0 — not
+  // plottable on a linear scale, so it's dropped from the chart geometry
+  // entirely rather than distorting the axis or producing an invalid path.
+  const plottable = points.filter(p => p[valueKey] != null && isFinite(p[valueKey]));
+  if (plottable.length < 2) return '';
+  const W = 120, H = 32, PAD = 4;
+  const vals = plottable.map(p => p[valueKey]);
+  const min = Math.min(...vals), max = Math.max(...vals);
+  const range = max - min || 1;
+  const stepX = (W - PAD * 2) / (plottable.length - 1);
+  const coords = plottable.map((p, i) => ({
+    x: PAD + i * stepX,
+    y: H - PAD - ((p[valueKey] - min) / range) * (H - PAD * 2),
+    yr: p.yr, val: p[valueKey],
+  }));
+  const pathD = coords.map((c, i) => `${i === 0 ? 'M' : 'L'}${c.x.toFixed(1)},${c.y.toFixed(1)}`).join(' ');
+  const suffix = valueKey === 'pctDiff' ? '%' : '';
+  const dots = coords.map(c => `<circle cx="${c.x.toFixed(1)}" cy="${c.y.toFixed(1)}" r="2"><title>${c.yr}: ${isFinite(c.val) ? fmtVal(c.val) + suffix : (isEN ? 'n/a' : 'ไม่มีข้อมูล')}</title></circle>`).join('');
+  return `<svg class="trend-spark" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}"><path d="${pathD}" fill="none" stroke="currentColor" stroke-width="1.5"/>${dots}</svg>`;
+}
+
 function selfTrendListHtml(selfTrend, isEN) {
   if (!selfTrend.length) return `<p class="report-para">${isEN ? 'Not enough years of data for a trend (need at least 2).' : 'ข้อมูลไม่พอสำหรับดูแนวโน้ม (ต้องมีอย่างน้อย 2 ปี)'}</p>`;
-  return `<ul class="report-list">${selfTrend.map(s =>
-    `<li>${escHtml(s.pk)}: ${s.points.map(p => `${p.yr}=${fmtVal(p.val)}`).join(', ')}${trendSuffix(s.trend, isEN)}</li>`
-  ).join('')}</ul>`;
+  return `<ul class="report-list">${selfTrend.map(s => {
+    const range = `${s.points[0].yr}–${s.points[s.points.length - 1].yr}`;
+    return `<li>${escHtml(s.pk)} ${sparklineSvg(s.points, 'val', isEN)} <span class="trend-range">${range}</span>${trendSuffix(s.trend, isEN)}</li>`;
+  }).join('')}</ul>`;
 }
 
 function refBaselineTrendListHtml(trendList, hasFlag, isEN) {
   if (!hasFlag) return `<p class="report-para">${isEN ? 'Reference/Baseline not configured for this Location.' : 'ยังไม่ได้กำหนด REF/Baseline สำหรับพื้นที่นี้'}</p>`;
   if (!trendList.length) return `<p class="report-para">${isEN ? 'No comparable data.' : 'ไม่มีข้อมูลที่เปรียบเทียบได้'}</p>`;
-  return `<ul class="report-list">${trendList.map(s =>
-    `<li>${escHtml(s.pk)}: ${s.points.map(p => `${p.yr} ${isFinite(p.pctDiff) ? (p.pctDiff >= 0 ? '+' : '') + p.pctDiff.toFixed(1) + '%' : '—'}`).join(', ')}${trendSuffix(s.trend, isEN)}</li>`
-  ).join('')}</ul>`;
+  return `<ul class="report-list">${trendList.map(s => {
+    const range = `${s.points[0].yr}–${s.points[s.points.length - 1].yr}`;
+    return `<li>${escHtml(s.pk)} ${sparklineSvg(s.points, 'pctDiff', isEN)} <span class="trend-range">${range}</span>${trendSuffix(s.trend, isEN)}</li>`;
+  }).join('')}</ul>`;
 }
 
 function stationCardHtml(g, isEN) {
