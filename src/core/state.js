@@ -180,6 +180,9 @@ export function updateCmpSettings(t, formatKey, patch) {
   const s = getState(t);
   s.cmpSettings[formatKey] = { ...s.cmpSettings[formatKey], ...patch };
 }
+export function setCmpSettings(t, settings) {
+  getState(t).cmpSettings = { ...defaultCmpSettings(), ...settings };
+}
 
 // ── Custom comparisons (items 4–10) ───────────────────────────────────────
 
@@ -210,6 +213,10 @@ export function updateCustomCmp(t, id, patch) {
 export function removeCustomCmp(t, id) {
   const s = getState(t);
   s.customCmp = s.customCmp.filter(x => x.id !== id);
+}
+
+export function setCustomCmp(t, list) {
+  getState(t).customCmp = list.slice(0, CUSTOM_CMP_MAX);
 }
 
 export { TABS };

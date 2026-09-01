@@ -3,7 +3,10 @@
  */
 
 import { LANG } from '../utils/lang.js';
-import { getState, setRaw, getParamCols, resolveCanonical } from '../core/state.js';
+import {
+  getState, setRaw, getParamCols, resolveCanonical,
+  setStandards, setRefMap, setBaselineMap, setDepthSummaryMethod, setCmpSettings, setCustomCmp,
+} from '../core/state.js';
 import { showColumnMappingScreen, exportConfigTemplate, importConfigTemplate } from './columnMapping.js';
 import { renderDashboard } from './renders.js';
 import { isNumericValue } from '../core/analysis.js';
@@ -169,15 +172,23 @@ export function wireEvents(t, { loadDemo, downloadTemplate, doExport }) {
     const f = e.target.files[0];
     e.target.value = '';
     if (!f) return;
-    importConfigTemplate(t, f, draft => showColumnMappingScreen(t, {
-      prefill: draft,
-      onConfirm: () => {
-        document.getElementById(`${t}-cmd-map`).style.display = 'flex';
-        document.getElementById(`${t}-btn-run`).disabled = false;
-        runDQ(t);
-        runAnalysis(t, () => renderDashboard(t));
-      },
-    }));
+    importConfigTemplate(t, f, (draft, json) => {
+      if (json.standardsLibrary) setStandards(t, json.standardsLibrary);
+      if (json.refMap) setRefMap(t, json.refMap);
+      if (json.baselineMap) setBaselineMap(t, json.baselineMap);
+      if (json.depthSummaryMethod) setDepthSummaryMethod(t, json.depthSummaryMethod);
+      if (json.cmpSettings) setCmpSettings(t, json.cmpSettings);
+      if (json.customCmp) setCustomCmp(t, json.customCmp);
+      showColumnMappingScreen(t, {
+        prefill: draft,
+        onConfirm: () => {
+          document.getElementById(`${t}-cmd-map`).style.display = 'flex';
+          document.getElementById(`${t}-btn-run`).disabled = false;
+          runDQ(t);
+          runAnalysis(t, () => renderDashboard(t));
+        },
+      });
+    });
   });
 
   document.getElementById(`${t}-outlier`)?.addEventListener('input', () => renderDashboard(t));

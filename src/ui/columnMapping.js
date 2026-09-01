@@ -7,7 +7,10 @@
 
 import { LANG } from '../utils/lang.js';
 import { TYPE_CFG } from '../core/standards.js';
-import { getState, setColMap, getColMap } from '../core/state.js';
+import {
+  getState, setColMap, getColMap,
+  getStandards, getRefMap, getBaselineMap, getDepthSummaryMethod, getCmpSettings, getCustomCmp,
+} from '../core/state.js';
 import { isNumericValue } from '../core/analysis.js';
 
 function escHtml(s) {
@@ -229,9 +232,14 @@ export function exportConfigTemplate(t, colMapOverride) {
   if (!cm) return;
   const cfg = TYPE_CFG[t];
   const envelope = {
-    aerConfigTemplate: true, version: 1, exportedAt: new Date().toISOString(), tab: t,
+    aerConfigTemplate: true, version: 2, exportedAt: new Date().toISOString(), tab: t,
     columnMapping: { fields: cm.fields, params: cm.params, sourceColumns: cm.sourceColumns },
-    standardsLibrary: null,
+    standardsLibrary: getStandards(t),
+    refMap: getRefMap(t),
+    baselineMap: getBaselineMap(t),
+    depthSummaryMethod: getDepthSummaryMethod(t),
+    cmpSettings: getCmpSettings(t),
+    customCmp: getCustomCmp(t),
   };
   const blob = new Blob([JSON.stringify(envelope, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);

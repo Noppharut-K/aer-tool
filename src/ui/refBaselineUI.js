@@ -14,6 +14,14 @@ function escHtml(s) {
   return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
+function staleNoteHtml(saved, stations, isEN) {
+  const stale = saved.filter(s => !stations.includes(s));
+  if (!stale.length) return '';
+  return `<div class="colmap-warn" style="margin-top:8px;margin-bottom:0">${isEN
+    ? `${stale.length} previously-selected station(s) no longer exist in this dataset and won't be used in calculations — reopen the picker above to reassign.`
+    : `${stale.length} สถานีที่เคยเลือกไว้ไม่มีอยู่ในข้อมูลชุดนี้แล้ว จะไม่ถูกใช้ในการคำนวณ — เปิดตัวเลือกด้านบนเพื่อกำหนดใหม่`}</div>`;
+}
+
 function selectBlockHtml(stations, selected, isEN) {
   return `
     <div class="ms-select">
@@ -122,10 +130,12 @@ export function renderRefBaselineUI(t) {
           <div class="refmap-role-block" data-role="ref" data-idx="${i}">
             <div class="refmap-role-lbl">REF</div>
             ${selectBlockHtml(stations, refMap[loc] || [], isEN)}
+            ${staleNoteHtml(refMap[loc] || [], stations, isEN)}
           </div>
           <div class="refmap-role-block" data-role="base" data-idx="${i}">
             <div class="refmap-role-lbl">Baseline</div>
             ${selectBlockHtml(stations, baselineMap[loc] || [], isEN)}
+            ${staleNoteHtml(baselineMap[loc] || [], stations, isEN)}
           </div>
         </div>
       </div>`).join('')}`;
