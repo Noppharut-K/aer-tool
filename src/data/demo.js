@@ -91,13 +91,24 @@ function buildSea() {
   SEA_STS_A.forEach((st,i) => SEA_YRS.forEach(yr => SEA_DEPTHS.forEach(dep => rows.push(seaRow('Loc-A',st,yr,dep,75+i,BASE_A[i],i)))));
   SEA_STS_B.forEach((st,i) => SEA_YRS.forEach(yr => SEA_DEPTHS.forEach(dep => rows.push(seaRow('Loc-B',st,yr,dep,52+i,BASE_B[i],i)))));
 
-  // A couple of illustrative below-detection-limit readings, so the "BDL:"
-  // toolbar control has something to demonstrate on the built-in dataset
-  // without it dominating any station's story.
-  const m1 = rows.find(r => r.Location === 'Loc-A' && r.Station === 'ST-A02' && r.Year === 2020 && r.Depth === 'Surface');
-  if (m1) m1.Mercury = '<0.01';
-  const m2 = rows.find(r => r.Location === 'Loc-B' && r.Station === 'ST-B05' && r.Year === 2021 && r.Depth === 'Surface');
-  if (m2) m2.Lead = 'ND';
+  // A spread of illustrative below-detection-limit readings, covering the
+  // different marker forms parseBdl() recognizes (captured-limit, and
+  // several bare-marker spellings), so the "BDL:" toolbar control and the
+  // per-row BDL tag have real variety to demonstrate — spread across
+  // different parameters/stations/years so no one row looks contrived.
+  const bdlPicks = [
+    ['Loc-A', 'ST-A02', 2020, 'Surface', 'Mercury', '<0.01'],
+    ['Loc-B', 'ST-B05', 2021, 'Surface', 'Lead', 'ND'],
+    ['Loc-A', 'ST-A07', 2022, '20m', 'Arsenic', 'BDL'],
+    ['Loc-B', 'ST-B02', 2023, '40m', 'Zinc', 'N.D.'],
+    ['Loc-A', 'ST-A05', 2021, 'Bottom', 'Mercury', '<LOQ'],
+    ['Loc-B', 'ST-B08', 2020, 'Surface', 'Copper', 'trace'],
+    ['Offshore', 'REF-01', 2022, '40m', 'Arsenic', 'not detected'],
+  ];
+  bdlPicks.forEach(([loc, st, yr, dep, param, marker]) => {
+    const row = rows.find(r => r.Location === loc && r.Station === st && r.Year === yr && r.Depth === dep);
+    if (row) row[param] = marker;
+  });
 
   return rows;
 }
@@ -169,12 +180,20 @@ function buildSed() {
     }));
   });
 
-  // A couple of illustrative below-detection-limit readings — same purpose
-  // as the Seawater ones above.
-  const m1 = rows.find(r => r.Location === 'Loc-A' && r.Station === 'ST-A04' && r.Year === 2020);
-  if (m1) m1.Mercury = '<0.02';
-  const m2 = rows.find(r => r.Location === 'Loc-B' && r.Station === 'ST-B03' && r.Year === 2022);
-  if (m2) m2.Cadmium = 'ND';
+  // A spread of illustrative below-detection-limit readings — same purpose
+  // and marker variety as the Seawater ones above.
+  const bdlPicks = [
+    ['Loc-A', 'ST-A04', 2020, 'Mercury', '<0.02'],
+    ['Loc-B', 'ST-B03', 2022, 'Cadmium', 'ND'],
+    ['Loc-A', 'ST-A08', 2021, 'Lead', 'BDL'],
+    ['Loc-B', 'ST-B06', 2023, 'Arsenic', '<DL'],
+    ['Loc-A', 'ST-A02', 2022, 'Cadmium', 'N.D.'],
+    ['Offshore', 'REF-01', 2021, 'Mercury', 'not detected'],
+  ];
+  bdlPicks.forEach(([loc, st, yr, param, marker]) => {
+    const row = rows.find(r => r.Location === loc && r.Station === st && r.Year === yr);
+    if (row) row[param] = marker;
+  });
 
   return rows;
 }
@@ -192,7 +211,54 @@ export function getDemoData() {
   return _cache;
 }
 
-export const DEMO_AUTO_TICKS = {
-  ref: 'REF-01',
-  baseline: 'BL-01',
+/** Declarative demo config — the Standards/REF-Baseline/Custom Comparison
+    setup that makes every display condition (multi-tier exceedance,
+    REF/Baseline % diffs, significance testing, "not yet set" params...)
+    visible immediately on Demo load, instead of requiring the user to
+    configure all of that by hand first. Applied via the real state.js
+    mutators (see main.js's seedDemoConfig) — this file only describes the
+    *values*, it doesn't touch state itself. Thresholds are chosen relative
+    to the BASE_REF/BASE_BL/BASE_A/BASE_B generator constants above so REF/
+    Baseline sit below every threshold, Loc-A straddles pass/Watch, and
+    Loc-B straddles Watch/Critical — a real three-way split, not all-pass
+    or all-fail. */
+export const DEMO_STANDARDS = {
+  sea: [
+    { parameter: 'Mercury', tier: 'Watch',    direction: 'max', value: 0.025, unit: 'mg/L', source: 'Demo standard', bdlFallbackLimit: 0.005 },
+    { parameter: 'Mercury', tier: 'Critical', direction: 'max', value: 0.035, unit: 'mg/L', source: 'Demo standard', bdlFallbackLimit: 0.005 },
+    { parameter: 'Arsenic', tier: 'Watch',    direction: 'max', value: 5.0,  unit: 'µg/L', source: 'Demo standard' },
+    { parameter: 'Arsenic', tier: 'Critical', direction: 'max', value: 7.0,  unit: 'µg/L', source: 'Demo standard' },
+    { parameter: 'Zinc',    tier: 'Watch',    direction: 'max', value: 20,   unit: 'µg/L', source: 'Demo standard' },
+    { parameter: 'Zinc',    tier: 'Critical', direction: 'max', value: 28,   unit: 'µg/L', source: 'Demo standard' },
+    { parameter: 'Lead',    tier: '',         direction: 'max', value: 4.5,  unit: 'µg/L', source: 'Demo standard' },
+    { parameter: 'Copper',  tier: '',         direction: 'max', value: 5.5,  unit: 'µg/L', source: 'Demo standard' },
+    { parameter: 'DO',      tier: '',         direction: 'min', value: 3.8,  unit: 'mg/L', source: 'Demo standard' },
+  ],
+  sed: [
+    { parameter: 'Mercury', tier: 'Watch',    direction: 'max', value: 0.10, unit: 'mg/kg', source: 'Demo standard', bdlFallbackLimit: 0.01 },
+    { parameter: 'Mercury', tier: 'Critical', direction: 'max', value: 0.30, unit: 'mg/kg', source: 'Demo standard', bdlFallbackLimit: 0.01 },
+    { parameter: 'Lead',    tier: 'Watch',    direction: 'max', value: 12,   unit: 'mg/kg', source: 'Demo standard' },
+    { parameter: 'Lead',    tier: 'Critical', direction: 'max', value: 18,   unit: 'mg/kg', source: 'Demo standard' },
+    { parameter: 'Cadmium', tier: '',         direction: 'max', value: 0.25, unit: 'mg/kg', source: 'Demo standard' },
+    { parameter: 'Arsenic', tier: '',         direction: 'max', value: 7.0,  unit: 'mg/kg', source: 'Demo standard' },
+  ],
 };
+
+const DEMO_REF_MAP = { 'Loc-A': ['REF-01'], 'Loc-B': ['REF-01'] };
+const DEMO_BASELINE_MAP = { 'Loc-A': ['BL-01'], 'Loc-B': ['BL-01'] };
+export const DEMO_REFMAP = { sea: DEMO_REF_MAP, sed: DEMO_REF_MAP };
+export const DEMO_BASELINEMAP = { sea: DEMO_BASELINE_MAP, sed: DEMO_BASELINE_MAP };
+
+/** The 3 subject×refKind combinations the default formats (Station vs
+    Reference, Location vs Baseline, Location vs Year) don't already
+    cover — deliberately chosen for variety, not overlap. "Station vs
+    Baseline" pins yearMode to the Baseline's own year (2019) — Baseline
+    is only ever recorded for that one year in this demo data, while
+    Location/Station readings run 2020-2023, so the default "match same
+    year" mode would never find an overlap. */
+const DEMO_CUSTOM_CMP_ENTRIES = [
+  { name: 'Location vs Reference', subjectKind: 'location', refKind: 'reference' },
+  { name: 'Station vs Baseline', subjectKind: 'station', refKind: 'baseline', yearMode: 'fixed', fixedYear: 2019 },
+  { name: 'Station vs Year (2020)', subjectKind: 'station', refKind: 'year', baseYear: 2020 },
+];
+export const DEMO_CUSTOM_CMP = { sea: DEMO_CUSTOM_CMP_ENTRIES, sed: DEMO_CUSTOM_CMP_ENTRIES };

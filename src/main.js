@@ -1,13 +1,35 @@
 import './style.css';
 import { LANG, setLang } from './utils/lang.js';
 import { TYPE_CFG } from './core/standards.js';
-import { getDemoData } from './data/demo.js';
-import { getState } from './core/state.js';
+import { getDemoData, DEMO_STANDARDS, DEMO_REFMAP, DEMO_BASELINEMAP, DEMO_CUSTOM_CMP } from './data/demo.js';
+import { getState, getStandards, addStandard, setRefMap, setBaselineMap, addCustomCmp, setStatsMethod, updateCmpSettings } from './core/state.js';
 import { buildPage } from './ui/buildPage.js';
 import { wireEvents, loadDemoInto } from './ui/events.js';
 import { renderDashboard } from './ui/renders.js';
 import { downloadTemplate, doExport } from './ui/actions.js';
 import { buildBioPage } from './ui/buildBioPage.js';
+
+/** Fills in Standards/REF-Baseline/Custom Comparisons so every display
+    condition (multi-tier exceedance, REF/Baseline % diffs, significance
+    testing...) is visible right after Demo load, not just raw rows. Uses
+    the real state.js mutators (not a bulk setStandards/setCustomCmp) so
+    the "config version history" feature gets a natural add-trail too. */
+function seedDemoConfig(t) {
+  if (getStandards(t).length === 0) {
+    (DEMO_STANDARDS[t] || []).forEach(entry => addStandard(t, entry));
+  }
+  // REF/Baseline and Custom Comparisons are already wiped by setRaw on
+  // every load, so reapplying here is naturally idempotent — no guard needed.
+  setRefMap(t, { ...DEMO_REFMAP[t] });
+  setBaselineMap(t, { ...DEMO_BASELINEMAP[t] });
+  // Baseline is only ever recorded for 2019 in this demo data, while
+  // Location readings run 2020-2023 — the default "match same year" mode
+  // would never find an overlap, so pin the default Location vs Baseline
+  // format to 2019 too (mirrors the "Station vs Baseline" custom entry).
+  updateCmpSettings(t, 'locBase', { yearMode: 'fixed', fixedYear: 2019 });
+  (DEMO_CUSTOM_CMP[t] || []).forEach(entry => addCustomCmp(t, entry));
+  setStatsMethod(t, 'ttest');
+}
 
 function loadDemo(t) {
   const data = getDemoData()[t];
@@ -16,6 +38,7 @@ function loadDemo(t) {
     name: `Demo: ${TYPE_CFG[t].name}`,
     sub: `${data.length} ${LANG === 'en' ? 'rows' : 'แถว'} · 2 locations · 10 stations · 4 yrs`,
   });
+  seedDemoConfig(t);
 }
 
 function buildAndWire(t, el) {
