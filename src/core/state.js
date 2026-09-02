@@ -48,6 +48,7 @@ function createTabState() {
     cmpSettings: defaultCmpSettings(),
     customCmp: [],
     bdlMethod: 'exclude',
+    statsMethod: 'none',
   };
 }
 
@@ -179,6 +180,15 @@ export function setBdlMethod(t, method) {
 }
 export function getBdlMethod(t) {
   return getState(t).bdlMethod;
+}
+
+// ── Statistical significance testing (Location-level comparisons) ────────
+
+export function setStatsMethod(t, method) {
+  getState(t).statsMethod = method;
+}
+export function getStatsMethod(t) {
+  return getState(t).statsMethod;
 }
 
 // ── Comparison format settings ────────────────────────────────────────────

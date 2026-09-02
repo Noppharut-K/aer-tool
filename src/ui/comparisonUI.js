@@ -11,6 +11,7 @@ import { LANG } from '../utils/lang.js';
 import {
   getState, getParamCols, resolveCanonical, getDepthSummaryMethod, setDepthSummaryMethod,
   getCmpSettings, updateCmpSettings, getCustomCmp, addCustomCmp, updateCustomCmp, removeCustomCmp,
+  getStatsMethod, setStatsMethod,
 } from '../core/state.js';
 import { TYPE_CFG } from '../core/standards.js';
 import { compareStationVsRef, compareLocationVsBaseline, compareLocationVsYear, compareCustom, getAvailableYears } from '../core/comparisons.js';
@@ -74,16 +75,23 @@ export function renderComparisonUI(t) {
 
   const atCap = customs.length >= CUSTOM_CMP_MAX;
   root.innerHTML = `
-    ${!activeCustom ? `<div class="cmp-topbar">
-      <div class="pill-field"><label>${isEN ? 'Value summary method' : 'วิธีสรุปค่า'}</label>
+    <div class="cmp-topbar">
+      ${!activeCustom ? `<div class="pill-field"><label>${isEN ? 'Value summary method' : 'วิธีสรุปค่า'}</label>
         <select id="${t}-depth-method">
           <option value="avg">${isEN ? 'Average' : 'ค่าเฉลี่ย'}</option>
           <option value="mode">${isEN ? 'Mode' : 'ฐานนิยม'}</option>
           <option value="median">${isEN ? 'Median' : 'มัธยฐาน'}</option>
         </select>
+      </div>` : ''}
+      <div class="pill-field"><label title="${isEN ? 'Location-level comparisons only (Location vs Baseline/Year, or a location-subject Custom Comparison) — Station-level comparisons don\'t have enough raw readings to test meaningfully.' : 'ใช้ได้เฉพาะการเปรียบเทียบระดับ Location (Location vs Baseline/Year หรือ Custom Comparison ที่ subject เป็น Location) — ระดับ Station มีข้อมูลดิบไม่พอทดสอบทางสถิติ'}">${isEN ? 'Statistical test' : 'สถิติทดสอบ'}</label>
+        <select id="${t}-stats-method">
+          <option value="none">${isEN ? 'None' : 'ไม่ใช้'}</option>
+          <option value="ttest">${isEN ? 't-test' : 't-test'}</option>
+          <option value="mannwhitney">${isEN ? 'Mann-Whitney U' : 'Mann-Whitney U'}</option>
+        </select>
       </div>
-      <div class="cmp-topbar-hint">${aggTopbarHint}</div>
-    </div>` : ''}
+      ${!activeCustom ? `<div class="cmp-topbar-hint">${aggTopbarHint}</div>` : ''}
+    </div>
 
     <div class="cmp-pills">
       ${Object.entries(FORMATS).map(([key, f]) => `<button type="button" class="cmp-pill ${key === activeFormat ? 'active' : ''}" data-cmp-fmt="${key}">${isEN ? f.en : f.th}</button>`).join('')}
@@ -101,6 +109,10 @@ export function renderComparisonUI(t) {
     depthSel.value = getDepthSummaryMethod(t);
     depthSel.addEventListener('change', () => { setDepthSummaryMethod(t, depthSel.value); renderFormat(t); });
   }
+
+  const statsSel = document.getElementById(`${t}-stats-method`);
+  statsSel.value = getStatsMethod(t);
+  statsSel.addEventListener('change', () => { setStatsMethod(t, statsSel.value); renderFormat(t); });
 
   root.querySelectorAll('.cmp-pill:not(.cmp-pill-add)').forEach(btn => btn.addEventListener('click', () => {
     activeFormat = btn.dataset.cmpFmt;
@@ -242,10 +254,11 @@ function renderFormat(t) {
   });
 
   const rows = computeAll(t, activeFormat, getCmpSettings(t)[activeFormat]);
+  const showStats = (activeFormat === 'locBase' || activeFormat === 'locYear') && getStatsMethod(t) !== 'none';
   const searchEl = document.getElementById(`${t}-cmp-search`);
   wireSearch(searchEl, rows,
     (r, q) => r.pk.toLowerCase().includes(q) || r.group.toLowerCase().includes(q),
-    filtered => renderTable(t, tableCard, filtered, fmt)
+    filtered => renderTable(t, tableCard, filtered, fmt, showStats)
   );
 }
 
@@ -325,9 +338,10 @@ function renderCustomFormat(t, def) {
   const rows = allParams(t).flatMap(pk => compareCustom(t, pk, def).map(r => ({ pk, ...r })));
   const searchEl = document.getElementById(`${t}-cmp-search`);
   const fmt = fmtForCustom(def);
+  const showStats = def.subjectKind === 'location' && getStatsMethod(t) !== 'none';
   wireSearch(searchEl, rows,
     (r, q) => r.pk.toLowerCase().includes(q) || r.group.toLowerCase().includes(q),
-    filtered => renderTable(t, tableCard, filtered, fmt)
+    filtered => renderTable(t, tableCard, filtered, fmt, showStats)
   );
 }
 
@@ -344,7 +358,7 @@ function computeAll(t, formatKey, settings) {
   return out;
 }
 
-function renderTable(t, tableCard, rows, fmt) {
+function renderTable(t, tableCard, rows, fmt, showStats) {
   const isEN = LANG === 'en';
   if (!rows.length) {
     tableCard.innerHTML = `<div class="empty-state"><p>${isEN ? 'No rows match.' : 'ไม่มีข้อมูลตรงกับเงื่อนไข'}</p></div>`;
@@ -361,6 +375,7 @@ function renderTable(t, tableCard, rows, fmt) {
           <th>Parameter</th><th>${groupLabel}</th><th>${isEN ? 'Year' : 'ปี'}</th>
           <th class="num">${isEN ? 'Value' : 'ค่า'}</th><th class="num">${refLabel}</th>
           <th class="num">% ${isEN ? 'diff' : 'ต่าง'}</th><th>${isEN ? 'Status' : 'สถานะ'}</th>
+          ${showStats ? `<th>${isEN ? 'Significance' : 'นัยสำคัญ'}</th>` : ''}
         </tr></thead>
         <tbody id="${t}-cmp-tbody"></tbody>
       </table>
@@ -369,11 +384,21 @@ function renderTable(t, tableCard, rows, fmt) {
 
   const tbody = document.getElementById(`${t}-cmp-tbody`);
   wirePagination(document.getElementById(`${t}-cmp-page`), rows, PAGE_SIZE, pageRows => {
-    tbody.innerHTML = pageRows.map(r => rowHtml(r, isEN)).join('');
+    tbody.innerHTML = pageRows.map(r => rowHtml(r, isEN, showStats)).join('');
   });
 }
 
-function rowHtml(r, isEN) {
+function pValueChip(r, isEN) {
+  if (!r.sampleN) return '';
+  if (r.pValue == null) {
+    return `<span class="chip chip-unset" title="n=${r.sampleN.a}, ${r.sampleN.b}">${isEN ? 'n too low' : 'n น้อยไป'}</span>`;
+  }
+  const sig = r.pValue < 0.05;
+  const label = isEN ? (sig ? 'Significant' : 'Not significant') : (sig ? 'มีนัยสำคัญ' : 'ไม่มีนัยสำคัญ');
+  return `<span class="chip ${sig ? 'chip-exceed' : 'chip-ok'}" title="n=${r.sampleN.a}, ${r.sampleN.b}">${label} (p=${r.pValue.toFixed(3)})</span>`;
+}
+
+function rowHtml(r, isEN, showStats) {
   const statusChip = r.status === 'no_ref'
     ? `<span class="chip chip-unset">${isEN ? 'Not set' : 'ยังไม่กำหนด'}</span>`
     : r.status === 'different'
@@ -387,5 +412,6 @@ function rowHtml(r, isEN) {
     <td class="num">${r.refVal != null ? fmtVal(r.refVal) : '—'}</td>
     <td class="num">${r.pctDiff != null && isFinite(r.pctDiff) ? (r.pctDiff >= 0 ? '+' : '') + r.pctDiff.toFixed(1) + '%' : '—'}</td>
     <td>${statusChip}</td>
+    ${showStats ? `<td>${pValueChip(r, isEN)}</td>` : ''}
   </tr>`;
 }

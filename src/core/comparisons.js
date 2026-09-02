@@ -7,7 +7,8 @@
  *   (aggregates station-level values again, same method).
  */
 
-import { getState, getRefMap, getBaselineMap, getDepthSummaryMethod } from './state.js';
+import { getState, getRefMap, getBaselineMap, getDepthSummaryMethod, getStatsMethod } from './state.js';
+import { tTest, mannWhitneyU } from './stats.js';
 
 /** Avg/Mode/Median of a number array */
 export function aggregate(vals, method) {
@@ -78,6 +79,52 @@ export function getBaselineValueFor(t, loc, pk, yr, yearMode, fixedYear, method)
   return resolveRoleValue(t, getBaselineMap(t), loc, pk, yr, yearMode, fixedYear, method);
 }
 
+// ── Raw samples for significance testing (Location-level only — see
+// stats.js; Station-level sample sizes are too small to test meaningfully,
+// a decision confirmed with the client) ────────────────────────────────
+
+/** Every raw reading (no aggregation) for one Location/parameter/year —
+    pools all of that Location's stations, and for Seawater every depth
+    reading too, giving the largest sample this data can offer. */
+export function getRawValuesForLocation(t, loc, pk, yr) {
+  return getState(t).rows.filter(r => r.loc === loc && r.pk === pk && String(r.yr) === String(yr)).map(r => r.val);
+}
+
+/** Every raw reading for a specific set of stations/parameter/year —
+    used to pull the Reference/Baseline side's raw sample. */
+export function getRawValuesForStations(t, stations, pk, yr) {
+  return getState(t).rows.filter(r => stations.includes(r.st) && r.pk === pk && String(r.yr) === String(yr)).map(r => r.val);
+}
+
+/** Mirrors resolveRoleValue's station/year resolution but returns the raw
+    sample instead of a single aggregated number, for significance testing. */
+function resolveRawSample(t, map, loc, pk, yr, yearMode, fixedYear) {
+  const stations = map?.[loc];
+  if (!stations || !stations.length) return [];
+  const targetYr = yearMode === 'fixed' && fixedYear != null ? fixedYear : yr;
+  return getRawValuesForStations(t, stations, pk, targetYr);
+}
+
+function getRefRawSample(t, loc, pk, yr, yearMode, fixedYear) {
+  return resolveRawSample(t, getRefMap(t), loc, pk, yr, yearMode, fixedYear);
+}
+function getBaselineRawSample(t, loc, pk, yr, yearMode, fixedYear) {
+  return resolveRawSample(t, getBaselineMap(t), loc, pk, yr, yearMode, fixedYear);
+}
+
+/** Runs the tab's currently-selected significance test (if any) and
+    returns { pValue, sampleN } to spread onto a comparison row — {
+    pValue: null, sampleN: null } when testing is off or either sample is
+    below the minimum size stats.js requires. Samples are passed as thunks
+    so the (potentially large) row-filtering they do only runs when a test
+    is actually selected — the default is "off". */
+function significance(t, sampleAFn, sampleBFn) {
+  const method = getStatsMethod(t);
+  if (method === 'none') return { pValue: null, sampleN: null };
+  const result = method === 'ttest' ? tTest(sampleAFn(), sampleBFn()) : mannWhitneyU(sampleAFn(), sampleBFn());
+  return { pValue: result.p, sampleN: { a: result.n1, b: result.n2 } };
+}
+
 function pctDiff(compareVal, refVal) {
   if (refVal === 0) return compareVal === 0 ? 0 : Infinity;
   return (compareVal - refVal) / Math.abs(refVal) * 100;
@@ -106,7 +153,10 @@ export function compareLocationVsBaseline(t, pk, settings) {
   return locVals.map(lv => {
     const baseVal = getBaselineValueFor(t, lv.loc, pk, lv.yr, settings.yearMode, settings.fixedYear, method);
     const diff = baseVal != null ? pctDiff(lv.val, baseVal) : null;
-    return { group: lv.loc, loc: lv.loc, yr: lv.yr, compareVal: lv.val, refVal: baseVal, pctDiff: diff, status: statusFor(diff, settings.threshold) };
+    const sig = significance(t,
+      () => getRawValuesForLocation(t, lv.loc, pk, lv.yr),
+      () => getBaselineRawSample(t, lv.loc, pk, lv.yr, settings.yearMode, settings.fixedYear));
+    return { group: lv.loc, loc: lv.loc, yr: lv.yr, compareVal: lv.val, refVal: baseVal, pctDiff: diff, status: statusFor(diff, settings.threshold), ...sig };
   });
 }
 
@@ -125,7 +175,10 @@ export function compareLocationVsYear(t, pk, settings) {
     vals.forEach(v => {
       if (String(v.yr) === String(settings.baseYear)) return;
       const diff = pctDiff(v.val, base.val);
-      out.push({ group: loc, loc, yr: v.yr, compareVal: v.val, refVal: base.val, pctDiff: diff, status: statusFor(diff, settings.threshold) });
+      const sig = significance(t,
+        () => getRawValuesForLocation(t, loc, pk, v.yr),
+        () => getRawValuesForLocation(t, loc, pk, settings.baseYear));
+      out.push({ group: loc, loc, yr: v.yr, compareVal: v.val, refVal: base.val, pctDiff: diff, status: statusFor(diff, settings.threshold), ...sig });
     });
   });
   return out;
@@ -141,6 +194,7 @@ export function compareLocationVsYear(t, pk, settings) {
     method and threshold (`def.aggMethod` / `def.threshold`). */
 export function compareCustom(t, pk, def) {
   const method = def.aggMethod;
+  const isLocationSubject = def.subjectKind === 'location';
   const subjectVals = (def.subjectKind === 'station'
     ? getStationLevelValues(t, pk, method)
     : getLocationLevelValues(t, pk, method)
@@ -157,17 +211,26 @@ export function compareCustom(t, pk, def) {
       vals.forEach(v => {
         if (String(v.yr) === String(def.baseYear)) return;
         const diff = pctDiff(v.val, base.val);
-        out.push({ group, loc: v.loc, yr: v.yr, compareVal: v.val, refVal: base.val, pctDiff: diff, status: statusFor(diff, def.threshold) });
+        const sig = isLocationSubject ? significance(t,
+          () => getRawValuesForLocation(t, group, pk, v.yr),
+          () => getRawValuesForLocation(t, group, pk, def.baseYear)
+        ) : { pValue: null, sampleN: null };
+        out.push({ group, loc: v.loc, yr: v.yr, compareVal: v.val, refVal: base.val, pctDiff: diff, status: statusFor(diff, def.threshold), ...sig });
       });
     });
     return out;
   }
 
   const resolveFn = def.refKind === 'reference' ? getRefValueFor : getBaselineValueFor;
+  const rawSampleFn = def.refKind === 'reference' ? getRefRawSample : getBaselineRawSample;
   return subjectVals.map(v => {
     const refVal = resolveFn(t, v.loc, pk, v.yr, def.yearMode, def.fixedYear, method);
     const diff = refVal != null ? pctDiff(v.val, refVal) : null;
-    return { group: v.group, loc: v.loc, yr: v.yr, compareVal: v.val, refVal, pctDiff: diff, status: statusFor(diff, def.threshold) };
+    const sig = isLocationSubject ? significance(t,
+      () => getRawValuesForLocation(t, v.loc, pk, v.yr),
+      () => rawSampleFn(t, v.loc, pk, v.yr, def.yearMode, def.fixedYear)
+    ) : { pValue: null, sampleN: null };
+    return { group: v.group, loc: v.loc, yr: v.yr, compareVal: v.val, refVal, pctDiff: diff, status: statusFor(diff, def.threshold), ...sig };
   });
 }
 
