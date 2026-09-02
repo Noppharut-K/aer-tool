@@ -496,6 +496,20 @@ body:not(.dark) .lang-btn.active{color:#fff;}
 .field-popover input[type=checkbox]{width:15px;height:15px;accent-color:var(--accent);}
 .field-popover-hint{font-size:11px;color:var(--text3);line-height:1.45;margin-top:6px;padding-top:8px;border-top:1px solid var(--border);}
 
+/* ── Edit history popover (Standards / Custom Comparisons) ── */
+.history-toggle{position:relative;}
+.history-popover{display:none;position:absolute;top:calc(100% + 8px);right:0;z-index:10;width:340px;max-height:360px;overflow-y:auto;background:var(--white);border:1px solid var(--border2);border-radius:var(--rm);box-shadow:var(--sh-l);padding:6px;}
+.history-popover.open{display:block;}
+.history-empty{padding:14px 10px;font-size:12.5px;color:var(--text3);text-align:center;}
+.history-row{display:flex;align-items:center;gap:8px;padding:8px 8px;border-radius:var(--rs);}
+.history-row:not(:last-child){border-bottom:1px solid var(--border);}
+.history-row-main{flex:1;min-width:0;}
+.history-row-summary{font-size:12.5px;color:var(--text);font-weight:500;}
+.history-row-time{font-size:10.5px;color:var(--text3);margin-top:1px;}
+.history-row-current{font-size:10.5px;font-weight:600;color:var(--accent-deep);white-space:nowrap;}
+.history-row-revert{font-family:var(--font);font-size:11px;font-weight:600;color:var(--accent-deep);background:var(--accent-wash);border:none;border-radius:var(--rs);padding:5px 9px;cursor:pointer;white-space:nowrap;}
+.history-row-revert:hover{background:var(--accent-wash2);}
+
 /* ── Data table card ── */
 .table-card{background:var(--white);border:1px solid var(--border);border-radius:var(--rm);box-shadow:var(--sh-s);overflow:hidden;}
 .table-card .table-scroll{overflow-x:auto;}

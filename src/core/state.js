@@ -31,6 +31,25 @@ import { sortStdEntriesBySeverity } from './analysis.js';
  * @property {StdEntry[]} standards - User-entered standards library, starts empty
  */
 
+function genHistId() {
+  return 'hist_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+}
+
+/** Append a snapshot-based history entry. `before`/`after` are the full
+    array (standards or customCmp) as it stood immediately before/after
+    this action. On the very first tracked edit of a session, this lazily
+    seeds entry 0 with `before` (action: 'start') so a revert can always
+    reach "how things looked before any edits" — no separate seeding step
+    is needed anywhere else. Entries never carry display text (state.js has
+    no i18n strings) — callers format `action`/`meta` into human-readable
+    text at render time. */
+function recordHistory(historyArr, action, meta, before, after) {
+  if (!historyArr.length) {
+    historyArr.push({ id: genHistId(), at: Date.now(), action: 'start', meta: null, snapshot: structuredClone(before) });
+  }
+  historyArr.push({ id: genHistId(), at: Date.now(), action, meta, snapshot: structuredClone(after) });
+}
+
 function defaultCmpSettings() {
   return {
     stRef:   { yearMode: 'match', fixedYear: null, threshold: 20 },
@@ -47,11 +66,13 @@ function createTabState() {
     rows: [],
     analyzed: false,
     standards: [],
+    standardsHistory: [],
     refMap: null,
     baselineMap: null,
     depthSummaryMethod: 'avg',
     cmpSettings: defaultCmpSettings(),
     customCmp: [],
+    customCmpHistory: [],
     bdlMethod: 'exclude',
     statsMethod: 'none',
   };
@@ -81,6 +102,7 @@ export function setRaw(t, raw) {
   s.baselineMap = null;
   s.cmpSettings = defaultCmpSettings();
   s.customCmp = [];
+  s.customCmpHistory = [];
 }
 
 export function setColMap(t, colMap) {
@@ -132,8 +154,10 @@ export function getStandardsFor(t, parameter) {
 
 export function addStandard(t, entry) {
   const s = getState(t);
+  const before = structuredClone(s.standards);
   const id = 'std_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
   s.standards.push({ id, decimals: null, tier: '', ...entry });
+  recordHistory(s.standardsHistory, 'add', { parameter: entry.parameter, tier: entry.tier || null }, before, s.standards);
   return id;
 }
 
@@ -141,16 +165,36 @@ export function updateStandard(t, id, patch) {
   const s = getState(t);
   const i = s.standards.findIndex(x => x.id === id);
   if (i === -1) return;
+  const before = structuredClone(s.standards);
   s.standards[i] = { ...s.standards[i], ...patch };
+  recordHistory(s.standardsHistory, 'update', { parameter: s.standards[i].parameter, tier: s.standards[i].tier || null }, before, s.standards);
 }
 
 export function removeStandard(t, id) {
   const s = getState(t);
+  const removed = s.standards.find(x => x.id === id);
+  if (!removed) return;
+  const before = structuredClone(s.standards);
   s.standards = s.standards.filter(x => x.id !== id);
+  recordHistory(s.standardsHistory, 'remove', { parameter: removed.parameter, tier: removed.tier || null }, before, s.standards);
 }
 
 export function setStandards(t, list) {
   getState(t).standards = list;
+}
+
+// ── Standards edit history (session-only, revertable) ─────────────────────
+
+export function getStandardsHistory(t) {
+  return getState(t).standardsHistory;
+}
+
+export function revertStandardsTo(t, entryId) {
+  const s = getState(t);
+  const entry = s.standardsHistory.find(e => e.id === entryId);
+  if (!entry) return;
+  s.standards = structuredClone(entry.snapshot);
+  recordHistory(s.standardsHistory, 'revert', { toId: entryId }, null, s.standards);
 }
 
 // ── REF / Baseline mapping ────────────────────────────────────────────────
@@ -221,11 +265,13 @@ export function getCustomCmp(t) {
 export function addCustomCmp(t, entry) {
   const s = getState(t);
   if (s.customCmp.length >= CUSTOM_CMP_MAX) return null;
+  const before = structuredClone(s.customCmp);
   const id = 'cc_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
   s.customCmp.push({
     id, yearMode: 'match', fixedYear: null, baseYear: null, aggMethod: 'avg', threshold: 20,
     ...entry,
   });
+  recordHistory(s.customCmpHistory, 'add', { name: entry.name }, before, s.customCmp);
   return id;
 }
 
@@ -233,16 +279,36 @@ export function updateCustomCmp(t, id, patch) {
   const s = getState(t);
   const i = s.customCmp.findIndex(x => x.id === id);
   if (i === -1) return;
+  const before = structuredClone(s.customCmp);
   s.customCmp[i] = { ...s.customCmp[i], ...patch };
+  recordHistory(s.customCmpHistory, 'update', { name: s.customCmp[i].name }, before, s.customCmp);
 }
 
 export function removeCustomCmp(t, id) {
   const s = getState(t);
+  const removed = s.customCmp.find(x => x.id === id);
+  if (!removed) return;
+  const before = structuredClone(s.customCmp);
   s.customCmp = s.customCmp.filter(x => x.id !== id);
+  recordHistory(s.customCmpHistory, 'remove', { name: removed.name }, before, s.customCmp);
 }
 
 export function setCustomCmp(t, list) {
   getState(t).customCmp = list.slice(0, CUSTOM_CMP_MAX);
+}
+
+// ── Custom comparison edit history (session-only, revertable) ─────────────
+
+export function getCustomCmpHistory(t) {
+  return getState(t).customCmpHistory;
+}
+
+export function revertCustomCmpTo(t, entryId) {
+  const s = getState(t);
+  const entry = s.customCmpHistory.find(e => e.id === entryId);
+  if (!entry) return;
+  s.customCmp = structuredClone(entry.snapshot);
+  recordHistory(s.customCmpHistory, 'revert', { toId: entryId }, null, s.customCmp);
 }
 
 export { TABS };

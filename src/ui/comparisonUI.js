@@ -11,7 +11,7 @@ import { LANG } from '../utils/lang.js';
 import {
   getState, getParamCols, resolveCanonical, getDepthSummaryMethod, setDepthSummaryMethod,
   getCmpSettings, updateCmpSettings, getCustomCmp, addCustomCmp, updateCustomCmp, removeCustomCmp,
-  getStatsMethod, setStatsMethod,
+  getStatsMethod, setStatsMethod, getCustomCmpHistory, revertCustomCmpTo,
 } from '../core/state.js';
 import { TYPE_CFG } from '../core/standards.js';
 import { compareStationVsRef, compareLocationVsBaseline, compareLocationVsYear, compareCustom, getAvailableYears } from '../core/comparisons.js';
@@ -97,6 +97,13 @@ export function renderComparisonUI(t) {
       ${Object.entries(FORMATS).map(([key, f]) => `<button type="button" class="cmp-pill ${key === activeFormat ? 'active' : ''}" data-cmp-fmt="${key}">${isEN ? f.en : f.th}</button>`).join('')}
       ${customs.map(c => `<button type="button" class="cmp-pill cmp-pill-custom ${c.id === activeFormat ? 'active' : ''}" data-cmp-fmt="${c.id}">${escHtml(c.name)}</button>`).join('')}
       <button type="button" class="cmp-pill cmp-pill-add" id="${t}-cmp-add-btn" ${atCap ? 'disabled' : ''} title="${atCap ? (isEN ? 'Maximum 10 formats total (3 default + 7 custom)' : 'สูงสุด 10 รูปแบบ (default 3 + custom 7)') : (isEN ? 'Add a custom comparison' : 'เพิ่มการเปรียบเทียบแบบกำหนดเอง')}">+ ${isEN ? 'Add' : 'เพิ่ม'}</button>
+      <div class="history-toggle">
+        <button type="button" class="btn" id="${t}-cc-hist-toggle">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 15"/></svg>
+          ${isEN ? 'History' : 'ประวัติ'}
+        </button>
+        <div class="history-popover" id="${t}-cc-hist-popover"></div>
+      </div>
     </div>
 
     <div id="${t}-cmp-builder"></div>
@@ -126,8 +133,76 @@ export function renderComparisonUI(t) {
     renderBuilder(t);
   });
 
+  wireHistoryPopover(t);
+
   if (builderOpen) renderBuilder(t);
   renderFormat(t);
+}
+
+/** Bilingual summary text for one history entry — mirrors
+    standardsUI.js's formatHistoryEntry; state.js itself stores no display
+    strings. Custom comparisons already carry a user-given `name`. */
+function formatHistoryEntry(e, isEN) {
+  if (e.action === 'start') return isEN ? 'Session start' : 'เริ่มต้น session';
+  if (e.action === 'revert') return isEN ? 'Reverted to a previous version' : 'ย้อนกลับไปยังเวอร์ชันก่อนหน้า';
+  const verb = { add: isEN ? 'Added' : 'เพิ่ม', update: isEN ? 'Edited' : 'แก้ไข', remove: isEN ? 'Removed' : 'ลบ' }[e.action];
+  return `${verb} "${escHtml(e.meta.name)}"`;
+}
+
+function formatTime(at) {
+  return new Date(at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+}
+
+function renderHistoryPopover(t) {
+  const isEN = LANG === 'en';
+  const popover = document.getElementById(`${t}-cc-hist-popover`);
+  if (!popover) return;
+  const history = getCustomCmpHistory(t);
+  if (!history.length) {
+    popover.innerHTML = `<div class="history-empty">${isEN ? 'No edits yet this session.' : 'ยังไม่มีการแก้ไขใน session นี้'}</div>`;
+    return;
+  }
+  const lastIdx = history.length - 1;
+  popover.innerHTML = [...history].reverse().map((e, revIdx) => {
+    const idx = lastIdx - revIdx;
+    const isCurrent = idx === lastIdx;
+    return `<div class="history-row">
+      <div class="history-row-main">
+        <div class="history-row-summary">${formatHistoryEntry(e, isEN)}</div>
+        <div class="history-row-time">${formatTime(e.at)}</div>
+      </div>
+      ${isCurrent
+        ? `<span class="history-row-current">${isEN ? 'Current' : 'ปัจจุบัน'}</span>`
+        : `<button type="button" class="history-row-revert" data-id="${e.id}">${isEN ? 'Revert' : 'ย้อนกลับ'}</button>`}
+    </div>`;
+  }).join('');
+  popover.querySelectorAll('.history-row-revert').forEach(btn => btn.addEventListener('click', () => {
+    revertCustomCmpTo(t, btn.dataset.id);
+    if (!FORMATS[activeFormat] && !getCustomCmp(t).some(c => c.id === activeFormat)) activeFormat = 'stRef';
+    builderOpen = null;
+    renderComparisonUI(t);
+    document.getElementById(`${t}-cc-hist-popover`)?.classList.add('open');
+  }));
+}
+
+// Closes any open .history-popover on an outside click — see the matching
+// comment in standardsUI.js for why this is registered once at module
+// load rather than per-render.
+document.addEventListener('click', e => {
+  document.querySelectorAll('.history-popover.open').forEach(p => {
+    if (!p.closest('.history-toggle')?.contains(e.target)) p.classList.remove('open');
+  });
+});
+
+function wireHistoryPopover(t) {
+  const btn = document.getElementById(`${t}-cc-hist-toggle`);
+  const popover = document.getElementById(`${t}-cc-hist-popover`);
+  if (!btn || !popover) return;
+  renderHistoryPopover(t);
+  btn.addEventListener('click', e => {
+    e.stopPropagation();
+    popover.classList.toggle('open');
+  });
 }
 
 function renderBuilder(t) {

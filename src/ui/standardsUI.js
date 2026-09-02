@@ -6,7 +6,10 @@
  */
 
 import { LANG } from '../utils/lang.js';
-import { getState, getStandards, addStandard, updateStandard, removeStandard, getParamCols, resolveCanonical } from '../core/state.js';
+import {
+  getState, getStandards, addStandard, updateStandard, removeStandard, getParamCols, resolveCanonical,
+  getStandardsHistory, revertStandardsTo,
+} from '../core/state.js';
 import { sortStdEntriesBySeverity } from '../core/analysis.js';
 import { wireSearch, wirePagination } from './tableControls.js';
 
@@ -79,6 +82,13 @@ export function renderStandardsUI(t) {
           <input type="text" id="${t}-std-search" placeholder="${isEN ? 'Search parameter or source…' : 'ค้นหา parameter หรือแหล่งที่มา…'}">
         </div>
         <span class="std-count" id="${t}-std-count"></span>
+        <div class="history-toggle">
+          <button type="button" class="btn" id="${t}-std-hist-toggle">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 15"/></svg>
+            ${isEN ? 'History' : 'ประวัติ'}
+          </button>
+          <div class="history-popover" id="${t}-std-hist-popover"></div>
+        </div>
       </div>
       <div class="table-scroll">
         <table>
@@ -98,6 +108,74 @@ export function renderStandardsUI(t) {
 
   wireAddForm(t);
   renderTable(t);
+  wireHistoryPopover(t);
+}
+
+/** Bilingual summary text for one history entry — the only place in this
+    file that turns an { action, meta } record into display text; state.js
+    itself stores no display strings. */
+function formatHistoryEntry(e, isEN) {
+  if (e.action === 'start') return isEN ? 'Session start' : 'เริ่มต้น session';
+  if (e.action === 'revert') return isEN ? 'Reverted to a previous version' : 'ย้อนกลับไปยังเวอร์ชันก่อนหน้า';
+  const verb = { add: isEN ? 'Added' : 'เพิ่ม', update: isEN ? 'Edited' : 'แก้ไข', remove: isEN ? 'Removed' : 'ลบ' }[e.action];
+  const tierPart = e.meta.tier ? ` (${escHtml(e.meta.tier)})` : '';
+  return `${verb} ${escHtml(e.meta.parameter)}${tierPart}`;
+}
+
+function formatTime(at) {
+  return new Date(at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+}
+
+function renderHistoryPopover(t) {
+  const isEN = LANG === 'en';
+  const popover = document.getElementById(`${t}-std-hist-popover`);
+  if (!popover) return;
+  const history = getStandardsHistory(t);
+  if (!history.length) {
+    popover.innerHTML = `<div class="history-empty">${isEN ? 'No edits yet this session.' : 'ยังไม่มีการแก้ไขใน session นี้'}</div>`;
+    return;
+  }
+  const lastIdx = history.length - 1;
+  popover.innerHTML = [...history].reverse().map((e, revIdx) => {
+    const idx = lastIdx - revIdx;
+    const isCurrent = idx === lastIdx;
+    return `<div class="history-row">
+      <div class="history-row-main">
+        <div class="history-row-summary">${formatHistoryEntry(e, isEN)}</div>
+        <div class="history-row-time">${formatTime(e.at)}</div>
+      </div>
+      ${isCurrent
+        ? `<span class="history-row-current">${isEN ? 'Current' : 'ปัจจุบัน'}</span>`
+        : `<button type="button" class="history-row-revert" data-id="${e.id}">${isEN ? 'Revert' : 'ย้อนกลับ'}</button>`}
+    </div>`;
+  }).join('');
+  popover.querySelectorAll('.history-row-revert').forEach(btn => btn.addEventListener('click', () => {
+    revertStandardsTo(t, btn.dataset.id);
+    renderStandardsUI(t);
+    document.getElementById(`${t}-std-hist-popover`)?.classList.add('open');
+    window.dispatchEvent(new CustomEvent('aer-standards-changed', { detail: { t } }));
+  }));
+}
+
+// Closes any open .history-popover on an outside click. Registered once at
+// module load (not per-render, unlike the button's own toggle listener
+// below) — renderStandardsUI replaces the popover/button DOM nodes on
+// every edit, so a per-render document listener here would accumulate.
+document.addEventListener('click', e => {
+  document.querySelectorAll('.history-popover.open').forEach(p => {
+    if (!p.closest('.history-toggle')?.contains(e.target)) p.classList.remove('open');
+  });
+});
+
+function wireHistoryPopover(t) {
+  const btn = document.getElementById(`${t}-std-hist-toggle`);
+  const popover = document.getElementById(`${t}-std-hist-popover`);
+  if (!btn || !popover) return;
+  renderHistoryPopover(t);
+  btn.addEventListener('click', e => {
+    e.stopPropagation();
+    popover.classList.toggle('open');
+  });
 }
 
 /** Whether a candidate {parameter, tier, direction} entry can be added/saved
