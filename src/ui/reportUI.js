@@ -10,9 +10,11 @@ import { getState } from '../core/state.js';
 import { getReportGroups } from '../core/report.js';
 import { fmtVal } from '../core/analysis.js';
 import { wireSearch, wirePagination } from './tableControls.js';
+import { TYPE_CFG } from '../core/standards.js';
 
 const PAGE_SIZE = 10;
 let reportGrain = 'station';
+let printingTab = null; // set right before window.print(), consumed by the module-level 'afterprint' handler below
 
 function escHtml(s) {
   return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
@@ -46,10 +48,17 @@ export function renderReportUI(t) {
     <div class="cmp-pills">
       ${Object.entries(GRAIN_LABEL).map(([key, l]) => `<button type="button" class="cmp-pill ${key === reportGrain ? 'active' : ''}" data-report-grain="${key}">${isEN ? l.en : l.th}</button>`).join('')}
     </div>
-    <div class="search-field report-search-field">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-      <input type="text" id="${t}-report-search" placeholder="${isEN ? 'Search…' : 'ค้นหา…'}">
+    <div class="report-toolbar">
+      <div class="search-field report-search-field">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input type="text" id="${t}-report-search" placeholder="${isEN ? 'Search…' : 'ค้นหา…'}">
+      </div>
+      <button type="button" class="btn" id="${t}-report-print">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+        ${isEN ? 'Print / Export PDF' : 'พิมพ์ / ส่งออก PDF'}
+      </button>
     </div>
+    <div class="print-only" id="${t}-report-print-heading"></div>
     <div id="${t}-report-list"></div>
     <div class="table-foot"><div id="${t}-report-page"></div></div>
   `;
@@ -77,7 +86,43 @@ export function renderReportUI(t) {
       });
     }
   );
+
+  document.getElementById(`${t}-report-print`).addEventListener('click', () => {
+    const q = (searchEl.value || '').trim().toLowerCase();
+    const all = q ? groups.filter(g => String(g.key).toLowerCase().includes(q)) : groups;
+    listEl.innerHTML = all.length
+      ? all.map(g => g.grain === 'station' ? stationCardHtml(g, isEN) : locationCardHtml(g, isEN)).join('')
+      : `<div class="empty-state"><p>${isEN ? 'No rows match.' : 'ไม่มีข้อมูลตรงกับเงื่อนไข'}</p></div>`;
+    document.getElementById(`${t}-report-print-heading`).innerHTML = printHeadingHtml(t, isEN, q);
+    printingTab = t;
+    window.print();
+  });
 }
+
+function printHeadingHtml(t, isEN, activeFilter) {
+  const moduleName = TYPE_CFG[t].name;
+  const grainLabel = isEN ? GRAIN_LABEL[reportGrain].en : GRAIN_LABEL[reportGrain].th;
+  const generated = new Date().toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
+  const filterLine = activeFilter
+    ? `<div class="print-only-line">${isEN ? `Filtered by: "${escHtml(activeFilter)}"` : `กรองด้วยคำค้นหา: "${escHtml(activeFilter)}"`}</div>`
+    : '';
+  return `
+    <div class="print-only-title">${escHtml(moduleName)} — ${isEN ? 'Report' : 'รายงาน'} (${escHtml(grainLabel)})</div>
+    <div class="print-only-line">${isEN ? 'Generated' : 'สร้างเมื่อ'} ${generated}</div>
+    ${filterLine}
+  `;
+}
+
+// Fires once the print dialog closes (printed or cancelled) and restores
+// the normal paginated Report view — registered once at module load, not
+// per-render, so it never accumulates (same reasoning as the history
+// popovers' outside-click listener in standardsUI.js/comparisonUI.js).
+window.addEventListener('afterprint', () => {
+  if (!printingTab) return;
+  const t = printingTab;
+  printingTab = null;
+  renderReportUI(t);
+});
 
 function section(titleObj, isEN, bodyHtml) {
   return `<div class="report-section">
