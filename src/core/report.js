@@ -6,10 +6,10 @@
  * multi-year trends against itself / Reference / Baseline. No new
  * statistics — everything is a filtered read of getStationLevelValues /
  * getLocationLevelValues / compareCustom (comparisons.js) and
- * getStandardFor / calcStat.
+ * getStandardsFor / calcStat.
  */
 
-import { getState, getParamCols, resolveCanonical, getStandardFor, getCmpSettings, getDepthSummaryMethod, getRefMap, getBaselineMap } from './state.js';
+import { getState, getParamCols, resolveCanonical, getStandardsFor, getCmpSettings, getDepthSummaryMethod, getRefMap, getBaselineMap } from './state.js';
 import { getStationLevelValues, getLocationLevelValues, compareCustom } from './comparisons.js';
 import { calcStat } from './analysis.js';
 
@@ -35,27 +35,39 @@ function trendDirection(points, field) {
 /** Exceeding parameters within a set of rows (already filtered to one
     Station or Location). At Location level (attributeStation) this dedupes
     to one entry per (parameter, station) pair, showing that station's
-    worst reading — so the reader knows exactly which station exceeded. */
+    worst reading — so the reader knows exactly which station exceeded.
+    "Worst" ranks by severity tier first (a Critical breach always outranks
+    a Watch breach), then by distance from that tier's own threshold. */
 function getExceeding(t, rows, attributeStation) {
   const byPk = {};
   rows.forEach(r => { (byPk[r.pk] ??= []).push(r); });
   const exceeding = [];
   let notSetCount = 0, passCount = 0;
   Object.entries(byPk).forEach(([pk, prows]) => {
-    const std = getStandardFor(t, pk);
-    if (!std) { notSetCount++; return; }
+    const stds = getStandardsFor(t, pk); // severity-sorted least → most severe
+    if (!stds.length) { notSetCount++; return; }
+    const rankOf = tier => stds.findIndex(s => (s.tier || null) === tier);
+    const isWorse = (b, a) => {
+      const rb = rankOf(b.sc_tier), ra = rankOf(a.sc_tier);
+      if (rb !== ra) return rb > ra;
+      return Math.abs(b.val - stds[rb].value) > Math.abs(a.val - stds[ra].value);
+    };
     const badRows = prows.filter(r => r.sc_status === 'exceed');
     if (!badRows.length) { passCount++; return; }
+    const pushEntry = (r, st) => {
+      const std = stds[rankOf(r.sc_tier)];
+      exceeding.push({ pk, ...(st != null ? { st } : {}), value: r.val, unit: r.unit, std, tier: std.tier || null });
+    };
     if (attributeStation) {
       const byStation = {};
       badRows.forEach(r => {
         const cur = byStation[r.st];
-        if (!cur || Math.abs(r.val - std.value) > Math.abs(cur.val - std.value)) byStation[r.st] = r;
+        if (!cur || isWorse(r, cur)) byStation[r.st] = r;
       });
-      Object.values(byStation).forEach(r => exceeding.push({ pk, st: r.st, value: r.val, unit: r.unit, std }));
+      Object.entries(byStation).forEach(([st, r]) => pushEntry(r, st));
     } else {
-      const worst = badRows.reduce((a, b) => Math.abs(b.val - std.value) > Math.abs(a.val - std.value) ? b : a);
-      exceeding.push({ pk, value: worst.val, unit: worst.unit, std });
+      const worst = badRows.reduce((a, b) => isWorse(b, a) ? b : a);
+      pushEntry(worst);
     }
   });
   return { exceeding, notSetCount, passCount };

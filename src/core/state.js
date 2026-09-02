@@ -7,6 +7,8 @@
  * export/import a template instead" decision).
  */
 
+import { sortStdEntriesBySeverity } from './analysis.js';
+
 /** @typedef {Object} StdEntry
  * @property {string} id
  * @property {string} parameter   - canonical parameter name (matches a raw column, case-sensitive as typed)
@@ -15,6 +17,9 @@
  * @property {string} unit
  * @property {string} source      - free text: standard name / issuing body
  * @property {?number} decimals   - display precision override for this parameter, null = auto
+ * @property {string} tier        - free-text severity label ("Watch"/"Critical"/...); '' = untiered,
+ *                                   the single standard for this parameter. Multiple entries may share
+ *                                   a parameter, one per distinct tier — see getStandardsFor.
  */
 
 /** @typedef {Object} TabState
@@ -119,15 +124,16 @@ export function getStandards(t) {
   return getState(t).standards;
 }
 
-/** The one standard entered for a parameter, or null if none set yet */
-export function getStandardFor(t, parameter) {
-  return getState(t).standards.find(s => s.parameter === parameter) || null;
+/** Every standard entry for a parameter (0, 1, or many — multi-tier),
+    sorted least → most severe via sortStdEntriesBySeverity. */
+export function getStandardsFor(t, parameter) {
+  return sortStdEntriesBySeverity(getState(t).standards.filter(s => s.parameter === parameter));
 }
 
 export function addStandard(t, entry) {
   const s = getState(t);
   const id = 'std_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-  s.standards.push({ id, decimals: null, ...entry });
+  s.standards.push({ id, decimals: null, tier: '', ...entry });
   return id;
 }
 

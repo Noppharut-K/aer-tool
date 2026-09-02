@@ -4,9 +4,13 @@
  */
 
 import { LANG } from '../utils/lang.js';
-import { getState, getParamCols } from '../core/state.js';
-import { calcStat, computeOutlierStats, fmtVal } from '../core/analysis.js';
+import { getState, getParamCols, getStandardsFor } from '../core/state.js';
+import { calcStat, computeOutlierStats, fmtVal, worstTierAmong } from '../core/analysis.js';
 import { wireSearch, wirePagination } from './tableControls.js';
+
+function escHtml(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
 
 const PAGE_SIZE = 20;
 const FIELD_LABEL = { year: { th: 'ปี', en: 'Year' }, loc: { th: 'Location', en: 'Location' }, st: { th: 'Station', en: 'Station' }, wl: { th: 'ระดับความลึก', en: 'Depth level' } };
@@ -105,11 +109,12 @@ function buildGroups(rows, dims) {
     const keyParts = [r.pk, ...dims.map(d => String(r[FIELD_ROWKEY[d]] ?? '—'))];
     const key = keyParts.join('||');
     if (!map[key]) {
-      map[key] = { pk: r.pk, unit: r.unit, dims: {}, vals: [], statuses: [], bdlCount: 0 };
+      map[key] = { pk: r.pk, unit: r.unit, dims: {}, vals: [], statuses: [], tiers: [], bdlCount: 0 };
       dims.forEach(d => { map[key].dims[d] = r[FIELD_ROWKEY[d]] ?? '—'; });
     }
     map[key].vals.push(r.val);
     map[key].statuses.push(r.sc_status);
+    if (r.sc_status === 'exceed') map[key].tiers.push(r.sc_tier ?? null);
     if (r.is_bdl) map[key].bdlCount++;
   });
   return Object.values(map);
@@ -137,19 +142,32 @@ function renderTable(t, tableCard, groups, dims, zThreshold) {
 
   const tbody = document.getElementById(`${t}-tbody`);
   wirePagination(document.getElementById(`${t}-page`), groups, PAGE_SIZE, pageGroups => {
-    tbody.innerHTML = pageGroups.map(g => rowHtml(g, dims, zThreshold, isEN)).join('');
+    tbody.innerHTML = pageGroups.map(g => rowHtml(t, g, dims, zThreshold, isEN)).join('');
   });
 }
 
-function rowHtml(g, dims, zThreshold, isEN) {
+function rowHtml(t, g, dims, zThreshold, isEN) {
   const st = calcStat(g.vals);
   const hasStd = g.statuses.some(s => s !== 'no_std');
   const exceedN = g.statuses.filter(s => s === 'exceed').length;
-  const status = !hasStd
-    ? `<span class="chip chip-unset">${isEN ? 'Not yet set' : 'ยังไม่ตั้งมาตรฐาน'}</span>`
-    : exceedN > 0
-      ? `<span class="chip chip-exceed">${isEN ? `${exceedN} exceeding` : `เกิน ${exceedN} ค่า`}</span>`
-      : `<span class="chip chip-ok">${isEN ? 'Within limits' : 'อยู่ในเกณฑ์'}</span>`;
+
+  let status;
+  if (!hasStd) {
+    status = `<span class="chip chip-unset">${isEN ? 'Not yet set' : 'ยังไม่ตั้งมาตรฐาน'}</span>`;
+  } else if (exceedN > 0) {
+    // Color-code by severity: amber for a lesser tier, red only when the
+    // most severe tier this parameter defines was actually breached —
+    // an untiered parameter (blank tier) always reads as plain red.
+    const entries = getStandardsFor(t, g.pk);
+    const worstTier = worstTierAmong(entries, new Set(g.tiers));
+    const mostSevere = entries.length ? (entries[entries.length - 1].tier || null) : null;
+    const isMostSevere = !mostSevere || worstTier === mostSevere;
+    const chipCls = isMostSevere ? 'chip-exceed' : 'chip-outlier';
+    const tierSuffix = worstTier ? ` (${escHtml(worstTier)})` : '';
+    status = `<span class="chip ${chipCls}">${isEN ? `${exceedN} exceeding` : `เกิน ${exceedN} ค่า`}${tierSuffix}</span>`;
+  } else {
+    status = `<span class="chip chip-ok">${isEN ? 'Within limits' : 'อยู่ในเกณฑ์'}</span>`;
+  }
 
   let outlierTag = '';
   if (zThreshold > 0) {

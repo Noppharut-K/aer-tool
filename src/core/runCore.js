@@ -2,8 +2,8 @@
  * runCore.js — wide → long unpivot + per-row standard/outlier evaluation
  */
 
-import { getState, setRows, getColVal, getParamCols, resolveCanonical, getStandardFor, getBdlMethod } from './state.js';
-import { checkStandard, computeOutlierStats, isNumericValue, parseBdl } from './analysis.js';
+import { getState, setRows, getColVal, getParamCols, resolveCanonical, getStandardsFor, getBdlMethod } from './state.js';
+import { checkStandardTiers, computeOutlierStats, isNumericValue, parseBdl } from './analysis.js';
 
 /** Fixed baseline z-score threshold for the row-level dq_flag tag — distinct
     from the dashboard's adjustable-threshold display filter, which
@@ -35,7 +35,8 @@ export function runCore(t) {
       if (bdl && bdlMethod === 'exclude') return;
 
       const pk = resolveCanonical(t, col);
-      const std = getStandardFor(t, pk);
+      const stds = getStandardsFor(t, pk);
+      const std = stds[0]; // tier metadata (unit, fallback DL) shared across a parameter's tiers
       let val;
       if (!bdl) {
         val = parseFloat(cell);
@@ -45,6 +46,7 @@ export function runCore(t) {
       } else {
         val = 0; // 'zero' method
       }
+      const sc = checkStandardTiers(stds, val);
       rows.push({
         area: gM(raw, colArea),
         proj: gM(raw, colProj),
@@ -57,7 +59,8 @@ export function runCore(t) {
         wl: colWl && raw[colWl] != null ? String(raw[colWl]).trim() : null,
         col, pk, val,
         unit: std?.unit || '',
-        sc_status: checkStandard(std, val).status,
+        sc_status: sc.status,
+        sc_tier: sc.tier ?? null,
         dq_flag: null,
         is_bdl: !!bdl,
         bdl_limit: bdl?.limit ?? null,

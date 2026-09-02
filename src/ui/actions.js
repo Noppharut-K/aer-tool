@@ -14,7 +14,7 @@ export function downloadTemplate(t) {
   const headers = [...CORE_HEADERS];
   if (t === 'sea') headers.push('Depth level');
   const standards = getStandards(t);
-  const paramHeaders = standards.length ? standards.map(s => s.parameter) : ['Parameter1', 'Parameter2'];
+  const paramHeaders = standards.length ? [...new Set(standards.map(s => s.parameter))] : ['Parameter1', 'Parameter2'];
   headers.push(...paramHeaders);
 
   const example = {};
@@ -46,13 +46,14 @@ export function doExport(t) {
     Direction: r.direction,
     Parameter: r.pk, Value: r.val, Unit: r.unit,
     Status: r.sc_status === 'exceed' ? (isEN ? 'Exceeding' : 'เกิน') : r.sc_status === 'pass' ? (isEN ? 'Within limits' : 'ปกติ') : (isEN ? 'Not yet set' : 'ยังไม่ตั้งมาตรฐาน'),
+    Tier: r.sc_tier || '',
   }));
   const wb = window.XLSX.utils.book_new();
   const ws = window.XLSX.utils.json_to_sheet(rows);
   window.XLSX.utils.book_append_sheet(wb, ws, 'Data');
 
   const stdRows = getStandards(t).map(s => ({
-    Parameter: s.parameter, Direction: s.direction, Value: s.value, Unit: s.unit, Source: s.source,
+    Parameter: s.parameter, Tier: s.tier || '', Direction: s.direction, Value: s.value, Unit: s.unit, Source: s.source,
   }));
   if (stdRows.length) {
     const ws2 = window.XLSX.utils.json_to_sheet(stdRows);

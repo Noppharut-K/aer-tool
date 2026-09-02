@@ -7,6 +7,7 @@
 
 import { LANG } from '../utils/lang.js';
 import { getState, getStandards, addStandard, updateStandard, removeStandard, getParamCols, resolveCanonical } from '../core/state.js';
+import { sortStdEntriesBySeverity } from '../core/analysis.js';
 import { wireSearch, wirePagination } from './tableControls.js';
 
 function escHtml(s) {
@@ -41,6 +42,10 @@ export function renderStandardsUI(t) {
             <option value="max">${isEN ? 'Max (not to exceed)' : 'ค่าสูงสุด (ห้ามเกิน)'}</option>
             <option value="min">${isEN ? 'Min (not to fall below)' : 'ค่าต่ำสุด (ห้ามต่ำกว่า)'}</option>
           </select>
+        </div>
+        <div class="field-g field-g-sm">
+          <label title="${isEN ? 'Optional. Set this to bind more than one severity level to the same parameter (e.g. Watch + Critical) — leave blank for a single standard' : 'ไม่บังคับ ใช้เมื่อต้องการตั้งมาตรฐานหลายระดับให้ parameter เดียวกัน (เช่น เฝ้าระวัง + วิกฤต) — เว้นว่างถ้ามีมาตรฐานเดียว'}">${isEN ? 'Tier' : 'ระดับ'}</label>
+          <input type="text" id="${t}-std-tier" placeholder="${isEN ? 'e.g. Watch' : 'เช่น เฝ้าระวัง'}">
         </div>
         <div class="field-g field-g-sm">
           <label>${isEN ? 'Value' : 'ค่า'}</label>
@@ -78,7 +83,8 @@ export function renderStandardsUI(t) {
       <div class="table-scroll">
         <table>
           <thead><tr>
-            <th>${isEN ? 'Parameter' : 'Parameter'}</th><th>${isEN ? 'Direction' : 'ทิศทาง'}</th>
+            <th>${isEN ? 'Parameter' : 'Parameter'}</th><th>${isEN ? 'Tier' : 'ระดับ'}</th>
+            <th>${isEN ? 'Direction' : 'ทิศทาง'}</th>
             <th class="num">${isEN ? 'Value' : 'ค่า'}</th><th>${isEN ? 'Unit' : 'หน่วย'}</th>
             <th>${isEN ? 'Source' : 'แหล่งที่มา'}</th><th class="num">${isEN ? 'Decimals' : 'ทศนิยม'}</th>
             <th class="num">${isEN ? 'Fallback DL' : 'DL สำรอง'}</th>
@@ -94,6 +100,38 @@ export function renderStandardsUI(t) {
   renderTable(t);
 }
 
+/** Whether a candidate {parameter, tier, direction} entry can be added/saved
+    alongside `siblings` (every other existing entry for that parameter,
+    i.e. excluding the one being edited if this is an edit) — enforces
+    unambiguous multi-tier state: every entry for a parameter with more
+    than one tier must have a distinct, non-blank tier label, and share the
+    same direction. Returns an error string, or null if valid. */
+function tierValidationError(siblings, candidate, isEN) {
+  if (!siblings.length) return null; // first entry for this parameter — blank tier is fine
+  const blankSibling = siblings.find(s => !s.tier);
+  if (blankSibling) {
+    return isEN
+      ? 'This parameter already has an untiered standard — edit it below to give it a tier label first.'
+      : 'Parameter นี้มีมาตรฐานแบบไม่ระบุระดับอยู่แล้ว — แก้ไขรายการนั้นให้มีชื่อระดับก่อน';
+  }
+  if (!candidate.tier) {
+    return isEN
+      ? 'This parameter already has tiered standards — enter a tier label to add another.'
+      : 'Parameter นี้มีมาตรฐานหลายระดับอยู่แล้ว — กรอกชื่อระดับเพื่อเพิ่มอีกระดับ';
+  }
+  if (siblings.some(s => s.tier === candidate.tier)) {
+    return isEN
+      ? 'This tier already exists for this parameter — edit it below instead.'
+      : 'ระดับนี้มีอยู่แล้วสำหรับ parameter นี้ — แก้ไขในตารางด้านล่างแทน';
+  }
+  if (siblings[0].direction !== candidate.direction) {
+    return isEN
+      ? "This tier's direction must match the parameter's existing standards."
+      : 'ทิศทางของระดับนี้ต้องตรงกับทิศทางมาตรฐานเดิมของ parameter นี้';
+  }
+  return null;
+}
+
 function wireAddForm(t) {
   const isEN = LANG === 'en';
   const addBtn = document.getElementById(`${t}-std-add`);
@@ -105,27 +143,38 @@ function wireAddForm(t) {
     const decEl = document.getElementById(`${t}-std-dec`);
     const bdlEl = document.getElementById(`${t}-std-bdl`);
     const dirEl = document.getElementById(`${t}-std-dir`);
+    const tierEl = document.getElementById(`${t}-std-tier`);
     const errEl = document.getElementById(`${t}-std-err`);
     errEl.textContent = '';
 
     const parameter = paramEl.value.trim();
     const value = parseFloat(valueEl.value);
+    const tier = tierEl.value.trim();
     if (!parameter) { errEl.textContent = isEN ? 'Enter a parameter name.' : 'กรอกชื่อ parameter'; return; }
     if (isNaN(value)) { errEl.textContent = isEN ? 'Enter a numeric value.' : 'กรอกค่าตัวเลข'; return; }
-    if (getStandards(t).some(s => s.parameter === parameter)) {
-      errEl.textContent = isEN ? 'This parameter already has a standard — edit it below instead.' : 'Parameter นี้มีมาตรฐานอยู่แล้ว — แก้ไขในตารางด้านล่างแทน';
-      return;
-    }
+    const siblings = getStandards(t).filter(s => s.parameter === parameter);
+    const err = tierValidationError(siblings, { tier, direction: dirEl.value }, isEN);
+    if (err) { errEl.textContent = err; return; }
     addStandard(t, {
-      parameter, direction: dirEl.value, value,
+      parameter, direction: dirEl.value, value, tier,
       unit: unitEl.value.trim(), source: sourceEl.value.trim(),
       decimals: decEl.value !== '' ? parseInt(decEl.value) : null,
       bdlFallbackLimit: bdlEl.value !== '' ? parseFloat(bdlEl.value) : null,
     });
-    paramEl.value = ''; valueEl.value = ''; unitEl.value = ''; sourceEl.value = ''; decEl.value = ''; bdlEl.value = '';
+    paramEl.value = ''; valueEl.value = ''; unitEl.value = ''; sourceEl.value = ''; decEl.value = ''; bdlEl.value = ''; tierEl.value = '';
     renderStandardsUI(t);
     window.dispatchEvent(new CustomEvent('aer-standards-changed', { detail: { t } }));
   });
+}
+
+/** Rows sorted for display: alphabetically by parameter, then least → most
+    severe within each parameter (mirrors how a multi-tier parameter's
+    entries are evaluated). */
+function sortForDisplay(list) {
+  const byParam = {};
+  list.forEach(s => { (byParam[s.parameter] ??= []).push(s); });
+  return Object.keys(byParam).sort((a, b) => a.localeCompare(b))
+    .flatMap(p => sortStdEntriesBySeverity(byParam[p]));
 }
 
 function renderTable(t) {
@@ -141,15 +190,16 @@ function renderTable(t) {
     (s, q) => s.parameter.toLowerCase().includes(q) || (s.source || '').toLowerCase().includes(q),
     filtered => {
       if (!filtered.length) {
-        tbody.innerHTML = `<tr><td colspan="8"><div class="empty-state empty-state-inline">
+        tbody.innerHTML = `<tr><td colspan="9"><div class="empty-state empty-state-inline">
           <p>${all.length ? (isEN ? 'No standards match your search.' : 'ไม่พบรายการที่ค้นหา') : (isEN ? 'No standards entered yet — add one above.' : 'ยังไม่มีมาตรฐาน — เพิ่มด้านบนเพื่อเริ่มต้น')}</p>
         </div></td></tr>`;
         pageEl.innerHTML = '';
         return;
       }
-      wirePagination(pageEl, filtered, PAGE_SIZE, pageRows => {
+      wirePagination(pageEl, sortForDisplay(filtered), PAGE_SIZE, pageRows => {
         tbody.innerHTML = pageRows.map(s => `<tr data-id="${s.id}">
           <td class="param-cell">${escHtml(s.parameter)}</td>
+          <td>${escHtml(s.tier) || '—'}</td>
           <td>${s.direction === 'min' ? (isEN ? 'Min' : 'ต่ำสุด') : (isEN ? 'Max' : 'สูงสุด')}</td>
           <td class="num">${s.value}</td>
           <td>${escHtml(s.unit) || '—'}</td>
@@ -185,6 +235,7 @@ function startEdit(t, id) {
   if (!row) return;
   row.innerHTML = `
     <td><input type="text" class="edit-in" value="${escHtml(std.parameter)}" data-f="parameter"></td>
+    <td><input type="text" class="edit-in" value="${escHtml(std.tier || '')}" data-f="tier"></td>
     <td><select class="edit-in" data-f="direction">
       <option value="max" ${std.direction === 'max' ? 'selected' : ''}>${isEN ? 'Max' : 'สูงสุด'}</option>
       <option value="min" ${std.direction === 'min' ? 'selected' : ''}>${isEN ? 'Min' : 'ต่ำสุด'}</option>
@@ -202,6 +253,7 @@ function startEdit(t, id) {
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
       </button>
     </td>`;
+  const errEl = document.getElementById(`${t}-std-err`);
   row.querySelector('.std-cancel').addEventListener('click', () => renderStandardsUI(t));
   row.querySelector('.std-save').addEventListener('click', () => {
     const patch = {};
@@ -213,6 +265,10 @@ function startEdit(t, id) {
         : inp.value.trim();
     });
     if (!patch.parameter || isNaN(patch.value)) return;
+    const siblings = getStandards(t).filter(s => s.id !== id && s.parameter === patch.parameter);
+    const err = tierValidationError(siblings, patch, isEN);
+    if (err) { errEl.textContent = err; return; }
+    errEl.textContent = '';
     updateStandard(t, id, patch);
     renderStandardsUI(t);
     window.dispatchEvent(new CustomEvent('aer-standards-changed', { detail: { t } }));

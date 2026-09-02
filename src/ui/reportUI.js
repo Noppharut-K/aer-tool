@@ -110,7 +110,8 @@ function exceedingListHtml(exceeding, isEN, attributeStation) {
   return `<ul class="report-list">${exceeding.map(e => {
     const limitWord = e.std.direction === 'min' ? (isEN ? 'not below' : 'ไม่ต่ำกว่า') : (isEN ? 'not exceed' : 'ไม่เกิน');
     const stPart = attributeStation ? ` — ${escHtml(e.st)}` : '';
-    return `<li>${escHtml(e.pk)}${stPart}: ${fmtVal(e.value, e.std.decimals)} ${e.unit || ''} (${isEN ? `limit ${limitWord}` : `มาตรฐาน${limitWord}`} ${e.std.value} ${e.std.unit || ''})</li>`;
+    const tierPart = e.tier ? ` (${escHtml(e.tier)})` : '';
+    return `<li>${escHtml(e.pk)}${tierPart}${stPart}: ${fmtVal(e.value, e.std.decimals)} ${e.unit || ''} (${isEN ? `limit ${limitWord}` : `มาตรฐาน${limitWord}`} ${e.std.value} ${e.std.unit || ''})</li>`;
   }).join('')}</ul>`;
 }
 

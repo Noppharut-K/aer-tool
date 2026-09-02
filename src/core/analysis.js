@@ -64,12 +64,43 @@ export function computeOutlierStats(colVals, zThreshold) {
   };
 }
 
-/** Check a value against a single standard entry (see state.js's StdEntry).
-    Returns { status: 'no_std'|'exceed'|'pass' } */
-export function checkStandard(std, value) {
-  if (!std) return { status: 'no_std' };
-  const exceeds = std.direction === 'min' ? value < std.value : value > std.value;
-  return { status: exceeds ? 'exceed' : 'pass' };
+/** Sort a parameter's standard entries from least to most severe. A "max"
+    standard gets more severe as its threshold rises (harder to breach,
+    worse when you do — e.g. Watch=50 then Critical=100); a "min" standard
+    gets more severe as its threshold falls. This derives severity purely
+    from direction + value, so multi-tier standards need no explicit rank
+    field — the numbers already encode it. */
+export function sortStdEntriesBySeverity(entries) {
+  if (!entries.length) return entries;
+  const dir = entries[0].direction;
+  return [...entries].sort((a, b) => dir === 'min' ? b.value - a.value : a.value - b.value);
+}
+
+/** Among a parameter's severity-sorted entries, the most severe one whose
+    tier label appears in `presentLabels` (a Set of tier strings, or `null`
+    for the untiered case — matching how sc_tier is stored on rows) — or
+    null if none match. Used to resolve "the worst tier breached" when
+    multiple readings in a displayed group/summary breach different tiers
+    of the same parameter. */
+export function worstTierAmong(sortedEntries, presentLabels) {
+  for (let i = sortedEntries.length - 1; i >= 0; i--) {
+    const label = sortedEntries[i].tier || null;
+    if (presentLabels.has(label)) return label;
+  }
+  return null;
+}
+
+/** Check a value against every tier of a parameter's standard (see
+    state.js's StdEntry / getStandardsFor — entries must already be
+    severity-sorted least → most severe, e.g. via sortStdEntriesBySeverity).
+    Returns { status: 'no_std'|'exceed'|'pass', tier? } — tier is the label
+    of the most severe breached entry ('' entries report tier: null). */
+export function checkStandardTiers(entries, value) {
+  if (!entries.length) return { status: 'no_std' };
+  const breached = entries.filter(s => s.direction === 'min' ? value < s.value : value > s.value);
+  if (!breached.length) return { status: 'pass' };
+  const worst = breached[breached.length - 1];
+  return { status: 'exceed', tier: worst.tier || null };
 }
 
 /** Format a number for display, honoring a per-parameter decimal override
