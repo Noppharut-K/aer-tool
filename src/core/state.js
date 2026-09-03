@@ -75,6 +75,7 @@ function createTabState() {
     customCmpHistory: [],
     bdlMethod: 'exclude',
     statsMethod: 'none',
+    reportHidden: { overall: false, minmax: false, selfTrend: false, refTrend: false, baseTrend: false },
   };
 }
 
@@ -239,6 +240,15 @@ export function setStatsMethod(t, method) {
 }
 export function getStatsMethod(t) {
   return getState(t).statsMethod;
+}
+
+// ── Report tab section visibility (session preference) ───────────────────
+
+export function getReportHidden(t) {
+  return getState(t).reportHidden;
+}
+export function setReportSectionHidden(t, key, hidden) {
+  getState(t).reportHidden[key] = hidden;
 }
 
 // ── Comparison format settings ────────────────────────────────────────────

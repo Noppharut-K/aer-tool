@@ -6,7 +6,7 @@
  */
 
 import { LANG } from '../utils/lang.js';
-import { getState } from '../core/state.js';
+import { getState, getReportHidden, setReportSectionHidden } from '../core/state.js';
 import { getReportGroups } from '../core/report.js';
 import { fmtVal } from '../core/analysis.js';
 import { wireSearch, wirePagination } from './tableControls.js';
@@ -53,6 +53,16 @@ export function renderReportUI(t) {
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
         <input type="text" id="${t}-report-search" placeholder="${isEN ? 'Search…' : 'ค้นหา…'}">
       </div>
+      <div class="field-picker">
+        <button type="button" class="btn" id="${t}-report-sec-toggle">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>
+          ${isEN ? 'Show/hide sections' : 'แสดง/ซ่อนหัวข้อ'}
+        </button>
+        <div class="field-popover" id="${t}-report-sec-popover">
+          <div class="field-popover-hd">${isEN ? 'Sections' : 'หัวข้อ'}</div>
+          ${Object.entries(SEC).map(([key, l]) => `<label><input type="checkbox" class="report-sec-check" data-key="${key}" ${getReportHidden(t)[key] ? '' : 'checked'}> ${isEN ? l.en : l.th}</label>`).join('')}
+        </div>
+      </div>
       <button type="button" class="btn" id="${t}-report-print">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
         ${isEN ? 'Print / Export PDF' : 'พิมพ์ / ส่งออก PDF'}
@@ -66,6 +76,15 @@ export function renderReportUI(t) {
   root.querySelectorAll('[data-report-grain]').forEach(btn => btn.addEventListener('click', () => {
     reportGrain = btn.dataset.reportGrain;
     renderReportUI(t);
+  }));
+
+  const secToggleBtn = document.getElementById(`${t}-report-sec-toggle`);
+  const secPopover = document.getElementById(`${t}-report-sec-popover`);
+  secToggleBtn.addEventListener('click', e => { e.stopPropagation(); secPopover.classList.toggle('open'); });
+  secPopover.querySelectorAll('.report-sec-check').forEach(cb => cb.addEventListener('change', () => {
+    setReportSectionHidden(t, cb.dataset.key, !cb.checked);
+    renderReportUI(t);
+    document.getElementById(`${t}-report-sec-popover`)?.classList.add('open');
   }));
 
   const groups = getReportGroups(t, reportGrain);
@@ -82,7 +101,7 @@ export function renderReportUI(t) {
         return;
       }
       wirePagination(pageEl, filtered, PAGE_SIZE, pageGroups => {
-        listEl.innerHTML = pageGroups.map(g => g.grain === 'station' ? stationCardHtml(g, isEN) : locationCardHtml(g, isEN)).join('');
+        listEl.innerHTML = pageGroups.map(g => g.grain === 'station' ? stationCardHtml(t, g, isEN) : locationCardHtml(t, g, isEN)).join('');
       });
     }
   );
@@ -91,7 +110,7 @@ export function renderReportUI(t) {
     const q = (searchEl.value || '').trim().toLowerCase();
     const all = q ? groups.filter(g => String(g.key).toLowerCase().includes(q)) : groups;
     listEl.innerHTML = all.length
-      ? all.map(g => g.grain === 'station' ? stationCardHtml(g, isEN) : locationCardHtml(g, isEN)).join('')
+      ? all.map(g => g.grain === 'station' ? stationCardHtml(t, g, isEN) : locationCardHtml(t, g, isEN)).join('')
       : `<div class="empty-state"><p>${isEN ? 'No rows match.' : 'ไม่มีข้อมูลตรงกับเงื่อนไข'}</p></div>`;
     document.getElementById(`${t}-report-print-heading`).innerHTML = printHeadingHtml(t, isEN, q);
     printingTab = t;
@@ -124,7 +143,18 @@ window.addEventListener('afterprint', () => {
   renderReportUI(t);
 });
 
-function section(titleObj, isEN, bodyHtml) {
+// Closes the show/hide-sections popover on an outside click — registered
+// once at module load, not per-render, for the same reason as the history
+// popovers' outside-click listener in standardsUI.js/comparisonUI.js
+// (renderReportUI replaces the popover/button DOM nodes on every render).
+document.addEventListener('click', e => {
+  document.querySelectorAll('[id$="-report-sec-popover"].open').forEach(p => {
+    if (!p.closest('.field-picker')?.contains(e.target)) p.classList.remove('open');
+  });
+});
+
+function section(titleObj, isEN, bodyHtml, hidden) {
+  if (hidden) return '';
   return `<div class="report-section">
     <div class="report-section-title">${isEN ? titleObj.en : titleObj.th}</div>
     ${bodyHtml}
@@ -240,24 +270,26 @@ function refBaselineTrendListHtml(trendList, hasFlag, years, isEN) {
   </table></div>`;
 }
 
-function stationCardHtml(g, isEN) {
+function stationCardHtml(t, g, isEN) {
+  const hidden = getReportHidden(t);
   return `<div class="report-card">
     <div class="report-card-title">${escHtml(g.key)}${g.loc ? ` <span class="report-card-title-sub">(${isEN ? 'Location' : 'Location'}: ${escHtml(g.loc)})</span>` : ''}</div>
     <div class="report-card-meta">${metaLine(g, isEN)}</div>
-    ${section(SEC.overall, isEN, overallStatusHtml(g, isEN) + exceedingListHtml(g.exceeding, isEN, false))}
-    ${section(SEC.selfTrend, isEN, selfTrendListHtml(g.selfTrend, g.years, isEN))}
-    ${section(SEC.refTrend, isEN, refBaselineTrendListHtml(g.refTrend, g.hasRef, g.years, isEN))}
-    ${section(SEC.baseTrend, isEN, refBaselineTrendListHtml(g.baselineTrend, g.hasBaseline, g.years, isEN))}
+    ${section(SEC.overall, isEN, overallStatusHtml(g, isEN) + exceedingListHtml(g.exceeding, isEN, false), hidden.overall)}
+    ${section(SEC.selfTrend, isEN, selfTrendListHtml(g.selfTrend, g.years, isEN), hidden.selfTrend)}
+    ${section(SEC.refTrend, isEN, refBaselineTrendListHtml(g.refTrend, g.hasRef, g.years, isEN), hidden.refTrend)}
+    ${section(SEC.baseTrend, isEN, refBaselineTrendListHtml(g.baselineTrend, g.hasBaseline, g.years, isEN), hidden.baseTrend)}
   </div>`;
 }
 
-function locationCardHtml(g, isEN) {
+function locationCardHtml(t, g, isEN) {
+  const hidden = getReportHidden(t);
   return `<div class="report-card">
     <div class="report-card-title">${escHtml(g.key)}</div>
     <div class="report-card-meta">${metaLine(g, isEN)}</div>
-    ${section(SEC.overall, isEN, overallStatusHtml(g, isEN) + exceedingListHtml(g.exceeding, isEN, true))}
-    ${section(SEC.minmax, isEN, minMaxListHtml(g.minMax, isEN))}
-    ${section(SEC.selfTrend, isEN, selfTrendListHtml(g.selfTrend, g.years, isEN))}
-    ${section(SEC.baseTrend, isEN, refBaselineTrendListHtml(g.baselineTrend, g.hasBaseline, g.years, isEN))}
+    ${section(SEC.overall, isEN, overallStatusHtml(g, isEN) + exceedingListHtml(g.exceeding, isEN, true), hidden.overall)}
+    ${section(SEC.minmax, isEN, minMaxListHtml(g.minMax, isEN), hidden.minmax)}
+    ${section(SEC.selfTrend, isEN, selfTrendListHtml(g.selfTrend, g.years, isEN), hidden.selfTrend)}
+    ${section(SEC.baseTrend, isEN, refBaselineTrendListHtml(g.baselineTrend, g.hasBaseline, g.years, isEN), hidden.baseTrend)}
   </div>`;
 }
