@@ -228,8 +228,8 @@ function minMaxListHtml(minMax, isEN) {
 
 function trendSuffix(trend, isEN) {
   if (!trend) return isEN ? '—' : '—';
-  if (trend.label === 'stable') return isEN ? 'Stable' : 'ค่อนข้างคงที่';
-  const word = trend.label === 'up' ? (isEN ? 'Increasing' : 'เพิ่มขึ้น') : (isEN ? 'Decreasing' : 'ลดลง');
+  if (trend.label === 'stable') return isEN ? 'No discernible trend' : 'ไม่มีแนวโน้มเปลี่ยนแปลงชัดเจน';
+  const word = trend.label === 'up' ? (isEN ? 'Increasing trend' : 'มีแนวโน้มเพิ่มขึ้น') : (isEN ? 'Decreasing trend' : 'มีแนวโน้มลดลง');
   return `${word} ${trend.pct >= 0 ? '+' : ''}${trend.pct.toFixed(1)}%`;
 }
 
