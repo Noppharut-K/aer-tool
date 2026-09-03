@@ -76,13 +76,13 @@ export function renderComparisonUI(t) {
   const atCap = customs.length >= CUSTOM_CMP_MAX;
   root.innerHTML = `
     <div class="cmp-topbar">
-      ${!activeCustom ? `<div class="pill-field"><label>${isEN ? 'Value summary method' : 'วิธีสรุปค่า'}</label>
+      <div class="pill-field"><label>${isEN ? 'Value summary method' : 'วิธีสรุปค่า'}</label>
         <select id="${t}-depth-method">
           <option value="avg">${isEN ? 'Average' : 'ค่าเฉลี่ย'}</option>
           <option value="mode">${isEN ? 'Mode' : 'ฐานนิยม'}</option>
           <option value="median">${isEN ? 'Median' : 'มัธยฐาน'}</option>
         </select>
-      </div>` : ''}
+      </div>
       <div class="pill-field"><label title="${isEN ? 'Location-level comparisons only (Location vs Baseline/Year, or a location-subject Custom Comparison) — Station-level comparisons don\'t have enough raw readings to test meaningfully.' : 'ใช้ได้เฉพาะการเปรียบเทียบระดับ Location (Location vs Baseline/Year หรือ Custom Comparison ที่ subject เป็น Location) — ระดับ Station มีข้อมูลดิบไม่พอทดสอบทางสถิติ'}">${isEN ? 'Statistical test' : 'สถิติทดสอบ'}</label>
         <select id="${t}-stats-method">
           <option value="none">${isEN ? 'None' : 'ไม่ใช้'}</option>
@@ -111,8 +111,11 @@ export function renderComparisonUI(t) {
     <div class="table-card" id="${t}-cmp-table-card"></div>
   `;
 
-  if (!activeCustom) {
-    const depthSel = document.getElementById(`${t}-depth-method`);
+  const depthSel = document.getElementById(`${t}-depth-method`);
+  if (activeCustom) {
+    depthSel.value = activeCustom.aggMethod;
+    depthSel.addEventListener('change', () => { updateCustomCmp(t, activeCustom.id, { aggMethod: depthSel.value }); renderFormat(t); });
+  } else {
     depthSel.value = getDepthSummaryMethod(t);
     depthSel.addEventListener('change', () => { setDepthSummaryMethod(t, depthSel.value); renderFormat(t); });
   }
@@ -343,14 +346,6 @@ function renderCustomFormat(t, def) {
   const tableCard = document.getElementById(`${t}-cmp-table-card`);
   if (!stripEl || !tableCard) return;
 
-  const aggSelectHtml = `
-    <div class="pill-field"><label>${isEN ? 'Summary method' : 'วิธีสรุปค่า'}</label>
-      <select id="${t}-cmp-agg">
-        <option value="avg" ${def.aggMethod === 'avg' ? 'selected' : ''}>${isEN ? 'Average' : 'ค่าเฉลี่ย'}</option>
-        <option value="mode" ${def.aggMethod === 'mode' ? 'selected' : ''}>${isEN ? 'Mode' : 'ฐานนิยม'}</option>
-        <option value="median" ${def.aggMethod === 'median' ? 'selected' : ''}>${isEN ? 'Median' : 'มัธยฐาน'}</option>
-      </select>
-    </div>`;
   const actionsHtml = `
     <div class="cmp-item-actions">
       <button type="button" class="icon-btn" id="${t}-cmp-edit" title="${isEN ? 'Edit' : 'แก้ไข'}">
@@ -371,7 +366,6 @@ function renderCustomFormat(t, def) {
         </select>
       </div>
       <div class="pill-field"><label>${isEN ? 'Threshold %' : 'Threshold %'}</label><input type="number" id="${t}-cmp-threshold" min="0" step="1" value="${def.threshold}"></div>
-      ${aggSelectHtml}
       <div class="search-field"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><input type="text" id="${t}-cmp-search" placeholder="${isEN ? 'Search parameter, group…' : 'ค้นหา parameter, group…'}"></div>
       ${actionsHtml}`;
     document.getElementById(`${t}-cmp-baseyear`).addEventListener('change', e => { updateCustomCmp(t, def.id, { baseYear: e.target.value || null }); renderFormat(t); });
@@ -391,7 +385,6 @@ function renderCustomFormat(t, def) {
         </select>
       </div>` : ''}
       <div class="pill-field"><label>${isEN ? 'Threshold %' : 'Threshold %'}</label><input type="number" id="${t}-cmp-threshold" min="0" step="1" value="${def.threshold}"></div>
-      ${aggSelectHtml}
       <div class="search-field"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><input type="text" id="${t}-cmp-search" placeholder="${isEN ? 'Search parameter, group…' : 'ค้นหา parameter, group…'}"></div>
       ${actionsHtml}`;
     document.getElementById(`${t}-cmp-yearmode`).addEventListener('change', e => { updateCustomCmp(t, def.id, { yearMode: e.target.value }); renderFormat(t); });
@@ -402,7 +395,6 @@ function renderCustomFormat(t, def) {
     const v = parseFloat(e.target.value);
     if (!isNaN(v)) { updateCustomCmp(t, def.id, { threshold: v }); renderFormat(t); }
   });
-  document.getElementById(`${t}-cmp-agg`).addEventListener('change', e => { updateCustomCmp(t, def.id, { aggMethod: e.target.value }); renderFormat(t); });
   document.getElementById(`${t}-cmp-edit`).addEventListener('click', () => { builderOpen = def.id; renderComparisonUI(t); });
   document.getElementById(`${t}-cmp-del`).addEventListener('click', () => {
     removeCustomCmp(t, def.id);

@@ -73,13 +73,32 @@ function getExceeding(t, rows, attributeStation) {
   return { exceeding, notSetCount, passCount };
 }
 
+/** When a Location's assigned Baseline station(s) only ever have data for
+    a single year (the common "one-time baseline survey done once before a
+    project starts" pattern), pin the trend comparison to that year instead
+    of same-year matching — 'match' mode would otherwise never find an
+    overlapping year against the subject's own (typically later, multi-
+    year) readings, and the "Trend vs Baseline" section would always come
+    back empty. A Baseline that does span multiple years keeps using
+    'match' (the more meaningful behavior when a real per-year baseline
+    exists). */
+function singleBaselineYear(t, baselineStations) {
+  if (!baselineStations?.length) return null;
+  const years = [...new Set(getState(t).rows.filter(r => baselineStations.includes(r.st)).map(r => r.yr))].filter(y => y != null);
+  return years.length === 1 ? years[0] : null;
+}
+
 /** Multi-year REF/Baseline comparison for one parameter and one specific
     subject (Station or Location), via compareCustom — same engine Tab 2's
     Custom Comparison builder uses, just filtered to one group and every
-    year (not only 'different' years) to show the trend. Always uses
-    same-year matching since a fixed single year can't produce a trend. */
-function refBaselineTrend(t, pk, subjectKind, refKind, groupKey, method, threshold) {
-  const def = { subjectKind, refKind, yearMode: 'match', fixedYear: null, aggMethod: method, threshold };
+    year (not only 'different' years) to show the trend. Same-year matching
+    by default; pass `fixedYear` to pin every point at a single Baseline
+    year instead (see singleBaselineYear). */
+function refBaselineTrend(t, pk, subjectKind, refKind, groupKey, method, threshold, fixedYear) {
+  const def = {
+    subjectKind, refKind, aggMethod: method, threshold,
+    yearMode: fixedYear != null ? 'fixed' : 'match', fixedYear: fixedYear ?? null,
+  };
   return compareCustom(t, pk, def)
     .filter(r => r.group === groupKey && r.refVal != null)
     .sort((a, b) => a.yr - b.yr);
@@ -113,9 +132,11 @@ function summarizeStation(t, key, rows) {
     return { pk, points, trend: trendDirection(points, 'pctDiff') };
   }).filter(x => x.points.length) : [];
 
-  const hasBaseline = !!(getBaselineMap(t)?.[loc]?.length);
+  const baselineStations = getBaselineMap(t)?.[loc];
+  const hasBaseline = !!baselineStations?.length;
+  const baselineFixedYear = hasBaseline ? singleBaselineYear(t, baselineStations) : null;
   const baselineTrend = hasBaseline ? params.map(pk => {
-    const points = refBaselineTrend(t, pk, 'station', 'baseline', key, method, cmpSettings.stRef.threshold);
+    const points = refBaselineTrend(t, pk, 'station', 'baseline', key, method, cmpSettings.stRef.threshold, baselineFixedYear);
     return { pk, points, trend: trendDirection(points, 'pctDiff') };
   }).filter(x => x.points.length) : [];
 
@@ -144,9 +165,11 @@ function summarizeLocation(t, key, rows) {
     return { pk, points, trend: trendDirection(points, 'val') };
   }).filter(x => x.points.length >= 2);
 
-  const hasBaseline = !!(getBaselineMap(t)?.[key]?.length);
+  const baselineStations = getBaselineMap(t)?.[key];
+  const hasBaseline = !!baselineStations?.length;
+  const baselineFixedYear = hasBaseline ? singleBaselineYear(t, baselineStations) : null;
   const baselineTrend = hasBaseline ? params.map(pk => {
-    const points = refBaselineTrend(t, pk, 'location', 'baseline', key, method, cmpSettings.locBase.threshold);
+    const points = refBaselineTrend(t, pk, 'location', 'baseline', key, method, cmpSettings.locBase.threshold, baselineFixedYear);
     return { pk, points, trend: trendDirection(points, 'pctDiff') };
   }).filter(x => x.points.length) : [];
 
