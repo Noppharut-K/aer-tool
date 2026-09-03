@@ -275,7 +275,11 @@ function refBaselineTrendListHtml(trendList, hasFlag, years, isEN) {
         const p = byYr.get(String(y));
         if (!p) return `<td class="num">—</td>`;
         const pct = isFinite(p.pctDiff) ? `${p.pctDiff >= 0 ? '+' : ''}${p.pctDiff.toFixed(1)}%` : '—';
-        return `<td class="num"><div class="report-yr-val">${fmtVal(p.compareVal)}</div><div class="report-yr-delta">${pct}</div></td>`;
+        // p.status ('close'/'different') already reflects this format's own
+        // configured threshold (same value the Comparison tab uses) — flag
+        // it in red here rather than introduce a second judgment.
+        const deltaCls = p.status === 'different' ? 'report-yr-delta report-yr-delta-diff' : 'report-yr-delta';
+        return `<td class="num"><div class="report-yr-val">${fmtVal(p.compareVal)}</div><div class="${deltaCls}">${pct}</div></td>`;
       }).join('');
       return `<tr><td class="param">${escHtml(s.pk)}</td>${cells}</tr>`;
     }).join('')}</tbody>

@@ -659,6 +659,7 @@ body:not(.dark) .lang-btn.active{color:#fff;}
 .report-table .param{font-weight:600;color:var(--text);}
 .report-yr-val{font-weight:600;color:var(--text);}
 .report-yr-delta{font-size:11px;color:var(--text3);margin-top:1px;}
+.report-yr-delta-diff{color:var(--red);font-weight:600;}
 .print-only-title{font-family:var(--display);font-weight:700;font-size:18px;color:#000;margin-bottom:4px;}
 .print-only-line{font-size:11.5px;color:#333;}
 
@@ -687,6 +688,7 @@ body:not(.dark) .lang-btn.active{color:#fff;}
   .report-card,.report-card-title,.report-card-meta,.report-para,.report-list li,.report-section-title{color:#000!important;}
   .report-list li::before{background:#000;}
   .report-table th,.report-table td,.report-table .param,.report-yr-val,.report-yr-delta{color:#000!important;}
+  .report-yr-delta-diff{color:#c41a1a!important;}
   .report-table tr{break-inside:avoid;}
 }
 
