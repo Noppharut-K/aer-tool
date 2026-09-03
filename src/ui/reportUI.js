@@ -243,9 +243,21 @@ function selfTrendListHtml(selfTrend, years, isEN) {
     <thead><tr><th>${isEN ? 'Parameter' : 'Parameter'}</th>${yearHeadHtml(years, isEN)}<th>${isEN ? 'Overall trend' : 'แนวโน้มโดยรวม'}</th></tr></thead>
     <tbody>${selfTrend.map(s => {
       const byYr = pointsByYear(s.points);
+      let prevYr = null, prevVal = null;
       const cells = years.map(y => {
         const p = byYr.get(String(y));
-        return `<td class="num">${p ? fmtVal(p.val) : '—'}</td>`;
+        if (!p) return `<td class="num">—</td>`;
+        // % change vs the last year that actually had a reading — named
+        // explicitly (not just "previous year") since a gap in the data
+        // means that's not always the immediately preceding calendar year.
+        let deltaHtml = '';
+        if (prevVal != null) {
+          const pct = prevVal !== 0 ? (p.val - prevVal) / Math.abs(prevVal) * 100 : null;
+          deltaHtml = pct == null ? ''
+            : `<div class="report-yr-delta">${pct >= 0 ? '+' : ''}${pct.toFixed(1)}% ${isEN ? 'vs' : 'เทียบ'} ${prevYr}</div>`;
+        }
+        prevYr = y; prevVal = p.val;
+        return `<td class="num"><div class="report-yr-val">${fmtVal(p.val)}</div>${deltaHtml}</td>`;
       }).join('');
       return `<tr><td class="param">${escHtml(s.pk)}</td>${cells}<td>${trendSuffix(s.trend, isEN)}</td></tr>`;
     }).join('')}</tbody>
