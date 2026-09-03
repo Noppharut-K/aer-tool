@@ -150,40 +150,94 @@ function overallStatusHtml(g, isEN) {
   return `<p class="report-para">${parts.join(' · ')}</p>`;
 }
 
+/** Maps a points array (each carrying `.yr`) by year for O(1) lookup when
+    building a fixed-year-column table — a parameter may be missing a
+    reading in a given year, so callers render '—' on a miss rather than
+    assuming positional alignment across rows. */
+function pointsByYear(points) {
+  const m = new Map();
+  points.forEach(p => m.set(String(p.yr), p));
+  return m;
+}
+
+function statusChipHtml(e, isEN) {
+  // Same severity-color convention as Data Overview's chip coloring: the
+  // most severe tier this parameter defines gets red, a lesser tier gets
+  // amber; an untiered standard (single threshold) is always red.
+  const chipCls = e.isMostSevere ? 'chip-exceed' : 'chip-outlier';
+  const label = e.tier ? escHtml(e.tier) : (isEN ? 'Exceeding' : 'เกิน');
+  return `<span class="chip ${chipCls}">${label}</span>`;
+}
+
 function exceedingListHtml(exceeding, isEN, attributeStation) {
   if (!exceeding.length) return `<p class="report-para">${isEN ? 'No parameters exceeded their standard.' : 'ไม่มี parameter ที่เกินมาตรฐาน'}</p>`;
-  return `<ul class="report-list">${exceeding.map(e => {
-    const limitWord = e.std.direction === 'min' ? (isEN ? 'not below' : 'ไม่ต่ำกว่า') : (isEN ? 'not exceed' : 'ไม่เกิน');
-    const stPart = attributeStation ? ` — ${escHtml(e.st)}` : '';
-    const tierPart = e.tier ? ` (${escHtml(e.tier)})` : '';
-    return `<li>${escHtml(e.pk)}${tierPart}${stPart}: ${fmtVal(e.value, e.std.decimals)} ${e.unit || ''} (${isEN ? `limit ${limitWord}` : `มาตรฐาน${limitWord}`} ${e.std.value} ${e.std.unit || ''})</li>`;
-  }).join('')}</ul>`;
+  const stTh = attributeStation ? `<th>${isEN ? 'Station' : 'สถานี'}</th>` : '';
+  return `<div class="table-scroll"><table class="report-table">
+    <thead><tr><th>${isEN ? 'Parameter' : 'Parameter'}</th>${stTh}<th class="num">${isEN ? 'Value' : 'ค่า'}</th><th>${isEN ? 'Unit' : 'หน่วย'}</th><th class="num">${isEN ? 'Year' : 'ปี'}</th><th>${isEN ? 'Standard' : 'มาตรฐาน'}</th><th>${isEN ? 'Status' : 'สถานะ'}</th></tr></thead>
+    <tbody>${exceeding.map(e => {
+      const limitWord = e.std.direction === 'min' ? (isEN ? 'not below' : 'ไม่ต่ำกว่า') : (isEN ? 'not exceed' : 'ไม่เกิน');
+      const stTd = attributeStation ? `<td>${escHtml(e.st)}</td>` : '';
+      return `<tr>
+        <td class="param">${escHtml(e.pk)}</td>${stTd}
+        <td class="num">${fmtVal(e.value, e.std.decimals)}</td>
+        <td>${e.unit || '—'}</td>
+        <td class="num">${e.yr ?? '—'}</td>
+        <td>${isEN ? `limit ${limitWord}` : `มาตรฐาน${limitWord}`} ${e.std.value} ${e.std.unit || ''}</td>
+        <td>${statusChipHtml(e, isEN)}</td>
+      </tr>`;
+    }).join('')}</tbody>
+  </table></div>`;
 }
 
 function minMaxListHtml(minMax, isEN) {
-  return `<ul class="report-list">${minMax.map(m => `<li>${escHtml(m.pk)}: ${fmtVal(m.min)}–${fmtVal(m.max)} ${m.unit || ''}</li>`).join('')}</ul>`;
+  return `<div class="table-scroll"><table class="report-table">
+    <thead><tr><th>${isEN ? 'Parameter' : 'Parameter'}</th><th>${isEN ? 'Unit' : 'หน่วย'}</th><th class="num">Min</th><th class="num">Max</th></tr></thead>
+    <tbody>${minMax.map(m => `<tr><td class="param">${escHtml(m.pk)}</td><td>${m.unit || '—'}</td><td class="num">${fmtVal(m.min)}</td><td class="num">${fmtVal(m.max)}</td></tr>`).join('')}</tbody>
+  </table></div>`;
 }
 
 function trendSuffix(trend, isEN) {
-  if (!trend) return '';
-  if (trend.label === 'stable') return isEN ? ' (stable)' : ' (ค่อนข้างคงที่)';
-  const word = trend.label === 'up' ? (isEN ? 'increasing' : 'เพิ่มขึ้น') : (isEN ? 'decreasing' : 'ลดลง');
-  return ` (${word} ${trend.pct >= 0 ? '+' : ''}${trend.pct.toFixed(1)}%)`;
+  if (!trend) return isEN ? '—' : '—';
+  if (trend.label === 'stable') return isEN ? 'Stable' : 'ค่อนข้างคงที่';
+  const word = trend.label === 'up' ? (isEN ? 'Increasing' : 'เพิ่มขึ้น') : (isEN ? 'Decreasing' : 'ลดลง');
+  return `${word} ${trend.pct >= 0 ? '+' : ''}${trend.pct.toFixed(1)}%`;
 }
 
-function selfTrendListHtml(selfTrend, isEN) {
+function yearHeadHtml(years, isEN) {
+  return years.map(y => `<th class="num">${y}</th>`).join('');
+}
+
+function selfTrendListHtml(selfTrend, years, isEN) {
   if (!selfTrend.length) return `<p class="report-para">${isEN ? 'Not enough years of data for a trend (need at least 2).' : 'ข้อมูลไม่พอสำหรับดูแนวโน้ม (ต้องมีอย่างน้อย 2 ปี)'}</p>`;
-  return `<ul class="report-list">${selfTrend.map(s =>
-    `<li>${escHtml(s.pk)}: ${s.points.map(p => `${p.yr}=${fmtVal(p.val)}`).join(', ')}${trendSuffix(s.trend, isEN)}</li>`
-  ).join('')}</ul>`;
+  return `<div class="table-scroll"><table class="report-table">
+    <thead><tr><th>${isEN ? 'Parameter' : 'Parameter'}</th>${yearHeadHtml(years, isEN)}<th>${isEN ? 'Overall trend' : 'แนวโน้มโดยรวม'}</th></tr></thead>
+    <tbody>${selfTrend.map(s => {
+      const byYr = pointsByYear(s.points);
+      const cells = years.map(y => {
+        const p = byYr.get(String(y));
+        return `<td class="num">${p ? fmtVal(p.val) : '—'}</td>`;
+      }).join('');
+      return `<tr><td class="param">${escHtml(s.pk)}</td>${cells}<td>${trendSuffix(s.trend, isEN)}</td></tr>`;
+    }).join('')}</tbody>
+  </table></div>`;
 }
 
-function refBaselineTrendListHtml(trendList, hasFlag, isEN) {
+function refBaselineTrendListHtml(trendList, hasFlag, years, isEN) {
   if (!hasFlag) return `<p class="report-para">${isEN ? 'Reference/Baseline not configured for this Location.' : 'ยังไม่ได้กำหนด REF/Baseline สำหรับพื้นที่นี้'}</p>`;
   if (!trendList.length) return `<p class="report-para">${isEN ? 'No comparable data.' : 'ไม่มีข้อมูลที่เปรียบเทียบได้'}</p>`;
-  return `<ul class="report-list">${trendList.map(s =>
-    `<li>${escHtml(s.pk)}: ${s.points.map(p => `${p.yr} ${isFinite(p.pctDiff) ? (p.pctDiff >= 0 ? '+' : '') + p.pctDiff.toFixed(1) + '%' : '—'}`).join(', ')}</li>`
-  ).join('')}</ul>`;
+  return `<div class="table-scroll"><table class="report-table">
+    <thead><tr><th>${isEN ? 'Parameter' : 'Parameter'}</th>${yearHeadHtml(years, isEN)}</tr></thead>
+    <tbody>${trendList.map(s => {
+      const byYr = pointsByYear(s.points);
+      const cells = years.map(y => {
+        const p = byYr.get(String(y));
+        if (!p) return `<td class="num">—</td>`;
+        const pct = isFinite(p.pctDiff) ? `${p.pctDiff >= 0 ? '+' : ''}${p.pctDiff.toFixed(1)}%` : '—';
+        return `<td class="num"><div class="report-yr-val">${fmtVal(p.compareVal)}</div><div class="report-yr-delta">${pct}</div></td>`;
+      }).join('');
+      return `<tr><td class="param">${escHtml(s.pk)}</td>${cells}</tr>`;
+    }).join('')}</tbody>
+  </table></div>`;
 }
 
 function stationCardHtml(g, isEN) {
@@ -191,9 +245,9 @@ function stationCardHtml(g, isEN) {
     <div class="report-card-title">${escHtml(g.key)}${g.loc ? ` <span class="report-card-title-sub">(${isEN ? 'Location' : 'Location'}: ${escHtml(g.loc)})</span>` : ''}</div>
     <div class="report-card-meta">${metaLine(g, isEN)}</div>
     ${section(SEC.overall, isEN, overallStatusHtml(g, isEN) + exceedingListHtml(g.exceeding, isEN, false))}
-    ${section(SEC.selfTrend, isEN, selfTrendListHtml(g.selfTrend, isEN))}
-    ${section(SEC.refTrend, isEN, refBaselineTrendListHtml(g.refTrend, g.hasRef, isEN))}
-    ${section(SEC.baseTrend, isEN, refBaselineTrendListHtml(g.baselineTrend, g.hasBaseline, isEN))}
+    ${section(SEC.selfTrend, isEN, selfTrendListHtml(g.selfTrend, g.years, isEN))}
+    ${section(SEC.refTrend, isEN, refBaselineTrendListHtml(g.refTrend, g.hasRef, g.years, isEN))}
+    ${section(SEC.baseTrend, isEN, refBaselineTrendListHtml(g.baselineTrend, g.hasBaseline, g.years, isEN))}
   </div>`;
 }
 
@@ -203,7 +257,7 @@ function locationCardHtml(g, isEN) {
     <div class="report-card-meta">${metaLine(g, isEN)}</div>
     ${section(SEC.overall, isEN, overallStatusHtml(g, isEN) + exceedingListHtml(g.exceeding, isEN, true))}
     ${section(SEC.minmax, isEN, minMaxListHtml(g.minMax, isEN))}
-    ${section(SEC.selfTrend, isEN, selfTrendListHtml(g.selfTrend, isEN))}
-    ${section(SEC.baseTrend, isEN, refBaselineTrendListHtml(g.baselineTrend, g.hasBaseline, isEN))}
+    ${section(SEC.selfTrend, isEN, selfTrendListHtml(g.selfTrend, g.years, isEN))}
+    ${section(SEC.baseTrend, isEN, refBaselineTrendListHtml(g.baselineTrend, g.hasBaseline, g.years, isEN))}
   </div>`;
 }

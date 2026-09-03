@@ -55,8 +55,12 @@ function getExceeding(t, rows, attributeStation) {
     const badRows = prows.filter(r => r.sc_status === 'exceed');
     if (!badRows.length) { passCount++; return; }
     const pushEntry = (r, st) => {
-      const std = stds[rankOf(r.sc_tier)];
-      exceeding.push({ pk, ...(st != null ? { st } : {}), value: r.val, unit: r.unit, std, tier: std.tier || null });
+      const rank = rankOf(r.sc_tier);
+      const std = stds[rank];
+      exceeding.push({
+        pk, ...(st != null ? { st } : {}), value: r.val, unit: r.unit, yr: r.yr, std,
+        tier: std.tier || null, isMostSevere: rank === stds.length - 1,
+      });
     };
     if (attributeStation) {
       const byStation = {};
