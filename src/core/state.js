@@ -131,6 +131,25 @@ export function resolveCanonical(t, col) {
   return getState(t).colMap?.params?.[col] || col;
 }
 
+/** Every distinct parameter name known from the current upload, regardless
+    of layout — wide format has one static column per parameter (today's
+    getParamCols/resolveCanonical); long format's parameters are the
+    distinct values found in the mapped Parameter-name column, since one
+    column serves every parameter. Used anywhere a parameter-name list is
+    needed before/without a full runCore() pass (Standards suggestions,
+    Comparison's parameter picker, Report's own parameter list). */
+export function getKnownParams(t) {
+  const s = getState(t);
+  const cm = s.colMap;
+  if (cm?.layout === 'long') {
+    const col = cm.fields?.paramName;
+    if (!col) return [];
+    return [...new Set(s.raw.map(r => r[col]).filter(v => v != null && v !== ''))]
+      .map(v => String(v).trim()).sort();
+  }
+  return [...new Set(getParamCols(t).map(c => resolveCanonical(t, c)))].sort();
+}
+
 export function setRows(t, rows) {
   const s = getState(t);
   s.rows = rows;

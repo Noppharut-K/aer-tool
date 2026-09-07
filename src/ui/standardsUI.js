@@ -7,7 +7,7 @@
 
 import { LANG } from '../utils/lang.js';
 import {
-  getState, getStandards, addStandard, updateStandard, removeStandard, getParamCols, resolveCanonical,
+  getState, getStandards, addStandard, updateStandard, removeStandard, getKnownParams,
   getStandardsHistory, revertStandardsTo,
 } from '../core/state.js';
 import { sortStdEntriesBySeverity } from '../core/analysis.js';
@@ -20,8 +20,7 @@ function escHtml(s) {
 const PAGE_SIZE = 10;
 
 function paramSuggestions(t) {
-  const cols = getParamCols(t);
-  return [...new Set(cols.map(c => resolveCanonical(t, c)))].sort();
+  return getKnownParams(t);
 }
 
 export function renderStandardsUI(t) {

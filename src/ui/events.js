@@ -4,7 +4,7 @@
 
 import { LANG } from '../utils/lang.js';
 import {
-  getState, setRaw, getParamCols, resolveCanonical,
+  getState, setRaw, getParamCols, resolveCanonical, getColMap, getColVal,
   setStandards, setRefMap, setBaselineMap, setDepthSummaryMethod, setCmpSettings, setCustomCmp,
   setBdlMethod, getBdlMethod,
 } from '../core/state.js';
@@ -94,21 +94,38 @@ export function runDQ(t) {
   const wrap = document.getElementById(`${t}-dq-wrap`);
   if (!wrap || !state.raw.length) return;
   const isEN = LANG === 'en';
-  const paramCols = getParamCols(t);
   const bdlMethod = getBdlMethod(t);
+  const layout = getColMap(t)?.layout || 'wide';
   const issues = [];
   let bdlCount = 0;
 
-  paramCols.forEach(col => {
-    const nonNum = [];
+  if (layout === 'long') {
+    const colParamName = getColVal(t, 'paramName');
+    const colValue = getColVal(t, 'value');
+    const nonNumByParam = {};
     state.raw.forEach((r, i) => {
-      const v = r[col];
+      const v = colValue ? r[colValue] : null;
       if (v == null || v === '') return;
       if (parseBdl(v)) { bdlCount++; return; }
-      if (!isNumericValue(v)) nonNum.push({ row: i + 2, val: v });
+      if (!isNumericValue(v)) {
+        const pk = colParamName && r[colParamName] != null ? String(r[colParamName]).trim() : (isEN ? 'Unknown' : 'ไม่ทราบ');
+        (nonNumByParam[pk] ??= []).push({ row: i + 2, val: v });
+      }
     });
-    if (nonNum.length) issues.push({ col: resolveCanonical(t, col), samples: nonNum.slice(0, 3) });
-  });
+    Object.entries(nonNumByParam).forEach(([pk, nonNum]) => issues.push({ col: pk, samples: nonNum.slice(0, 3) }));
+  } else {
+    const paramCols = getParamCols(t);
+    paramCols.forEach(col => {
+      const nonNum = [];
+      state.raw.forEach((r, i) => {
+        const v = r[col];
+        if (v == null || v === '') return;
+        if (parseBdl(v)) { bdlCount++; return; }
+        if (!isNumericValue(v)) nonNum.push({ row: i + 2, val: v });
+      });
+      if (nonNum.length) issues.push({ col: resolveCanonical(t, col), samples: nonNum.slice(0, 3) });
+    });
+  }
 
   const bdlNote = bdlNoteHtml(bdlCount, bdlMethod, isEN);
 

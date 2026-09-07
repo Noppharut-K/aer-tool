@@ -9,7 +9,7 @@
 
 import { LANG } from '../utils/lang.js';
 import {
-  getState, getParamCols, resolveCanonical, getDepthSummaryMethod, setDepthSummaryMethod,
+  getState, getKnownParams, getDepthSummaryMethod, setDepthSummaryMethod,
   getCmpSettings, updateCmpSettings, getCustomCmp, addCustomCmp, updateCustomCmp, removeCustomCmp,
   getStatsMethod, setStatsMethod, getCustomCmpHistory, revertCustomCmpTo,
 } from '../core/state.js';
@@ -37,7 +37,7 @@ const SUBJECT_LABEL = { station: { th: 'Station', en: 'Station' }, location: { t
 const REFKIND_LABEL = { reference: { th: 'Reference', en: 'Reference' }, baseline: { th: 'Baseline', en: 'Baseline' }, year: { th: 'ปีอื่น', en: 'another year' } };
 
 function allParams(t) {
-  return [...new Set(getParamCols(t).map(c => resolveCanonical(t, c)))].sort();
+  return getKnownParams(t);
 }
 
 function fmtForCustom(def) {

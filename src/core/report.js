@@ -9,14 +9,14 @@
  * getStandardsFor / calcStat.
  */
 
-import { getState, getParamCols, resolveCanonical, getStandardsFor, getCmpSettings, getDepthSummaryMethod, getRefMap, getBaselineMap } from './state.js';
+import { getState, getKnownParams, getStandardsFor, getCmpSettings, getDepthSummaryMethod, getRefMap, getBaselineMap } from './state.js';
 import { getStationLevelValues, getLocationLevelValues, compareCustom } from './comparisons.js';
 import { calcStat } from './analysis.js';
 
 const GRAIN_ROWKEY = { station: 'st', location: 'loc' };
 
 function allParams(t) {
-  return [...new Set(getParamCols(t).map(c => resolveCanonical(t, c)))].sort();
+  return getKnownParams(t);
 }
 
 function sortedYears(rows) {

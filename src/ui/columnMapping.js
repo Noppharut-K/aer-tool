@@ -18,9 +18,9 @@ function escHtml(s) {
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
-const SINGULAR_FIELDS = ['year', 'project', 'loc', 'st', 'utmN', 'utmE', 'direction', 'wl'];
+const SINGULAR_FIELDS = ['year', 'project', 'loc', 'st', 'utmN', 'utmE', 'direction', 'wl', 'paramName', 'value', 'unit', 'mrl'];
 
-function ROLES(t, isEN) {
+function ROLES(t, isEN, layout) {
   const roles = [
     { v: '', l: isEN ? 'Ignore' : 'ไม่ใช้' },
     { v: 'year', l: isEN ? 'Year' : 'ปี' },
@@ -32,7 +32,14 @@ function ROLES(t, isEN) {
     { v: 'direction', l: isEN ? 'Direction from platform' : 'ทิศทางจาก platform' },
   ];
   if (t === 'sea') roles.push({ v: 'wl', l: isEN ? 'Depth level' : 'ระดับความลึก (Depth level)' });
-  roles.push({ v: 'param', l: isEN ? 'Parameter' : 'Parameter (ค่าที่วัดได้)' });
+  if (layout === 'long') {
+    roles.push({ v: 'paramName', l: isEN ? 'Parameter name' : 'ชื่อ Parameter' });
+    roles.push({ v: 'value', l: isEN ? 'Value' : 'ค่าที่วัดได้ (Value)' });
+    roles.push({ v: 'unit', l: isEN ? 'Unit (optional)' : 'หน่วย (ไม่บังคับ)' });
+    roles.push({ v: 'mrl', l: isEN ? 'Detection limit / MRL (optional)' : 'ขีดจำกัดตรวจวัด / MRL (ไม่บังคับ)' });
+  } else {
+    roles.push({ v: 'param', l: isEN ? 'Parameter' : 'Parameter (ค่าที่วัดได้)' });
+  }
   return roles;
 }
 
@@ -54,17 +61,47 @@ const FUZZY = {
   wl: ['depth', 'ความลึก'],
 };
 
-function autoDetect(t, cols) {
+/* Long-format (Parameter name + Value in separate columns, one row per
+   single measurement) — an alternative to the default wide shape (one
+   column per parameter). See guessLayout() / autoDetect(). */
+const LONG_EXACT = {
+  paramName: ['parameter', 'param'],
+  value: ['value', 'ค่า'],
+  unit: ['unit', 'หน่วย'],
+  mrl: ['mrl'],
+};
+const LONG_FUZZY = {
+  paramName: ['parameter', 'param'],
+  value: ['value'],
+  unit: ['unit'],
+  mrl: ['mrl', 'detection limit', 'reporting limit'],
+};
+
+/** Best-guess starting layout for a fresh upload: Long only when the file
+    has both a Parameter-name-shaped column and a Value-shaped column;
+    always overridable via the toggle. */
+function guessLayout(cols) {
+  const norm = cols.map(c => String(c).toLowerCase().trim());
+  const hasParamName = norm.some(c => LONG_EXACT.paramName.includes(c));
+  const hasValue = norm.some(c => LONG_EXACT.value.includes(c));
+  return hasParamName && hasValue ? 'long' : 'wide';
+}
+
+function autoDetect(t, cols, layout) {
   const roleKeys = t === 'sea' ? Object.keys(EXACT) : Object.keys(EXACT).filter(k => k !== 'wl');
+  const longKeys = layout === 'long' ? Object.keys(LONG_EXACT) : [];
+  const allKeys = [...roleKeys, ...longKeys];
+  const EXACT_ALL = { ...EXACT, ...LONG_EXACT };
+  const FUZZY_ALL = { ...FUZZY, ...LONG_FUZZY };
   const fields = {};
   const used = new Set();
-  roleKeys.forEach(key => {
-    const c = cols.find(c => !used.has(c) && EXACT[key].includes(String(c).toLowerCase().trim()));
+  allKeys.forEach(key => {
+    const c = cols.find(c => !used.has(c) && EXACT_ALL[key].includes(String(c).toLowerCase().trim()));
     if (c) { fields[key] = c; used.add(c); }
   });
-  roleKeys.forEach(key => {
+  allKeys.forEach(key => {
     if (fields[key]) return;
-    const c = cols.find(c => !used.has(c) && FUZZY[key].some(kw => String(c).toLowerCase().includes(kw)));
+    const c = cols.find(c => !used.has(c) && FUZZY_ALL[key].some(kw => String(c).toLowerCase().includes(kw)));
     if (c) { fields[key] = c; used.add(c); }
   });
   return { fields, used };
@@ -116,7 +153,7 @@ function autoDetectParams(cols, raw, used) {
   return params;
 }
 
-function buildDraft(t, prefill) {
+function buildDraft(t, prefill, layout) {
   const state = getState(t);
   const cols = mappableCols(state), raw = state.raw;
   if (prefill) {
@@ -125,22 +162,26 @@ function buildDraft(t, prefill) {
     const used = new Set(Object.values(fields));
     const params = {};
     Object.entries(prefill.params || {}).forEach(([col, canon]) => { if (cols.includes(col) && !used.has(col)) { params[col] = canon; used.add(col); } });
-    Object.assign(params, autoDetectParams(cols, raw, used));
+    // Only wide format vacuums up leftover numeric columns as parameters —
+    // in long format a stray numeric column (e.g. their own MRL/Radian if
+    // unmapped) must stay "Ignore", not silently become a phantom parameter.
+    if (layout !== 'long') Object.assign(params, autoDetectParams(cols, raw, used));
     const unmatched = Object.values(prefill.fields || {}).some(c => c && !cols.includes(c)) || Object.keys(prefill.params || {}).some(c => !cols.includes(c));
     return { fields, params, _unmatchedWarning: unmatched };
   }
-  const { fields, used } = autoDetect(t, cols);
-  const params = autoDetectParams(cols, raw, used);
+  const { fields, used } = autoDetect(t, cols, layout);
+  const params = layout === 'long' ? {} : autoDetectParams(cols, raw, used);
   return { fields, params, _unmatchedWarning: false };
 }
 
-export function showColumnMappingScreen(t, { onConfirm, onCancel, prefill } = {}) {
+export function showColumnMappingScreen(t, { onConfirm, onCancel, prefill, layout } = {}) {
   const state = getState(t);
   if (!state.cols.length) return;
   const isEN = LANG === 'en';
   const cfg = TYPE_CFG[t];
-  const draft = buildDraft(t, prefill);
-  const roleOpts = ROLES(t, isEN);
+  const resolvedLayout = layout || prefill?.layout || guessLayout(mappableCols(state));
+  const draft = buildDraft(t, prefill, resolvedLayout);
+  const roleOpts = ROLES(t, isEN, resolvedLayout);
 
   document.getElementById(`colmap-overlay-${t}`)?.remove();
 
@@ -157,6 +198,10 @@ export function showColumnMappingScreen(t, { onConfirm, onCancel, prefill } = {}
       <div class="sheet-sub">${isEN
         ? `Confirm which column in your file matches each field. Runs every time you load a new file.`
         : `ยืนยันว่าคอลัมน์ในไฟล์ตรงกับ field ใด — ทำทุกครั้งที่โหลดไฟล์ใหม่`}</div>
+      <div class="colmap-layout-toggle">
+        <button type="button" class="btn colmap-layout-btn ${resolvedLayout === 'wide' ? 'active' : ''}" data-layout="wide">${isEN ? 'Wide — one column per parameter' : 'กว้าง (1 คอลัมน์ต่อ parameter)'}</button>
+        <button type="button" class="btn colmap-layout-btn ${resolvedLayout === 'long' ? 'active' : ''}" data-layout="long">${isEN ? 'Long — Parameter + Value columns' : 'ยาว (คอลัมน์ Parameter + Value)'}</button>
+      </div>
       ${draft._unmatchedWarning ? `<div class="colmap-warn">${isEN ? 'Some fields from the imported template weren’t found in this file and were left unmapped.' : 'บางฟิลด์จาก template ที่นำเข้าไม่พบในไฟล์นี้ จึงถูกปล่อยว่างไว้'}</div>` : ''}
     </div>
     <div class="sheet-body colmap-table-wrap">
@@ -191,9 +236,20 @@ export function showColumnMappingScreen(t, { onConfirm, onCancel, prefill } = {}
   overlay.appendChild(box);
   document.getElementById(`page-${t}`).appendChild(overlay);
 
+  box.querySelectorAll('.colmap-layout-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (btn.dataset.layout === resolvedLayout) return;
+      overlay.remove();
+      showColumnMappingScreen(t, { onConfirm, onCancel, prefill, layout: btn.dataset.layout });
+    });
+  });
+
   const confirmBtn = box.querySelector(`#colmap-confirm-${t}`);
   const validate = () => {
-    confirmBtn.disabled = ![...box.querySelectorAll('.colmap-role-sel')].some(s => s.value === 'st');
+    const hasRole = role => [...box.querySelectorAll('.colmap-role-sel')].some(s => s.value === role);
+    confirmBtn.disabled = resolvedLayout === 'long'
+      ? !(hasRole('st') && hasRole('paramName') && hasRole('value'))
+      : !hasRole('st');
   };
 
   box.querySelectorAll('.colmap-role-sel').forEach(sel => {
@@ -217,12 +273,12 @@ export function showColumnMappingScreen(t, { onConfirm, onCancel, prefill } = {}
       if (role === 'param') params[col] = col;
       else fields[role] = col;
     });
-    setColMap(t, { version: 1, fields, params, sourceColumns: state.cols.slice() });
+    setColMap(t, { version: 2, layout: resolvedLayout, fields, params, sourceColumns: state.cols.slice() });
     overlay.remove();
     onConfirm?.();
   });
 
-  box.querySelector(`#colmap-export-${t}`).addEventListener('click', () => exportConfigTemplate(t, { fields: (() => {
+  box.querySelector(`#colmap-export-${t}`).addEventListener('click', () => exportConfigTemplate(t, { layout: resolvedLayout, fields: (() => {
     const f = {}; box.querySelectorAll('.colmap-role-sel').forEach(s => { if (s.value && s.value !== 'param') f[s.value] = s.dataset.col; }); return f;
   })(), params: (() => {
     const p = {}; box.querySelectorAll('.colmap-role-sel').forEach(s => { if (s.value === 'param') p[s.dataset.col] = s.dataset.col; }); return p;
@@ -242,7 +298,7 @@ export function exportConfigTemplate(t, colMapOverride) {
   const cfg = TYPE_CFG[t];
   const envelope = {
     aerConfigTemplate: true, version: 2, exportedAt: new Date().toISOString(), tab: t,
-    columnMapping: { fields: cm.fields, params: cm.params, sourceColumns: cm.sourceColumns },
+    columnMapping: { fields: cm.fields, params: cm.params, sourceColumns: cm.sourceColumns, layout: cm.layout || 'wide' },
     standardsLibrary: getStandards(t),
     refMap: getRefMap(t),
     baselineMap: getBaselineMap(t),
