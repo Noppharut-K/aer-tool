@@ -62,7 +62,25 @@ export function renderStandardsUI(t) {
           <input type="number" min="0" max="8" id="${t}-std-dec" placeholder="auto">
         </div>
         <div class="field-g field-g-sm">
-          <label title="${isEN ? 'Used for BDL readings reported with no limit (e.g. bare \'ND\'), when the BDL method is \'Half detection limit\'' : 'ใช้ในกรณีที่ค่าต่ำกว่าขีดจำกัดการตรวจวัด (BDL) ในไฟล์ไม่ได้ระบุตัวเลขขีดจำกัดมาด้วย (เช่น ปรากฏเป็น "ND" เพียงอย่างเดียว) และเลือกวิธีจัดการ BDL เป็น "ครึ่งหนึ่งของขีดจำกัดการตรวจวัด"'}">${isEN ? 'Fallback DL' : 'DL สำรอง'}</label>
+          <div class="dl-info-wrap">
+            <label title="${isEN ? 'Used for BDL readings reported with no limit (e.g. bare \'ND\'), when the BDL method is \'Half detection limit\'' : 'ใช้ในกรณีที่ค่าต่ำกว่าขีดจำกัดการตรวจวัด (BDL) ในไฟล์ไม่ได้ระบุตัวเลขขีดจำกัดมาด้วย (เช่น ปรากฏเป็น "ND" เพียงอย่างเดียว) และเลือกวิธีจัดการ BDL เป็น "ครึ่งหนึ่งของขีดจำกัดการตรวจวัด"'}">${isEN ? 'Fallback DL' : 'DL สำรอง'}</label>
+            <button type="button" class="dl-info-btn" id="${t}-std-dlinfo-toggle" aria-label="${isEN ? 'What is Fallback DL?' : 'DL สำรองคืออะไร'}">ⓘ</button>
+            <div class="dl-info-popover" id="${t}-std-dlinfo-popover">
+              <h4>${isEN ? 'Fallback DL (Fallback Detection Limit)' : 'DL สำรอง (Fallback Detection Limit)'}</h4>
+              <p><b>${isEN ? 'Definition: ' : 'คำจำกัดความ: '}</b>${isEN
+                ? 'A pre-set detection limit used in place of the file’s own value when a BDL reading has no numeric limit attached.'
+                : 'ค่าขีดจำกัดการตรวจวัดที่กำหนดไว้ล่วงหน้า สำหรับใช้แทนในกรณีที่ค่า BDL ในไฟล์ข้อมูลไม่มีตัวเลขขีดจำกัดกำกับมาด้วย'}</p>
+              <p><b>${isEN ? 'Explanation: ' : 'คำอธิบาย: '}</b>${isEN
+                ? 'When the BDL method is set to “Half detection limit” on Data Overview, the app needs a limit number to halve. If your file states one (e.g. "<0.005") the app uses it directly — if it’s just a bare marker (e.g. "ND") with no number, the app falls back to this value instead.'
+                : 'เมื่อเลือกวิธีจัดการค่า BDL เป็น "ครึ่งหนึ่งของ limit" ในหน้าข้อมูลพื้นฐาน โปรแกรมต้องใช้ตัวเลขขีดจำกัดมาคำนวณค่าแทนที่ หากไฟล์ระบุขีดจำกัดมาด้วย (เช่น "<0.005") โปรแกรมจะใช้ค่านั้นโดยตรง แต่หากไฟล์ระบุเพียงสัญลักษณ์ (เช่น "ND") โปรแกรมจะใช้ค่า DL สำรองนี้แทน'}</p>
+              <p><b>${isEN ? 'Example: ' : 'ตัวอย่าง: '}</b>${isEN
+                ? 'Set Arsenic’s Fallback DL to 0.01 mg/L. A row reading "ND" with the BDL method set to "Half detection limit" is substituted with 0.005 mg/L (0.01 ÷ 2).'
+                : 'กำหนด DL สำรองของ Arsenic ไว้ที่ 0.01 mg/L หากมีแถวข้อมูลที่ระบุค่าเป็น "ND" เมื่อเลือกวิธี BDL เป็น "ครึ่งหนึ่งของ limit" โปรแกรมจะแทนค่าแถวนั้นด้วย 0.005 mg/L (คือ 0.01 ÷ 2)'}</p>
+              <p>${isEN
+                ? 'Note: for a long-format file with a mapped MRL column, the row’s own MRL is used first — this field is only a fallback.'
+                : 'หมายเหตุ: ถ้าไฟล์เป็นแบบ long format ที่มีคอลัมน์ MRL ต่อแถวอยู่แล้ว โปรแกรมจะใช้ค่า MRL ของแถวนั้นก่อนเสมอ เพราะแม่นยำกว่า — DL สำรองนี้เป็นแค่ทางเลือกสำรอง'}</p>
+            </div>
+          </div>
           <input type="number" step="any" min="0" id="${t}-std-bdl" placeholder="${isEN ? 'none' : 'ไม่มี'}">
         </div>
         <div class="field-g field-g-lg">
@@ -108,6 +126,7 @@ export function renderStandardsUI(t) {
   wireAddForm(t);
   renderTable(t);
   wireHistoryPopover(t);
+  wireDlInfoPopover(t);
 }
 
 /** Bilingual summary text for one history entry — the only place in this
@@ -171,6 +190,25 @@ function wireHistoryPopover(t) {
   const popover = document.getElementById(`${t}-std-hist-popover`);
   if (!btn || !popover) return;
   renderHistoryPopover(t);
+  btn.addEventListener('click', e => {
+    e.stopPropagation();
+    popover.classList.toggle('open');
+  });
+}
+
+// Closes any open .dl-info-popover on an outside click — same registered-
+// once-at-module-load pattern as the .history-popover listener above,
+// for the same reason (renderStandardsUI rebuilds this DOM on every edit).
+document.addEventListener('click', e => {
+  document.querySelectorAll('.dl-info-popover.open').forEach(p => {
+    if (!p.closest('.dl-info-wrap')?.contains(e.target)) p.classList.remove('open');
+  });
+});
+
+function wireDlInfoPopover(t) {
+  const btn = document.getElementById(`${t}-std-dlinfo-toggle`);
+  const popover = document.getElementById(`${t}-std-dlinfo-popover`);
+  if (!btn || !popover) return;
   btn.addEventListener('click', e => {
     e.stopPropagation();
     popover.classList.toggle('open');

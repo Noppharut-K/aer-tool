@@ -77,6 +77,7 @@ function createTabState() {
     statsMethod: 'none',
     expectedReplicates: 1,
     reportHidden: { overall: false, minmax: false, selfTrend: false, refTrend: false, baseTrend: false },
+    reportHiddenItems: { station: [], location: [] },
   };
 }
 
@@ -278,6 +279,20 @@ export function getReportHidden(t) {
 }
 export function setReportSectionHidden(t, key, hidden) {
   getState(t).reportHidden[key] = hidden;
+}
+
+/** Per-grain hidden Station/Location keys (independent namespaces — a
+    Station name and a Location name never collide, and switching grain
+    already shows a completely different card set). Session preference,
+    same as reportHidden above. */
+export function getReportHiddenItems(t, grain) {
+  return getState(t).reportHiddenItems[grain];
+}
+export function setReportItemHidden(t, grain, key, hidden) {
+  const arr = getState(t).reportHiddenItems[grain];
+  const i = arr.indexOf(key);
+  if (hidden && i === -1) arr.push(key);
+  else if (!hidden && i !== -1) arr.splice(i, 1);
 }
 
 // ── Comparison format settings ────────────────────────────────────────────

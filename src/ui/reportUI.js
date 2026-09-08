@@ -6,7 +6,7 @@
  */
 
 import { LANG } from '../utils/lang.js';
-import { getState, getReportHidden, setReportSectionHidden } from '../core/state.js';
+import { getState, getReportHidden, setReportSectionHidden, getReportHiddenItems, setReportItemHidden } from '../core/state.js';
 import { getReportGroups } from '../core/report.js';
 import { fmtVal } from '../core/analysis.js';
 import { wireSearch, wirePagination } from './tableControls.js';
@@ -14,6 +14,7 @@ import { TYPE_CFG } from '../core/standards.js';
 
 const PAGE_SIZE = 10;
 let reportGrain = 'station';
+let reportView = 'detail';
 let printingTab = null; // set right before window.print(), consumed by the module-level 'afterprint' handler below
 
 function escHtml(s) {
@@ -23,6 +24,11 @@ function escHtml(s) {
 const GRAIN_LABEL = {
   station: { th: 'ตาม Station', en: 'By Station' },
   location: { th: 'ตาม Location', en: 'By Location' },
+};
+
+const VIEW_LABEL = {
+  summary: { th: 'สรุป', en: 'Summary' },
+  detail: { th: 'รายละเอียด', en: 'Detail' },
 };
 
 const SEC = {
@@ -44,9 +50,17 @@ export function renderReportUI(t) {
     return;
   }
 
+  const groups = getReportGroups(t, reportGrain);
+  const hiddenItems = getReportHiddenItems(t, reportGrain);
+  const hiddenItemSet = new Set(hiddenItems);
+  const itemGrainLabel = isEN ? GRAIN_LABEL[reportGrain].en.replace('By ', '') : (reportGrain === 'station' ? 'Station' : 'Location');
+
   root.innerHTML = `
     <div class="cmp-pills">
       ${Object.entries(GRAIN_LABEL).map(([key, l]) => `<button type="button" class="cmp-pill ${key === reportGrain ? 'active' : ''}" data-report-grain="${key}">${isEN ? l.en : l.th}</button>`).join('')}
+    </div>
+    <div class="cmp-pills">
+      ${Object.entries(VIEW_LABEL).map(([key, l]) => `<button type="button" class="cmp-pill ${key === reportView ? 'active' : ''}" data-report-view="${key}">${isEN ? l.en : l.th}</button>`).join('')}
     </div>
     <div class="report-toolbar">
       <div class="search-field report-search-field">
@@ -63,6 +77,16 @@ export function renderReportUI(t) {
           ${Object.entries(SEC).map(([key, l]) => `<label><input type="checkbox" class="report-sec-check" data-key="${key}" ${getReportHidden(t)[key] ? '' : 'checked'}> ${isEN ? l.en : l.th}</label>`).join('')}
         </div>
       </div>
+      <div class="field-picker">
+        <button type="button" class="btn" id="${t}-report-item-toggle">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>
+          ${isEN ? `Show/hide ${itemGrainLabel}s` : `ซ่อน/แสดง ${itemGrainLabel}`}${hiddenItems.length ? ` (${hiddenItems.length})` : ''}
+        </button>
+        <div class="field-popover field-popover-scroll" id="${t}-report-item-popover">
+          <div class="field-popover-hd">${isEN ? itemGrainLabel : itemGrainLabel}</div>
+          ${groups.map(g => `<label><input type="checkbox" class="report-item-check" data-key="${escHtml(g.key)}" ${hiddenItemSet.has(g.key) ? '' : 'checked'}> ${escHtml(g.key)}</label>`).join('')}
+        </div>
+      </div>
       <button type="button" class="btn" id="${t}-report-print">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
         ${isEN ? 'Print / Export PDF' : 'พิมพ์ / ส่งออก PDF'}
@@ -77,6 +101,10 @@ export function renderReportUI(t) {
     reportGrain = btn.dataset.reportGrain;
     renderReportUI(t);
   }));
+  root.querySelectorAll('[data-report-view]').forEach(btn => btn.addEventListener('click', () => {
+    reportView = btn.dataset.reportView;
+    renderReportUI(t);
+  }));
 
   const secToggleBtn = document.getElementById(`${t}-report-sec-toggle`);
   const secPopover = document.getElementById(`${t}-report-sec-popover`);
@@ -87,48 +115,84 @@ export function renderReportUI(t) {
     document.getElementById(`${t}-report-sec-popover`)?.classList.add('open');
   }));
 
-  const groups = getReportGroups(t, reportGrain);
+  const itemToggleBtn = document.getElementById(`${t}-report-item-toggle`);
+  const itemPopover = document.getElementById(`${t}-report-item-popover`);
+  itemToggleBtn.addEventListener('click', e => { e.stopPropagation(); itemPopover.classList.toggle('open'); });
+  itemPopover.querySelectorAll('.report-item-check').forEach(cb => cb.addEventListener('change', () => {
+    setReportItemHidden(t, reportGrain, cb.dataset.key, !cb.checked);
+    renderReportUI(t);
+    document.getElementById(`${t}-report-item-popover`)?.classList.add('open');
+  }));
+
+  const visibleGroups = groups.filter(g => !hiddenItemSet.has(g.key));
   const listEl = document.getElementById(`${t}-report-list`);
   const pageEl = document.getElementById(`${t}-report-page`);
   const searchEl = document.getElementById(`${t}-report-search`);
 
-  wireSearch(searchEl, groups,
-    (g, q) => String(g.key).toLowerCase().includes(q),
-    filtered => {
-      if (!filtered.length) {
-        listEl.innerHTML = `<div class="empty-state"><p>${isEN ? 'No rows match.' : 'ไม่พบข้อมูลที่ตรงตามเงื่อนไขที่กำหนด'}</p></div>`;
-        pageEl.innerHTML = '';
-        return;
-      }
-      wirePagination(pageEl, filtered, PAGE_SIZE, pageGroups => {
-        listEl.innerHTML = pageGroups.map(g => g.grain === 'station' ? stationCardHtml(t, g, isEN) : locationCardHtml(t, g, isEN)).join('');
-      });
+  const renderList = filtered => {
+    if (!filtered.length) {
+      listEl.innerHTML = `<div class="empty-state"><p>${isEN ? 'No rows match.' : 'ไม่พบข้อมูลที่ตรงตามเงื่อนไขที่กำหนด'}</p></div>`;
+      pageEl.innerHTML = '';
+      return;
     }
-  );
+    if (reportView === 'summary') {
+      pageEl.innerHTML = '';
+      listEl.innerHTML = summaryTableHtml(filtered, isEN);
+      wireSummaryRowClicks(t, listEl);
+      return;
+    }
+    wirePagination(pageEl, filtered, PAGE_SIZE, pageGroups => {
+      listEl.innerHTML = pageGroups.map(g => g.grain === 'station' ? stationCardHtml(t, g, isEN) : locationCardHtml(t, g, isEN)).join('');
+    });
+  };
+
+  wireSearch(searchEl, visibleGroups, (g, q) => String(g.key).toLowerCase().includes(q), renderList);
 
   document.getElementById(`${t}-report-print`).addEventListener('click', () => {
     const q = (searchEl.value || '').trim().toLowerCase();
-    const all = q ? groups.filter(g => String(g.key).toLowerCase().includes(q)) : groups;
-    listEl.innerHTML = all.length
-      ? all.map(g => g.grain === 'station' ? stationCardHtml(t, g, isEN) : locationCardHtml(t, g, isEN)).join('')
-      : `<div class="empty-state"><p>${isEN ? 'No rows match.' : 'ไม่พบข้อมูลที่ตรงตามเงื่อนไขที่กำหนด'}</p></div>`;
-    document.getElementById(`${t}-report-print-heading`).innerHTML = printHeadingHtml(t, isEN, q);
+    const all = q ? visibleGroups.filter(g => String(g.key).toLowerCase().includes(q)) : visibleGroups;
+    if (!all.length) {
+      listEl.innerHTML = `<div class="empty-state"><p>${isEN ? 'No rows match.' : 'ไม่พบข้อมูลที่ตรงตามเงื่อนไขที่กำหนด'}</p></div>`;
+    } else if (reportView === 'summary') {
+      listEl.innerHTML = summaryTableHtml(all, isEN);
+    } else {
+      listEl.innerHTML = all.map(g => g.grain === 'station' ? stationCardHtml(t, g, isEN) : locationCardHtml(t, g, isEN)).join('');
+    }
+    document.getElementById(`${t}-report-print-heading`).innerHTML = printHeadingHtml(t, isEN, q, hiddenItems.length, itemGrainLabel);
     printingTab = t;
     window.print();
   });
 }
 
-function printHeadingHtml(t, isEN, activeFilter) {
+/** Jumping from a summary row to its full detail card reuses the existing
+    search box + Detail view (search narrows to exactly this one key) —
+    no separate "scroll to card" mechanism needed. */
+function wireSummaryRowClicks(t, container) {
+  container.querySelectorAll('.report-sum-row').forEach(row => row.addEventListener('click', () => {
+    const key = row.dataset.key;
+    reportView = 'detail';
+    renderReportUI(t);
+    const searchEl = document.getElementById(`${t}-report-search`);
+    if (searchEl) { searchEl.value = key; searchEl.dispatchEvent(new Event('input', { bubbles: true })); }
+  }));
+}
+
+function printHeadingHtml(t, isEN, activeFilter, hiddenCount, itemGrainLabel) {
   const moduleName = TYPE_CFG[t].name;
   const grainLabel = isEN ? GRAIN_LABEL[reportGrain].en : GRAIN_LABEL[reportGrain].th;
+  const viewLabel = isEN ? VIEW_LABEL[reportView].en : VIEW_LABEL[reportView].th;
   const generated = new Date().toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
   const filterLine = activeFilter
     ? `<div class="print-only-line">${isEN ? `Filtered by: "${escHtml(activeFilter)}"` : `กรองผลลัพธ์ด้วยคำค้นหา: "${escHtml(activeFilter)}"`}</div>`
     : '';
+  const hiddenLine = hiddenCount
+    ? `<div class="print-only-line">${isEN ? `${hiddenCount} ${itemGrainLabel}(s) hidden from this report` : `ซ่อน ${hiddenCount} ${itemGrainLabel} จากรายงานนี้`}</div>`
+    : '';
   return `
-    <div class="print-only-title">${escHtml(moduleName)} — ${isEN ? 'Report' : 'รายงาน'} (${escHtml(grainLabel)})</div>
+    <div class="print-only-title">${escHtml(moduleName)} — ${isEN ? 'Report' : 'รายงาน'} (${escHtml(grainLabel)} · ${escHtml(viewLabel)})</div>
     <div class="print-only-line">${isEN ? 'Generated' : 'สร้างเมื่อ'} ${generated}</div>
     ${filterLine}
+    ${hiddenLine}
   `;
 }
 
@@ -143,12 +207,13 @@ window.addEventListener('afterprint', () => {
   renderReportUI(t);
 });
 
-// Closes the show/hide-sections popover on an outside click — registered
-// once at module load, not per-render, for the same reason as the history
-// popovers' outside-click listener in standardsUI.js/comparisonUI.js
-// (renderReportUI replaces the popover/button DOM nodes on every render).
+// Closes the show/hide-sections and show/hide-items popovers on an
+// outside click — registered once at module load, not per-render, for
+// the same reason as the history popovers' outside-click listener in
+// standardsUI.js/comparisonUI.js (renderReportUI replaces the
+// popover/button DOM nodes on every render).
 document.addEventListener('click', e => {
-  document.querySelectorAll('[id$="-report-sec-popover"].open').forEach(p => {
+  document.querySelectorAll('[id$="-report-sec-popover"].open, [id$="-report-item-popover"].open').forEach(p => {
     if (!p.closest('.field-picker')?.contains(e.target)) p.classList.remove('open');
   });
 });
@@ -283,6 +348,70 @@ function refBaselineTrendListHtml(trendList, hasFlag, years, isEN) {
       }).join('');
       return `<tr><td class="param">${escHtml(s.pk)}</td>${cells}</tr>`;
     }).join('')}</tbody>
+  </table></div>`;
+}
+
+/** Same exceed-count / isMostSevere severity logic statusChipHtml() /
+    exceedingListHtml() already use — just rolled up to one chip per
+    Station/Location instead of one row per exceeding parameter. */
+function standardsSummary(g, isEN) {
+  const exceedParamCount = new Set(g.exceeding.map(e => e.pk)).size;
+  if (!exceedParamCount) return { cls: 'chip-ok', label: isEN ? 'All within limits' : 'ผ่านทั้งหมด' };
+  const anyCritical = g.exceeding.some(e => e.isMostSevere);
+  return { cls: anyCritical ? 'chip-exceed' : 'chip-outlier', label: isEN ? `${exceedParamCount} exceeding` : `เกิน ${exceedParamCount} parameter` };
+}
+
+/** Same trend.label field trendSuffix() reads per parameter — counted
+    across every parameter in this Station/Location's self-trend list
+    instead of spelled out one row at a time. */
+function selfTrendSummaryHtml(selfTrend, isEN) {
+  if (!selfTrend.length) return `<span class="report-sum-trend flat">${isEN ? '— not enough data' : '— ข้อมูลไม่พอ'}</span>`;
+  const up = selfTrend.filter(s => s.trend?.label === 'up').length;
+  const down = selfTrend.filter(s => s.trend?.label === 'down').length;
+  if (!up && !down) return `<span class="report-sum-trend flat">${isEN ? 'Stable' : 'คงที่'}</span>`;
+  const parts = [];
+  if (up) parts.push(`↑${up}`);
+  if (down) parts.push(`↓${down}`);
+  return `<span class="report-sum-trend ${up >= down ? 'up' : 'down'}">${parts.join(' ')}</span>`;
+}
+
+/** Same p.status ('close'/'different') field refBaselineTrendListHtml()
+    reads per year to red-flag a cell — counted here across parameters
+    into one chip ("ต่าง N" = at least one differing year for that
+    parameter, matching the same threshold the Detail view already
+    applies). */
+function refBaseSummary(trendList, hasFlag, isEN) {
+  if (!hasFlag) return { cls: 'chip-unset', label: '—' };
+  if (!trendList.length) return { cls: 'chip-unset', label: isEN ? 'No data' : 'ไม่มีข้อมูล' };
+  const diff = trendList.filter(s => s.points.some(p => p.status === 'different')).length;
+  if (!diff) return { cls: 'chip-ok', label: isEN ? 'All close' : 'ใกล้เคียงทั้งหมด' };
+  return { cls: 'chip-exceed', label: isEN ? `${diff} different` : `ต่าง ${diff}` };
+}
+
+function chipSpan(o) {
+  return `<span class="chip ${o.cls}">${o.label}</span>`;
+}
+
+function summaryTableHtml(groups, isEN) {
+  const isStation = groups[0]?.grain === 'station';
+  const theadCells = isStation
+    ? `<th>${isEN ? 'Station' : 'Station'}</th><th>${isEN ? 'Year' : 'ปี'}</th><th class="num">${isEN ? 'Parameters' : 'Parameters'}</th><th>${isEN ? 'Standards status' : 'สถานะมาตรฐาน'}</th><th>${isEN ? 'Trend (across years)' : 'แนวโน้ม (ข้ามปี)'}</th><th>${isEN ? 'vs REF' : 'เทียบ REF'}</th><th>${isEN ? 'vs Baseline' : 'เทียบ Baseline'}</th>`
+    : `<th>${isEN ? 'Location' : 'Location'}</th><th class="num">${isEN ? 'Stations' : 'Stations'}</th><th>${isEN ? 'Year' : 'ปี'}</th><th class="num">${isEN ? 'Parameters' : 'Parameters'}</th><th>${isEN ? 'Standards status' : 'สถานะมาตรฐาน (รวม)'}</th><th>${isEN ? 'Trend (across years)' : 'แนวโน้ม (ข้ามปี)'}</th><th>${isEN ? 'vs Baseline' : 'เทียบ Baseline'}</th>`;
+  const rows = groups.map(g => {
+    const yearsLabel = g.years.length ? `${g.years[0]}–${g.years[g.years.length - 1]}` : '—';
+    const nameSub = isStation && g.loc ? `<div class="report-sum-sub">${escHtml(g.loc)}</div>` : '';
+    const nameCell = `<td><div class="report-sum-name">${escHtml(g.key)}</div>${nameSub}</td>`;
+    const status = chipSpan(standardsSummary(g, isEN));
+    const trend = selfTrendSummaryHtml(g.selfTrend, isEN);
+    const base = chipSpan(refBaseSummary(g.baselineTrend, g.hasBaseline, isEN));
+    const bodyCells = isStation
+      ? `<td>${yearsLabel}</td><td class="num">${g.paramCount}</td><td>${status}</td><td>${trend}</td><td>${chipSpan(refBaseSummary(g.refTrend, g.hasRef, isEN))}</td><td>${base}</td>`
+      : `<td class="num">${g.stationCount}</td><td>${yearsLabel}</td><td class="num">${g.paramCount}</td><td>${status}</td><td>${trend}</td><td>${base}</td>`;
+    return `<tr class="report-sum-row" data-key="${escHtml(g.key)}">${nameCell}${bodyCells}</tr>`;
+  }).join('');
+  return `<div class="table-scroll"><table class="report-table report-sum-table">
+    <thead><tr>${theadCells}</tr></thead>
+    <tbody>${rows}</tbody>
   </table></div>`;
 }
 
