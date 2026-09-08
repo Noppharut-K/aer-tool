@@ -197,12 +197,12 @@ export function showColumnMappingScreen(t, { onConfirm, onCancel, prefill, layou
       <div class="sheet-title">${isEN ? 'Map your columns' : 'จับคู่คอลัมน์ข้อมูล'}</div>
       <div class="sheet-sub">${isEN
         ? `Confirm which column in your file matches each field. Runs every time you load a new file.`
-        : `ยืนยันว่าคอลัมน์ในไฟล์ตรงกับ field ใด — ทำทุกครั้งที่โหลดไฟล์ใหม่`}</div>
+        : `โปรดยืนยันว่าแต่ละคอลัมน์ในไฟล์สอดคล้องกับ field ใด — ขั้นตอนนี้จะดำเนินการทุกครั้งที่มีการนำเข้าไฟล์ใหม่`}</div>
       <div class="colmap-layout-toggle">
-        <button type="button" class="btn colmap-layout-btn ${resolvedLayout === 'wide' ? 'active' : ''}" data-layout="wide">${isEN ? 'Wide — one column per parameter' : 'กว้าง (1 คอลัมน์ต่อ parameter)'}</button>
-        <button type="button" class="btn colmap-layout-btn ${resolvedLayout === 'long' ? 'active' : ''}" data-layout="long">${isEN ? 'Long — Parameter + Value columns' : 'ยาว (คอลัมน์ Parameter + Value)'}</button>
+        <button type="button" class="btn colmap-layout-btn ${resolvedLayout === 'wide' ? 'active' : ''}" data-layout="wide">${isEN ? 'Wide — one column per parameter' : 'กว้าง — หนึ่งคอลัมน์ต่อหนึ่งพารามิเตอร์'}</button>
+        <button type="button" class="btn colmap-layout-btn ${resolvedLayout === 'long' ? 'active' : ''}" data-layout="long">${isEN ? 'Long — Parameter + Value columns' : 'ยาว — แยกคอลัมน์ Parameter และ Value'}</button>
       </div>
-      ${draft._unmatchedWarning ? `<div class="colmap-warn">${isEN ? 'Some fields from the imported template weren’t found in this file and were left unmapped.' : 'บางฟิลด์จาก template ที่นำเข้าไม่พบในไฟล์นี้ จึงถูกปล่อยว่างไว้'}</div>` : ''}
+      ${draft._unmatchedWarning ? `<div class="colmap-warn">${isEN ? 'Some fields from the imported template weren’t found in this file and were left unmapped.' : 'บางฟิลด์จากไฟล์ต้นแบบ (template) ที่นำเข้าไม่ปรากฏในไฟล์นี้ จึงถูกเว้นว่างไว้โดยยังไม่มีการจับคู่'}</div>` : ''}
     </div>
     <div class="sheet-body colmap-table-wrap">
       <div class="colmap-row colmap-hd">
@@ -321,12 +321,12 @@ export function importConfigTemplate(t, file, cb) {
     try {
       const json = JSON.parse(e.target.result);
       if (!json.aerConfigTemplate || !json.columnMapping) {
-        alert(LANG === 'en' ? 'Invalid config template file.' : 'ไฟล์ template ไม่ถูกต้อง');
+        alert(LANG === 'en' ? 'Invalid config template file.' : 'ไฟล์ต้นแบบการตั้งค่า (template) นี้ไม่ถูกต้องตามรูปแบบที่กำหนด');
         return;
       }
       cb(json.columnMapping, json);
     } catch (err) {
-      alert((LANG === 'en' ? 'Failed to read template: ' : 'อ่านไฟล์ template ไม่สำเร็จ: ') + err.message);
+      alert((LANG === 'en' ? 'Failed to read template: ' : 'ไม่สามารถอ่านไฟล์ต้นแบบการตั้งค่า (template) ได้: ') + err.message);
     }
   };
   reader.readAsText(file);

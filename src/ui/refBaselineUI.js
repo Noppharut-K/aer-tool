@@ -19,7 +19,7 @@ function staleNoteHtml(saved, stations, isEN) {
   if (!stale.length) return '';
   return `<div class="colmap-warn" style="margin-top:8px;margin-bottom:0">${isEN
     ? `${stale.length} previously-selected station(s) no longer exist in this dataset and won't be used in calculations — reopen the picker above to reassign.`
-    : `${stale.length} สถานีที่เคยเลือกไว้ไม่มีอยู่ในข้อมูลชุดนี้แล้ว จะไม่ถูกใช้ในการคำนวณ — เปิดตัวเลือกด้านบนเพื่อกำหนดใหม่`}</div>`;
+    : `พบสถานีที่เคยเลือกไว้ ${stale.length} แห่ง ไม่ปรากฏอยู่ในชุดข้อมูลปัจจุบัน จึงไม่ถูกนำไปใช้ในการคำนวณ กรุณาเปิดตัวเลือกด้านบนเพื่อกำหนดสถานีใหม่`}</div>`;
 }
 
 function selectBlockHtml(stations, selected, isEN) {
@@ -110,7 +110,7 @@ export function renderRefBaselineUI(t) {
   const state = getState(t);
 
   if (!state.analyzed || !state.rows.length) {
-    root.innerHTML = `<div class="empty-state"><p>${isEN ? 'Run analysis first to see Locations and Stations here.' : 'วิเคราะห์ข้อมูลก่อน เพื่อให้เห็น Location และ Station ที่นี่'}</p></div>`;
+    root.innerHTML = `<div class="empty-state"><p>${isEN ? 'Run analysis first to see Locations and Stations here.' : 'กรุณาวิเคราะห์ข้อมูลก่อน จึงจะแสดงรายการ Location และ Station ในหน้านี้ได้'}</p></div>`;
     return;
   }
 
@@ -122,7 +122,7 @@ export function renderRefBaselineUI(t) {
   root.innerHTML = `
     <div class="sheet-sub" style="margin-bottom:14px">${isEN
       ? 'Assign REF and Baseline stations to each Location — a station from any Location can serve as another’s reference.'
-      : 'กำหนดสถานี REF และ Baseline ให้แต่ละ Location — เลือกสถานีจาก Location ใดก็ได้มาเป็นค่าอ้างอิงของ Location อื่น'}</div>
+      : 'กำหนดสถานีอ้างอิง (REF) และสถานีฐาน (Baseline) ให้แก่แต่ละ Location โดยสามารถเลือกสถานีจาก Location ใดก็ได้มาทำหน้าที่เป็นค่าอ้างอิงของ Location อื่น'}</div>
     ${locations.map((loc, i) => `
       <div class="refmap-loc-card">
         <div class="refmap-loc-title">${escHtml(loc)}</div>

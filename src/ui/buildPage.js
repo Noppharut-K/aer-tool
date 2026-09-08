@@ -89,7 +89,7 @@ export function buildPage(t, el) {
             <label><input type="checkbox" class="fp-check" data-t="${t}" value="loc" checked> Location</label>
             <label><input type="checkbox" class="fp-check" data-t="${t}" value="st"> Station</label>
             ${t === 'sea' ? `<label><input type="checkbox" class="fp-check" data-t="${t}" value="wl"> ${isEN ? 'Depth level' : 'ระดับความลึก'}</label>` : ''}
-            <div class="field-popover-hint">${isEN ? 'Parameter is always shown.' : 'Parameter จะแสดงอยู่ในตารางเสมอ'}</div>
+            <div class="field-popover-hint">${isEN ? 'Parameter is always shown.' : 'คอลัมน์ Parameter จะปรากฏอยู่ในตารางเสมอ โดยไม่ขึ้นกับตัวเลือกด้านบน'}</div>
           </div>
         </div>
         <div class="toolbar-divider"></div>

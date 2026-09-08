@@ -62,7 +62,7 @@ export function handleFile(t, file) {
       setRaw(t, data);
       afterDataLoaded(t, { name: file.name, sub: `${data.length} ${LANG === 'en' ? 'rows' : 'แถว'} · ${getState(t).cols.length} cols` });
     } catch (err) {
-      alert((LANG === 'en' ? 'Load failed: ' : 'โหลดไม่สำเร็จ: ') + err.message);
+      alert((LANG === 'en' ? 'Load failed: ' : 'ไม่สามารถนำเข้าไฟล์ได้: ') + err.message);
     }
   };
   isCSV ? reader.readAsBinaryString(file) : reader.readAsArrayBuffer(file);
@@ -76,9 +76,9 @@ export function loadDemoInto(t, data, meta) {
 // ── Data Quality check ───────────────────────────────────────────────────
 
 const BDL_METHOD_LABEL = {
-  exclude: { th: 'ไม่รวมในการคำนวณ', en: 'Exclude' },
-  zero: { th: 'แทนด้วย 0', en: 'Zero' },
-  half: { th: 'ครึ่งหนึ่งของ detection limit', en: 'Half detection limit' },
+  exclude: { th: 'ไม่นำเข้าคำนวณ', en: 'Exclude' },
+  zero: { th: 'แทนที่ด้วยค่า 0', en: 'Zero' },
+  half: { th: 'ครึ่งหนึ่งของขีดจำกัดการตรวจวัด (Detection Limit)', en: 'Half detection limit' },
 };
 
 function bdlNoteHtml(count, method, isEN) {
@@ -86,7 +86,7 @@ function bdlNoteHtml(count, method, isEN) {
   const methodLabel = isEN ? BDL_METHOD_LABEL.exclude.en : BDL_METHOD_LABEL.exclude.th;
   return `<div class="dq-item">${isEN
     ? `${count} BDL reading(s) excluded from calculations (method: ${methodLabel}).`
-    : `พบค่า BDL ${count} รายการ ถูกไม่รวมในการคำนวณ (วิธี: ${methodLabel})`}</div>`;
+    : `ตรวจพบค่าต่ำกว่าขีดจำกัดการตรวจวัด (BDL) จำนวน ${count} รายการ ซึ่งไม่ถูกนำเข้าสู่การคำนวณ (วิธีที่ใช้: ${methodLabel})`}</div>`;
 }
 
 export function runDQ(t) {
@@ -141,22 +141,22 @@ export function runDQ(t) {
   const dupGroups = Object.values(repGroups).filter(g => g.length > expectedReps);
   const dupNote = dupGroups.length ? `<div class="dq-item">${isEN
     ? `Unexpected duplicate readings found (expected ${expectedReps} per Parameter/Station/Year${t === 'sea' ? '/Depth' : ''}):`
-    : `พบข้อมูลซ้ำเกินจำนวนที่คาดไว้ (คาด ${expectedReps} ตัวอย่าง/กลุ่ม Parameter+Station+ปี${t === 'sea' ? '+ความลึก' : ''}):`}<br>
+    : `ตรวจพบจำนวนตัวอย่างซ้ำ (replicate) มากกว่าที่กำหนดไว้ (คาดการณ์ไว้ ${expectedReps} ตัวอย่างต่อกลุ่ม Parameter + Station + ปี${t === 'sea' ? ' + ความลึก' : ''}):`}<br>
     ${dupGroups.slice(0, 8).map(g => {
       const r0 = g[0];
       const depthPart = t === 'sea' && r0.wl ? ` · ${r0.wl}` : '';
-      return `${r0.pk} · ${r0.st} · ${r0.yr}${depthPart} — ${g.length} ${isEN ? 'readings' : 'ค่า'}`;
+      return `${r0.pk} · ${r0.st} · ${isEN ? '' : 'ปี '}${r0.yr}${depthPart} — ${isEN ? '' : 'พบ '}${g.length} ${isEN ? 'readings' : 'ค่า'}`;
     }).join('<br>')}
-    ${dupGroups.length > 8 ? (isEN ? `<br>+${dupGroups.length - 8} more group(s)` : `<br>+อีก ${dupGroups.length - 8} กลุ่ม`) : ''}
+    ${dupGroups.length > 8 ? (isEN ? `<br>+${dupGroups.length - 8} more group(s)` : `<br>และอีก ${dupGroups.length - 8} กลุ่มที่มีลักษณะเดียวกัน`) : ''}
   </div>` : '';
 
   if (!issues.length && !dupGroups.length) {
-    wrap.innerHTML = `<div class="dq-wrap dq-ok"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>${isEN ? 'Data quality check passed — no issues' : 'ข้อมูลผ่านการตรวจสอบ — ไม่พบปัญหา'}${bdlNote}</div>`;
+    wrap.innerHTML = `<div class="dq-wrap dq-ok"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>${isEN ? 'Data quality check passed — no issues' : 'ข้อมูลผ่านการตรวจสอบคุณภาพแล้ว ไม่พบข้อบกพร่อง'}${bdlNote}</div>`;
     return;
   }
   wrap.innerHTML = `<div class="dq-wrap dq-warn">
-    <div class="dq-title"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>${isEN ? 'Data quality issues found' : 'พบปัญหาคุณภาพข้อมูล'}</div>
-    ${issues.length ? `<div class="dq-item">${isEN ? 'Non-numeric values:' : 'ค่าที่ไม่ใช่ตัวเลข:'}<br>${issues.map(i => `<b>${i.col}</b>: ${i.samples.map(s => `${isEN ? 'row' : 'แถว'} ${s.row} = "${s.val}"`).join(', ')}`).join('<br>')}</div>` : ''}
+    <div class="dq-title"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>${isEN ? 'Data quality issues found' : 'ตรวจพบข้อบกพร่องด้านคุณภาพข้อมูล'}</div>
+    ${issues.length ? `<div class="dq-item">${isEN ? 'Non-numeric values:' : 'รายการค่าที่ไม่อยู่ในรูปแบบตัวเลข:'}<br>${issues.map(i => `<b>${i.col}</b>: ${i.samples.map(s => `${isEN ? 'row' : 'แถว'} ${s.row} = "${s.val}"`).join(', ')}`).join('<br>')}</div>` : ''}
     ${dupNote}
     ${bdlNote}
   </div>`;

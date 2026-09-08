@@ -60,7 +60,7 @@ export function renderComparisonUI(t) {
   const state = getState(t);
 
   if (!state.analyzed || !state.rows.length) {
-    root.innerHTML = `<div class="empty-state"><p>${isEN ? 'Run analysis first.' : 'วิเคราะห์ข้อมูลก่อน'}</p></div>`;
+    root.innerHTML = `<div class="empty-state"><p>${isEN ? 'Run analysis first.' : 'กรุณาวิเคราะห์ข้อมูลก่อน จึงจะใช้งานส่วนนี้ได้'}</p></div>`;
     return;
   }
 
@@ -70,8 +70,8 @@ export function renderComparisonUI(t) {
 
   const isSea = TYPE_CFG[t].hasDepth;
   const aggTopbarHint = isSea
-    ? (isEN ? 'Applies to every comparison below — depth readings are summarized per station first, then stations are summarized per Location.' : 'มีผลกับทุกรูปแบบด้านล่าง — สรุปค่าแต่ละความลึกในสถานีก่อน แล้วจึงสรุปค่าสถานีรวมเป็น Location')
-    : (isEN ? 'Applies whenever multiple stations are combined into one Location value (e.g. Location vs Baseline/Year, or multiple REF/Baseline stations).' : 'มีผลเมื่อรวมค่าจากหลายสถานีเป็นค่าเดียวของ Location (เช่น Location vs Baseline/Year หรือเมื่อกำหนด REF/Baseline หลายสถานี)');
+    ? (isEN ? 'Applies to every comparison below — depth readings are summarized per station first, then stations are summarized per Location.' : 'มีผลกับการเปรียบเทียบทุกรูปแบบด้านล่าง โดยจะสรุปค่าจากแต่ละระดับความลึกภายในสถานีก่อน จากนั้นจึงสรุปค่าของสถานีทั้งหมดรวมเป็นค่าของ Location')
+    : (isEN ? 'Applies whenever multiple stations are combined into one Location value (e.g. Location vs Baseline/Year, or multiple REF/Baseline stations).' : 'มีผลเมื่อมีการรวมค่าจากหลายสถานีเข้าเป็นค่าเดียวของ Location (เช่น การเปรียบเทียบ Location vs Baseline/Year หรือกรณีที่กำหนด REF/Baseline ไว้มากกว่าหนึ่งสถานี)');
 
   const atCap = customs.length >= CUSTOM_CMP_MAX;
   root.innerHTML = `
@@ -83,7 +83,7 @@ export function renderComparisonUI(t) {
           <option value="median">${isEN ? 'Median' : 'มัธยฐาน'}</option>
         </select>
       </div>
-      <div class="pill-field"><label title="${isEN ? 'Location-level comparisons only (Location vs Baseline/Year, or a location-subject Custom Comparison) — Station-level comparisons don\'t have enough raw readings to test meaningfully.' : 'ใช้ได้เฉพาะการเปรียบเทียบระดับ Location (Location vs Baseline/Year หรือ Custom Comparison ที่ subject เป็น Location) — ระดับ Station มีข้อมูลดิบไม่พอทดสอบทางสถิติ'}">${isEN ? 'Statistical test' : 'สถิติทดสอบ'}</label>
+      <div class="pill-field"><label title="${isEN ? 'Location-level comparisons only (Location vs Baseline/Year, or a location-subject Custom Comparison) — Station-level comparisons don\'t have enough raw readings to test meaningfully.' : 'ใช้ได้เฉพาะการเปรียบเทียบในระดับ Location เท่านั้น (Location vs Baseline/Year หรือ Custom Comparison ที่กำหนด subject เป็น Location) เนื่องจากการเปรียบเทียบในระดับ Station มีจำนวนข้อมูลดิบไม่เพียงพอสำหรับการทดสอบทางสถิติอย่างมีนัยสำคัญ'}">${isEN ? 'Statistical test' : 'สถิติทดสอบ'}</label>
         <select id="${t}-stats-method">
           <option value="none">${isEN ? 'None' : 'ไม่ใช้'}</option>
           <option value="ttest">${isEN ? 't-test' : 't-test'}</option>
@@ -96,7 +96,7 @@ export function renderComparisonUI(t) {
     <div class="cmp-pills">
       ${Object.entries(FORMATS).map(([key, f]) => `<button type="button" class="cmp-pill ${key === activeFormat ? 'active' : ''}" data-cmp-fmt="${key}">${isEN ? f.en : f.th}</button>`).join('')}
       ${customs.map(c => `<button type="button" class="cmp-pill cmp-pill-custom ${c.id === activeFormat ? 'active' : ''}" data-cmp-fmt="${c.id}">${escHtml(c.name)}</button>`).join('')}
-      <button type="button" class="cmp-pill cmp-pill-add" id="${t}-cmp-add-btn" ${atCap ? 'disabled' : ''} title="${atCap ? (isEN ? 'Maximum 10 formats total (3 default + 7 custom)' : 'สูงสุด 10 รูปแบบ (default 3 + custom 7)') : (isEN ? 'Add a custom comparison' : 'เพิ่มการเปรียบเทียบแบบกำหนดเอง')}">+ ${isEN ? 'Add' : 'เพิ่ม'}</button>
+      <button type="button" class="cmp-pill cmp-pill-add" id="${t}-cmp-add-btn" ${atCap ? 'disabled' : ''} title="${atCap ? (isEN ? 'Maximum 10 formats total (3 default + 7 custom)' : 'รองรับสูงสุด 10 รูปแบบการเปรียบเทียบ (รูปแบบมาตรฐาน 3 รายการ และรูปแบบกำหนดเอง 7 รายการ)') : (isEN ? 'Add a custom comparison' : 'เพิ่มการเปรียบเทียบแบบกำหนดเอง')}">+ ${isEN ? 'Add' : 'เพิ่ม'}</button>
       <div class="history-toggle">
         <button type="button" class="btn" id="${t}-cc-hist-toggle">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 15"/></svg>
@@ -162,7 +162,7 @@ function renderHistoryPopover(t) {
   if (!popover) return;
   const history = getCustomCmpHistory(t);
   if (!history.length) {
-    popover.innerHTML = `<div class="history-empty">${isEN ? 'No edits yet this session.' : 'ยังไม่มีการแก้ไขใน session นี้'}</div>`;
+    popover.innerHTML = `<div class="history-empty">${isEN ? 'No edits yet this session.' : 'ยังไม่มีประวัติการแก้ไขในรอบการใช้งานนี้'}</div>`;
     return;
   }
   const lastIdx = history.length - 1;
@@ -260,14 +260,14 @@ function renderBuilder(t) {
   document.getElementById(`${t}-ccb-save`).addEventListener('click', () => {
     const errEl = document.getElementById(`${t}-ccb-err`);
     const name = nameEl.value.trim();
-    if (!name) { errEl.textContent = isEN ? 'Enter a name.' : 'กรอกชื่อ'; return; }
+    if (!name) { errEl.textContent = isEN ? 'Enter a name.' : 'กรุณาระบุชื่อ'; return; }
     const patch = { name, subjectKind: subjEl.value, refKind: refEl.value };
     if (editing) {
       updateCustomCmp(t, editing.id, patch);
       activeFormat = editing.id;
     } else {
       const id = addCustomCmp(t, patch);
-      if (!id) { errEl.textContent = isEN ? 'Maximum 10 formats reached.' : 'ครบจำนวนสูงสุด 10 รูปแบบแล้ว'; return; }
+      if (!id) { errEl.textContent = isEN ? 'Maximum 10 formats reached.' : 'มีรูปแบบการเปรียบเทียบครบจำนวนสูงสุด 10 รูปแบบแล้ว'; return; }
       activeFormat = id;
     }
     builderOpen = null;
@@ -303,10 +303,10 @@ function renderFormat(t) {
     const refWord = isEN ? fmt.refLabel.en.replace(' value', '') : (activeFormat === 'stRef' ? 'REF' : 'Baseline');
     const matchHint = isEN
       ? `${refWord} value is taken from the same year as the row being compared.`
-      : `ดึงค่า ${refWord} จากปีเดียวกับข้อมูลที่นำมาเทียบ (ปีไหนก็เทียบกับปีนั้น)`;
+      : `ค่า ${refWord} จะถูกดึงจากปีเดียวกันกับข้อมูลที่นำมาเปรียบเทียบเสมอ กล่าวคือ ข้อมูลของปีใดจะถูกเทียบกับค่าอ้างอิงของปีนั้น`;
     const fixedHint = isEN
       ? `${refWord} value always comes from one year you pick below, no matter which year is being compared.`
-      : `ดึงค่า ${refWord} จากปีที่เลือกไว้ปีเดียวเสมอ ไม่ว่าข้อมูลที่เทียบจะเป็นปีไหนก็ตาม`;
+      : `ค่า ${refWord} จะถูกดึงจากปีที่กำหนดไว้เพียงปีเดียวเสมอ โดยไม่ขึ้นกับว่าข้อมูลที่นำมาเปรียบเทียบเป็นปีใด`;
     stripEl.innerHTML = `
       <div class="pill-field"><label>${isEN ? 'Reference year' : 'ปีของค่าอ้างอิง'}</label>
         <select id="${t}-cmp-yearmode">
@@ -428,7 +428,7 @@ function computeAll(t, formatKey, settings) {
 function renderTable(t, tableCard, rows, fmt, showStats) {
   const isEN = LANG === 'en';
   if (!rows.length) {
-    tableCard.innerHTML = `<div class="empty-state"><p>${isEN ? 'No rows match.' : 'ไม่มีข้อมูลตรงกับเงื่อนไข'}</p></div>`;
+    tableCard.innerHTML = `<div class="empty-state"><p>${isEN ? 'No rows match.' : 'ไม่พบข้อมูลที่ตรงตามเงื่อนไขที่กำหนด'}</p></div>`;
     return;
   }
   rows.sort((a, b) => a.pk.localeCompare(b.pk) || a.group.localeCompare(b.group) || (a.yr ?? 0) - (b.yr ?? 0));

@@ -108,7 +108,7 @@ function bioF2(x){ return (x==null||isNaN(x)) ? '' : parseFloat(x).toFixed(2); }
 /* ── Main Calculate ── */
 function bioCalculate(mod){
   var rows = bioGetFilteredRows(mod);
-  if(!rows.length){ bioErr(mod,'ไม่มีข้อมูลหลัง filter'); return; }
+  if(!rows.length){ bioErr(mod,'ไม่พบข้อมูลภายหลังการกรอง (filter)'); return; }
 
   var colSt   = (document.getElementById('bio-st-'+mod)||{}).value||'';
   var colRep  = (document.getElementById('bio-rep-'+mod)||{}).value||'';
@@ -122,7 +122,7 @@ function bioCalculate(mod){
   var colZone = (document.getElementById('bio-zone-'+mod)||{}).value||'';
 
   if(!colSt||!colRep||!colDen||!colLvl1||!colLvl2){
-    bioErr(mod,'กรุณาเลือก Station, Replicate, Density, '+BIO_CFG[mod].lvl1+', '+BIO_CFG[mod].lvl2);
+    bioErr(mod,'กรุณาระบุคอลัมน์ Station, Replicate, Density, '+BIO_CFG[mod].lvl1+' และ '+BIO_CFG[mod].lvl2+' ให้ครบถ้วนก่อนดำเนินการคำนวณ');
     return;
   }
 
@@ -367,13 +367,13 @@ function bioCalculate(mod){
     resultDiv.innerHTML += tbl;
   });
 
-  if(!Object.keys(byMeta).length) bioErr(mod,'ไม่มีข้อมูลหลัง filter');
+  if(!Object.keys(byMeta).length) bioErr(mod,'ไม่พบข้อมูลภายหลังการกรอง (filter)');
 }
 
 /* ── Export Excel ── */
 function bioExport(mod){
   var calc = BIO[mod].calc;
-  if(!calc||!Object.keys(calc).length){ bioErr(mod,'กด Calculate ก่อนครับ'); return; }
+  if(!calc||!Object.keys(calc).length){ bioErr(mod,'กรุณากด Calculate เพื่อคำนวณผลก่อนดำเนินการต่อ'); return; }
   var wb = XLSX.utils.book_new();
   Object.keys(calc).forEach(function(metaKey){
     var data = calc[metaKey];
@@ -530,7 +530,7 @@ function bioSubTab(mod, tab, btn) {
 /* === TAXONOMY SUMMARY === */
 function bioTaxSummary(mod) {
   var rows = bioGetFilteredRows(mod);
-  if(!rows.length) { bioErr(mod,'ไม่มีข้อมูลหลัง filter'); return; }
+  if(!rows.length) { bioErr(mod,'ไม่พบข้อมูลภายหลังการกรอง (filter)'); return; }
 
   var colSt   = (document.getElementById('bio-st-'+mod)||{}).value||'';
   var colRep  = (document.getElementById('bio-rep-'+mod)||{}).value||'';
@@ -711,7 +711,7 @@ function bioShowTaxTable(mod, lbl, btn) {
 
 function bioExportTax(mod) {
   var tax = BIO[mod].tax;
-  if(!tax||!Object.keys(tax).length){ bioErr(mod,'กด Calculate ก่อนครับ'); return; }
+  if(!tax||!Object.keys(tax).length){ bioErr(mod,'กรุณากด Calculate เพื่อคำนวณผลก่อนดำเนินการต่อ'); return; }
   var wb = XLSX.utils.book_new();
   Object.keys(tax).forEach(function(lbl){
     var tbl = tax[lbl];
@@ -1005,7 +1005,7 @@ function bioLoadFile(mod, input) {
         var mapping = document.getElementById('bio-mapping-'+mod);
         mapping.parentNode.insertBefore(div, mapping);
       }
-    } catch(ex) { bioErr(mod,'อ่านไฟล์ไม่ได้: '+ex.message); }
+    } catch(ex) { bioErr(mod,'ไม่สามารถอ่านไฟล์ได้: '+ex.message); }
   };
   reader.readAsArrayBuffer(file);
 }
@@ -1024,7 +1024,7 @@ function bioLoadSheet(mod, sheetName) {
     var wb = BIO[mod]._wb;
     var ws = wb.Sheets[sheetName];
     var rows = XLSX.utils.sheet_to_json(ws, {defval:''});
-    if(!rows.length) { bioErr(mod,'ไม่พบข้อมูลในไฟล์'); return; }
+    if(!rows.length) { bioErr(mod,'ไม่พบข้อมูลภายในไฟล์ที่นำเข้า'); return; }
     BIO[mod].raw = rows;
     document.getElementById('bio-fi-'+mod).textContent = '✓ '+BIO[mod].filename+' ['+sheetName+'] — '+rows.length.toLocaleString()+' rows';
     document.getElementById('bio-fi-'+mod).style.display = 'block';
@@ -1033,7 +1033,7 @@ function bioLoadSheet(mod, sheetName) {
     document.getElementById('bio-mapping-'+mod).style.display = 'block';
     bioAutoDetect(mod, Object.keys(rows[0]));
     bioUpdateFilters(mod);
-  } catch(ex) { bioErr(mod,'อ่านไฟล์ไม่ได้: '+ex.message); }
+  } catch(ex) { bioErr(mod,'ไม่สามารถอ่านไฟล์ได้: '+ex.message); }
 }
 
 function bioErr(mod, msg) {
@@ -1157,7 +1157,7 @@ function bioUpdateFilters(mod) {
     var hint = document.createElement('span');
     hint.style.fontSize = '12px';
     hint.style.color = 'var(--text3)';
-    hint.textContent = 'เลือก Year/Project/Location columns ก่อน';
+    hint.textContent = 'กรุณาระบุคอลัมน์ Year, Project และ Location ก่อนดำเนินการต่อ';
     filterDiv.appendChild(hint);
   }
   bioUpdateRepOptions(mod);
@@ -1264,7 +1264,7 @@ function switchBioTab(mod, btn) {
 /* ── Module config ── */
 function bioCalculateByRep(mod) {
   var rows = bioGetFilteredRows(mod);
-  if(!rows.length){ bioErr(mod,'ไม่มีข้อมูลหลัง filter'); return; }
+  if(!rows.length){ bioErr(mod,'ไม่พบข้อมูลภายหลังการกรอง (filter)'); return; }
 
   var colSt   = (document.getElementById('bio-st-'+mod)||{}).value||'';
   var colRep  = (document.getElementById('bio-rep-'+mod)||{}).value||'';
@@ -1277,7 +1277,7 @@ function bioCalculateByRep(mod) {
   var colZone = (document.getElementById('bio-zone-'+mod)||{}).value||'';
 
   if(!colSt||!colRep||!colDen||!colLvl1||!colLvl2){
-    bioErr(mod,'กรุณาเลือก Station, Replicate, Density, '+BIO_CFG[mod].lvl1+', '+BIO_CFG[mod].lvl2);
+    bioErr(mod,'กรุณาระบุคอลัมน์ Station, Replicate, Density, '+BIO_CFG[mod].lvl1+' และ '+BIO_CFG[mod].lvl2+' ให้ครบถ้วนก่อนดำเนินการคำนวณ');
     return;
   }
 
@@ -1437,7 +1437,7 @@ window.bioRepChange = bioRepChange;
 window.bioLoadFile = bioLoadFile;
 function bioExportByRep(mod) {
   var div = document.getElementById('bio-byrep-'+mod);
-  if(!div||!div.innerHTML){ bioErr(mod,'กด Calculate by Rep ก่อนครับ'); return; }
+  if(!div||!div.innerHTML){ bioErr(mod,'กรุณากด Calculate by Rep เพื่อคำนวณผลก่อนดำเนินการต่อ'); return; }
 
   var wb = window.XLSX.utils.book_new();
   var tables = div.querySelectorAll('table');
@@ -1500,7 +1500,7 @@ function bioToggleExportMenu(mod) {
 
 function bioExportLong(mod) {
   var raw = BIO[mod].raw;
-  if(!raw||!raw.length){ bioErr(mod,'กรุณา Upload ข้อมูลก่อนครับ'); return; }
+  if(!raw||!raw.length){ bioErr(mod,'กรุณาอัปโหลดข้อมูลก่อนดำเนินการต่อ'); return; }
   var wb = window.XLSX.utils.book_new();
   var ws = window.XLSX.utils.json_to_sheet(raw);
   window.XLSX.utils.book_append_sheet(wb, ws, 'Long Format');
@@ -1574,7 +1574,7 @@ function bioGetMetaRow(mod, station, rep, year, zone) {
 
 function bioExportLongByRep(mod) {
   var div = document.getElementById('bio-byrep-'+mod);
-  if(!div||!div.innerHTML){ bioErr(mod,'กด Calculate by Rep ก่อนครับ'); return; }
+  if(!div||!div.innerHTML){ bioErr(mod,'กรุณากด Calculate by Rep เพื่อคำนวณผลก่อนดำเนินการต่อ'); return; }
 
   var colYear = (document.getElementById('bio-year-'+mod)||{}).value||'';
   var colProj = (document.getElementById('bio-proj-'+mod)||{}).value||'';
@@ -1683,7 +1683,7 @@ function bioExportLongByRep(mod) {
 
 function bioExportLongMean(mod) {
   var calc = BIO[mod].calc;
-  if(!calc||!Object.keys(calc).length){ bioErr(mod,'กด Calculate ก่อนครับ'); return; }
+  if(!calc||!Object.keys(calc).length){ bioErr(mod,'กรุณากด Calculate เพื่อคำนวณผลก่อนดำเนินการต่อ'); return; }
 
   var taxaGroupDefault = BIO_CFG[mod].title;
   var unitDenDefault = mod==='zoo' ? 'Individual/m3' : mod==='larvae' ? 'Individual/1000m3' : 'Individual/m2';

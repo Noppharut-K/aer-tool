@@ -40,7 +40,7 @@ export function renderReportUI(t) {
   const state = getState(t);
 
   if (!state.analyzed || !state.rows.length) {
-    root.innerHTML = `<div class="empty-state"><p>${isEN ? 'Run analysis first.' : 'วิเคราะห์ข้อมูลก่อน'}</p></div>`;
+    root.innerHTML = `<div class="empty-state"><p>${isEN ? 'Run analysis first.' : 'กรุณาวิเคราะห์ข้อมูลก่อน จึงจะใช้งานส่วนนี้ได้'}</p></div>`;
     return;
   }
 
@@ -96,7 +96,7 @@ export function renderReportUI(t) {
     (g, q) => String(g.key).toLowerCase().includes(q),
     filtered => {
       if (!filtered.length) {
-        listEl.innerHTML = `<div class="empty-state"><p>${isEN ? 'No rows match.' : 'ไม่มีข้อมูลตรงกับเงื่อนไข'}</p></div>`;
+        listEl.innerHTML = `<div class="empty-state"><p>${isEN ? 'No rows match.' : 'ไม่พบข้อมูลที่ตรงตามเงื่อนไขที่กำหนด'}</p></div>`;
         pageEl.innerHTML = '';
         return;
       }
@@ -111,7 +111,7 @@ export function renderReportUI(t) {
     const all = q ? groups.filter(g => String(g.key).toLowerCase().includes(q)) : groups;
     listEl.innerHTML = all.length
       ? all.map(g => g.grain === 'station' ? stationCardHtml(t, g, isEN) : locationCardHtml(t, g, isEN)).join('')
-      : `<div class="empty-state"><p>${isEN ? 'No rows match.' : 'ไม่มีข้อมูลตรงกับเงื่อนไข'}</p></div>`;
+      : `<div class="empty-state"><p>${isEN ? 'No rows match.' : 'ไม่พบข้อมูลที่ตรงตามเงื่อนไขที่กำหนด'}</p></div>`;
     document.getElementById(`${t}-report-print-heading`).innerHTML = printHeadingHtml(t, isEN, q);
     printingTab = t;
     window.print();
@@ -123,7 +123,7 @@ function printHeadingHtml(t, isEN, activeFilter) {
   const grainLabel = isEN ? GRAIN_LABEL[reportGrain].en : GRAIN_LABEL[reportGrain].th;
   const generated = new Date().toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
   const filterLine = activeFilter
-    ? `<div class="print-only-line">${isEN ? `Filtered by: "${escHtml(activeFilter)}"` : `กรองด้วยคำค้นหา: "${escHtml(activeFilter)}"`}</div>`
+    ? `<div class="print-only-line">${isEN ? `Filtered by: "${escHtml(activeFilter)}"` : `กรองผลลัพธ์ด้วยคำค้นหา: "${escHtml(activeFilter)}"`}</div>`
     : '';
   return `
     <div class="print-only-title">${escHtml(moduleName)} — ${isEN ? 'Report' : 'รายงาน'} (${escHtml(grainLabel)})</div>
@@ -164,7 +164,7 @@ function section(titleObj, isEN, bodyHtml, hidden) {
 function metaLine(g, isEN) {
   const parts = [
     isEN ? `${g.n} readings` : `${g.n} รายการข้อมูล`,
-    isEN ? `${g.paramCount} parameters` : `${g.paramCount} parameter`,
+    isEN ? `${g.paramCount} parameters` : `${g.paramCount} พารามิเตอร์`,
   ];
   if (g.years.length) parts.push(isEN ? `${g.years[0]}–${g.years[g.years.length - 1]}` : `ปี ${g.years[0]}–${g.years[g.years.length - 1]}`);
   if (g.grain === 'location') parts.push(isEN ? `${g.stationCount} stations` : `${g.stationCount} สถานี`);
@@ -200,7 +200,7 @@ function statusChipHtml(e, isEN) {
 }
 
 function exceedingListHtml(exceeding, isEN, attributeStation) {
-  if (!exceeding.length) return `<p class="report-para">${isEN ? 'No parameters exceeded their standard.' : 'ไม่มี parameter ที่เกินมาตรฐาน'}</p>`;
+  if (!exceeding.length) return `<p class="report-para">${isEN ? 'No parameters exceeded their standard.' : 'ไม่มีพารามิเตอร์ใดเกินมาตรฐานที่กำหนด'}</p>`;
   const stTh = attributeStation ? `<th>${isEN ? 'Station' : 'สถานี'}</th>` : '';
   return `<div class="table-scroll"><table class="report-table">
     <thead><tr><th>${isEN ? 'Parameter' : 'Parameter'}</th>${stTh}<th class="num">${isEN ? 'Value' : 'ค่า'}</th><th>${isEN ? 'Unit' : 'หน่วย'}</th><th class="num">${isEN ? 'Year' : 'ปี'}</th><th>${isEN ? 'Standard' : 'มาตรฐาน'}</th><th>${isEN ? 'Status' : 'สถานะ'}</th></tr></thead>
@@ -238,7 +238,7 @@ function yearHeadHtml(years, isEN) {
 }
 
 function selfTrendListHtml(selfTrend, years, isEN) {
-  if (!selfTrend.length) return `<p class="report-para">${isEN ? 'Not enough years of data for a trend (need at least 2).' : 'ข้อมูลไม่พอสำหรับดูแนวโน้ม (ต้องมีอย่างน้อย 2 ปี)'}</p>`;
+  if (!selfTrend.length) return `<p class="report-para">${isEN ? 'Not enough years of data for a trend (need at least 2).' : 'ข้อมูลมีไม่เพียงพอสำหรับการวิเคราะห์แนวโน้ม (ต้องมีข้อมูลอย่างน้อย 2 ปี)'}</p>`;
   return `<div class="table-scroll"><table class="report-table">
     <thead><tr><th>${isEN ? 'Parameter' : 'Parameter'}</th>${yearHeadHtml(years, isEN)}<th>${isEN ? 'Overall trend' : 'แนวโน้มโดยรวม'}</th></tr></thead>
     <tbody>${selfTrend.map(s => {
@@ -265,8 +265,8 @@ function selfTrendListHtml(selfTrend, years, isEN) {
 }
 
 function refBaselineTrendListHtml(trendList, hasFlag, years, isEN) {
-  if (!hasFlag) return `<p class="report-para">${isEN ? 'Reference/Baseline not configured for this Location.' : 'ยังไม่ได้กำหนด REF/Baseline สำหรับพื้นที่นี้'}</p>`;
-  if (!trendList.length) return `<p class="report-para">${isEN ? 'No comparable data.' : 'ไม่มีข้อมูลที่เปรียบเทียบได้'}</p>`;
+  if (!hasFlag) return `<p class="report-para">${isEN ? 'Reference/Baseline not configured for this Location.' : 'ยังไม่มีการกำหนดสถานีอ้างอิง (REF) หรือสถานีฐาน (Baseline) สำหรับพื้นที่นี้'}</p>`;
+  if (!trendList.length) return `<p class="report-para">${isEN ? 'No comparable data.' : 'ไม่มีข้อมูลที่สามารถนำมาเปรียบเทียบได้ในขณะนี้'}</p>`;
   return `<div class="table-scroll"><table class="report-table">
     <thead><tr><th>${isEN ? 'Parameter' : 'Parameter'}</th>${yearHeadHtml(years, isEN)}</tr></thead>
     <tbody>${trendList.map(s => {

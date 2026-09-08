@@ -35,10 +35,10 @@ export function renderDashboard(t) {
     body.classList.add('is-empty');
     tableCard.innerHTML = `<div class="empty-state">
       <div class="empty-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/></svg></div>
-      <h2>${state.raw.length ? (isEN ? 'Ready to analyze' : 'พร้อมวิเคราะห์ข้อมูล') : (isEN ? 'No data imported yet' : 'ยังไม่มีข้อมูลนำเข้า')}</h2>
+      <h2>${state.raw.length ? (isEN ? 'Ready to analyze' : 'พร้อมสำหรับการวิเคราะห์ข้อมูล') : (isEN ? 'No data imported yet' : 'ยังไม่มีการนำเข้าข้อมูล')}</h2>
       <p>${state.raw.length
-        ? (isEN ? 'Column mapping is confirmed — click Run analysis to build the dashboard.' : 'ยืนยันการจับคู่คอลัมน์แล้ว — กด "วิเคราะห์ข้อมูล" เพื่อเริ่ม')
-        : (isEN ? 'Upload a wide-format Excel file or load the demo dataset to start.' : 'อัปโหลดไฟล์ Excel หรือกด "ทดลอง Demo" เพื่อเริ่มต้น')}</p>
+        ? (isEN ? 'Column mapping is confirmed — click Run analysis to build the dashboard.' : 'การจับคู่คอลัมน์ได้รับการยืนยันแล้ว กรุณากด "วิเคราะห์ข้อมูล" เพื่อประมวลผลและแสดงแดชบอร์ด')
+        : (isEN ? 'Upload a wide-format Excel file or load the demo dataset to start.' : 'กรุณาอัปโหลดไฟล์ Excel หรือกด "ทดลอง Demo" เพื่อเริ่มต้นใช้งาน')}</p>
     </div>`;
     document.getElementById(`${t}-kpi-strip`).innerHTML = '';
     return;
@@ -94,11 +94,11 @@ function renderKPIs(t, groups, zThreshold) {
   });
 
   const cards = [
-    { label: isEN ? 'Stations' : 'สถานี', val: stations, sub: isEN ? 'total sampled' : 'จุดเก็บตัวอย่าง', cls: '' },
-    { label: isEN ? 'Parameters' : 'Parameters', val: parameters, sub: isEN ? 'tracked' : 'ที่ติดตาม', cls: '' },
-    { label: isEN ? 'Exceeding' : 'เกินมาตรฐาน', val: exceeding, sub: isEN ? 'parameters over standard' : 'parameter ที่เกิน', cls: 'kpi-exceed' },
-    { label: isEN ? `Outliers (${zThreshold || '—'}σ)` : `ค่าผิดปกติ (${zThreshold || '—'}σ)`, val: outlierCount, sub: isEN ? 'flagged values' : 'ค่าที่ถูกตั้งค่าสถานะ', cls: 'kpi-outlier' },
-    { label: isEN ? 'Passing' : 'ผ่านมาตรฐาน', val: passing, sub: isEN ? 'within all standards' : 'อยู่ในเกณฑ์ทั้งหมด', cls: 'kpi-ok' },
+    { label: isEN ? 'Stations' : 'สถานี', val: stations, sub: isEN ? 'total sampled' : 'จุดเก็บตัวอย่างทั้งหมด', cls: '' },
+    { label: isEN ? 'Parameters' : 'Parameters', val: parameters, sub: isEN ? 'tracked' : 'ที่ติดตามในชุดข้อมูลนี้', cls: '' },
+    { label: isEN ? 'Exceeding' : 'เกินมาตรฐาน', val: exceeding, sub: isEN ? 'parameters over standard' : 'จำนวนพารามิเตอร์ที่เกินมาตรฐาน', cls: 'kpi-exceed' },
+    { label: isEN ? `Outliers (${zThreshold || '—'}σ)` : `ค่าผิดปกติ (${zThreshold || '—'}σ)`, val: outlierCount, sub: isEN ? 'flagged values' : 'ค่าที่ระบุว่าผิดปกติทางสถิติ', cls: 'kpi-outlier' },
+    { label: isEN ? 'Passing' : 'ผ่านมาตรฐาน', val: passing, sub: isEN ? 'within all standards' : 'อยู่ในเกณฑ์มาตรฐานทั้งหมด', cls: 'kpi-ok' },
   ];
   document.getElementById(`${t}-kpi-strip`).innerHTML = cards.map(c => `
     <div class="kpi-card ${c.cls}">
@@ -128,7 +128,7 @@ function buildGroups(rows, dims) {
 function renderTable(t, tableCard, groups, dims, zThreshold) {
   const isEN = LANG === 'en';
   if (!groups.length) {
-    tableCard.innerHTML = `<div class="empty-state"><p>${isEN ? 'No rows match your filters.' : 'ไม่มีข้อมูลตรงกับเงื่อนไข'}</p></div>`;
+    tableCard.innerHTML = `<div class="empty-state"><p>${isEN ? 'No rows match your filters.' : 'ไม่พบข้อมูลที่ตรงตามเงื่อนไขที่กำหนด'}</p></div>`;
     return;
   }
   groups.sort((a, b) => a.pk.localeCompare(b.pk) || dims.some(d => a.dims[d] !== b.dims[d]));

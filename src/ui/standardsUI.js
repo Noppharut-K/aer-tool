@@ -41,12 +41,12 @@ export function renderStandardsUI(t) {
         <div class="field-g field-g-sm">
           <label>${isEN ? 'Direction' : 'ทิศทาง'}</label>
           <select id="${t}-std-dir">
-            <option value="max">${isEN ? 'Max (not to exceed)' : 'ค่าสูงสุด (ห้ามเกิน)'}</option>
-            <option value="min">${isEN ? 'Min (not to fall below)' : 'ค่าต่ำสุด (ห้ามต่ำกว่า)'}</option>
+            <option value="max">${isEN ? 'Max (not to exceed)' : 'ค่าสูงสุดที่ยอมรับได้ (ห้ามเกิน)'}</option>
+            <option value="min">${isEN ? 'Min (not to fall below)' : 'ค่าต่ำสุดที่ยอมรับได้ (ห้ามต่ำกว่า)'}</option>
           </select>
         </div>
         <div class="field-g field-g-sm">
-          <label title="${isEN ? 'Optional. Set this to bind more than one severity level to the same parameter (e.g. Watch + Critical) — leave blank for a single standard' : 'ไม่บังคับ ใช้เมื่อต้องการตั้งมาตรฐานหลายระดับให้ parameter เดียวกัน (เช่น เฝ้าระวัง + วิกฤต) — เว้นว่างถ้ามีมาตรฐานเดียว'}">${isEN ? 'Tier' : 'ระดับ'}</label>
+          <label title="${isEN ? 'Optional. Set this to bind more than one severity level to the same parameter (e.g. Watch + Critical) — leave blank for a single standard' : 'ไม่บังคับกรอก ใช้ในกรณีที่ต้องการกำหนดมาตรฐานหลายระดับความรุนแรงให้กับพารามิเตอร์เดียวกัน (เช่น ระดับเฝ้าระวังและระดับวิกฤต) หากมีมาตรฐานเพียงระดับเดียว ให้เว้นว่างไว้'}">${isEN ? 'Tier' : 'ระดับ'}</label>
           <input type="text" id="${t}-std-tier" placeholder="${isEN ? 'e.g. Watch' : 'เช่น เฝ้าระวัง'}">
         </div>
         <div class="field-g field-g-sm">
@@ -62,7 +62,7 @@ export function renderStandardsUI(t) {
           <input type="number" min="0" max="8" id="${t}-std-dec" placeholder="auto">
         </div>
         <div class="field-g field-g-sm">
-          <label title="${isEN ? 'Used for BDL readings reported with no limit (e.g. bare \'ND\'), when the BDL method is \'Half detection limit\'' : 'ใช้เมื่อค่า BDL ในไฟล์ไม่ระบุตัวเลข limit มาด้วย (เช่น "ND" เฉยๆ) และเลือกวิธี BDL เป็น "ครึ่งหนึ่งของ limit"'}">${isEN ? 'Fallback DL' : 'DL สำรอง'}</label>
+          <label title="${isEN ? 'Used for BDL readings reported with no limit (e.g. bare \'ND\'), when the BDL method is \'Half detection limit\'' : 'ใช้ในกรณีที่ค่าต่ำกว่าขีดจำกัดการตรวจวัด (BDL) ในไฟล์ไม่ได้ระบุตัวเลขขีดจำกัดมาด้วย (เช่น ปรากฏเป็น "ND" เพียงอย่างเดียว) และเลือกวิธีจัดการ BDL เป็น "ครึ่งหนึ่งของขีดจำกัดการตรวจวัด"'}">${isEN ? 'Fallback DL' : 'DL สำรอง'}</label>
           <input type="number" step="any" min="0" id="${t}-std-bdl" placeholder="${isEN ? 'none' : 'ไม่มี'}">
         </div>
         <div class="field-g field-g-lg">
@@ -131,7 +131,7 @@ function renderHistoryPopover(t) {
   if (!popover) return;
   const history = getStandardsHistory(t);
   if (!history.length) {
-    popover.innerHTML = `<div class="history-empty">${isEN ? 'No edits yet this session.' : 'ยังไม่มีการแก้ไขใน session นี้'}</div>`;
+    popover.innerHTML = `<div class="history-empty">${isEN ? 'No edits yet this session.' : 'ยังไม่มีประวัติการแก้ไขในรอบการใช้งานนี้'}</div>`;
     return;
   }
   const lastIdx = history.length - 1;
@@ -189,22 +189,22 @@ function tierValidationError(siblings, candidate, isEN) {
   if (blankSibling) {
     return isEN
       ? 'This parameter already has an untiered standard — edit it below to give it a tier label first.'
-      : 'Parameter นี้มีมาตรฐานแบบไม่ระบุระดับอยู่แล้ว — แก้ไขรายการนั้นให้มีชื่อระดับก่อน';
+      : 'พารามิเตอร์นี้มีมาตรฐานที่ไม่ได้ระบุระดับความรุนแรงอยู่แล้ว กรุณาแก้ไขรายการดังกล่าวให้มีชื่อระดับก่อนจึงจะเพิ่มระดับใหม่ได้';
   }
   if (!candidate.tier) {
     return isEN
       ? 'This parameter already has tiered standards — enter a tier label to add another.'
-      : 'Parameter นี้มีมาตรฐานหลายระดับอยู่แล้ว — กรอกชื่อระดับเพื่อเพิ่มอีกระดับ';
+      : 'พารามิเตอร์นี้มีมาตรฐานหลายระดับความรุนแรงอยู่แล้ว กรุณาระบุชื่อระดับเพื่อเพิ่มมาตรฐานระดับใหม่';
   }
   if (siblings.some(s => s.tier === candidate.tier)) {
     return isEN
       ? 'This tier already exists for this parameter — edit it below instead.'
-      : 'ระดับนี้มีอยู่แล้วสำหรับ parameter นี้ — แก้ไขในตารางด้านล่างแทน';
+      : 'ระดับความรุนแรงนี้มีอยู่แล้วสำหรับพารามิเตอร์นี้ กรุณาแก้ไขรายการเดิมในตารางด้านล่างแทนการเพิ่มใหม่';
   }
   if (siblings[0].direction !== candidate.direction) {
     return isEN
       ? "This tier's direction must match the parameter's existing standards."
-      : 'ทิศทางของระดับนี้ต้องตรงกับทิศทางมาตรฐานเดิมของ parameter นี้';
+      : 'ทิศทางของมาตรฐาน (ค่าสูงสุด/ต่ำสุด) ในระดับนี้ต้องสอดคล้องกับทิศทางของมาตรฐานเดิมที่มีอยู่แล้วสำหรับพารามิเตอร์นี้';
   }
   return null;
 }
@@ -227,8 +227,8 @@ function wireAddForm(t) {
     const parameter = paramEl.value.trim();
     const value = parseFloat(valueEl.value);
     const tier = tierEl.value.trim();
-    if (!parameter) { errEl.textContent = isEN ? 'Enter a parameter name.' : 'กรอกชื่อ parameter'; return; }
-    if (isNaN(value)) { errEl.textContent = isEN ? 'Enter a numeric value.' : 'กรอกค่าตัวเลข'; return; }
+    if (!parameter) { errEl.textContent = isEN ? 'Enter a parameter name.' : 'กรุณาระบุชื่อพารามิเตอร์'; return; }
+    if (isNaN(value)) { errEl.textContent = isEN ? 'Enter a numeric value.' : 'กรุณาระบุค่าเป็นตัวเลข'; return; }
     const siblings = getStandards(t).filter(s => s.parameter === parameter);
     const err = tierValidationError(siblings, { tier, direction: dirEl.value }, isEN);
     if (err) { errEl.textContent = err; return; }
@@ -268,7 +268,7 @@ function renderTable(t) {
     filtered => {
       if (!filtered.length) {
         tbody.innerHTML = `<tr><td colspan="9"><div class="empty-state empty-state-inline">
-          <p>${all.length ? (isEN ? 'No standards match your search.' : 'ไม่พบรายการที่ค้นหา') : (isEN ? 'No standards entered yet — add one above.' : 'ยังไม่มีมาตรฐาน — เพิ่มด้านบนเพื่อเริ่มต้น')}</p>
+          <p>${all.length ? (isEN ? 'No standards match your search.' : 'ไม่พบรายการมาตรฐานที่ตรงกับคำค้นหา') : (isEN ? 'No standards entered yet — add one above.' : 'ยังไม่มีการกำหนดมาตรฐานในระบบ กรุณาเพิ่มมาตรฐานจากแบบฟอร์มด้านบนเพื่อเริ่มต้นใช้งาน')}</p>
         </div></td></tr>`;
         pageEl.innerHTML = '';
         return;

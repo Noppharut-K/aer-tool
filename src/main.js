@@ -79,8 +79,8 @@ document.addEventListener('click', e => {
 function buildHome() {
   const isEN = LANG === 'en';
   document.getElementById('home-title').textContent = isEN ? 'Environmental Data Analysis' : 'วิเคราะห์ข้อมูลสิ่งแวดล้อม';
-  document.getElementById('home-sub').textContent = isEN ? 'systematically' : 'อย่างมีระบบ';
-  document.getElementById('home-desc').textContent = isEN ? 'Select data type to analyze' : 'เลือกประเภทข้อมูลที่ต้องการวิเคราะห์';
+  document.getElementById('home-sub').textContent = isEN ? 'systematically' : 'อย่างเป็นระบบ';
+  document.getElementById('home-desc').textContent = isEN ? 'Select data type to analyze' : 'กรุณาเลือกประเภทข้อมูลสิ่งแวดล้อมที่ต้องการวิเคราะห์';
   const cards = {
     sea: { name: 'Seawater', subTH: 'Water quality · Standards · Trends', subEN: 'Water quality · Standards · Trends' },
     sed: { name: 'Sediment', subTH: 'Sediment quality · Standards · Trends', subEN: 'Sediment quality · Standards · Trends' },
