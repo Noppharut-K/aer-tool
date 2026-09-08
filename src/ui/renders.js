@@ -45,8 +45,6 @@ export function renderDashboard(t) {
   }
   body.classList.remove('is-empty');
 
-  renderKPIs(t);
-
   const dims = checkedFields(t);
   const zThreshold = parseFloat(document.getElementById(`${t}-outlier`)?.value) || 0;
   const groups = buildGroups(state.rows, dims);
@@ -54,7 +52,10 @@ export function renderDashboard(t) {
   const searchEl = document.getElementById(`${t}-search`);
   wireSearch(searchEl, groups,
     (g, q) => g.pk.toLowerCase().includes(q) || dims.some(d => String(g.dims[d] ?? '').toLowerCase().includes(q)),
-    filtered => renderTable(t, tableCard, filtered, dims, zThreshold)
+    filtered => {
+      renderTable(t, tableCard, filtered, dims, zThreshold);
+      renderKPIs(t, filtered, zThreshold);
+    }
   );
 }
 
@@ -65,26 +66,30 @@ function updateFieldSummary(t) {
   if (el) el.textContent = dims.length ? dims.map(d => isEN ? FIELD_LABEL[d].en : FIELD_LABEL[d].th).join(' + ') : (isEN ? 'Overview' : 'ภาพรวม');
 }
 
-function renderKPIs(t) {
+/** KPI strip: Stations/Parameters stay whole-dataset inventory counts;
+    Exceeding/Outliers/Passing are tallied from `groups` — the exact same
+    grouped+search-filtered rows the table below renders — using the same
+    per-group logic rowHtml() applies per row, so the numbers here are
+    always exactly the sum of what's visible in the table (e.g. grouping
+    by Station turns "Exceeding" into a count of exceeding Parameter+
+    Station combinations, matching the breakdown the user is looking at). */
+function renderKPIs(t, groups, zThreshold) {
   const isEN = LANG === 'en';
   const state = getState(t);
   const rows = state.rows;
-  const zThreshold = parseFloat(document.getElementById(`${t}-outlier`)?.value) || 0;
 
   const stations = new Set(rows.map(r => r.st)).size;
   const parameters = new Set(rows.map(r => r.pk)).size;
-  const byPk = {};
-  rows.forEach(r => { (byPk[r.pk] ??= []).push(r); });
   let exceeding = 0, passing = 0, notSet = 0, outlierCount = 0;
-  Object.values(byPk).forEach(group => {
-    const hasStd = group.some(r => r.sc_status !== 'no_std');
-    const hasExceed = group.some(r => r.sc_status === 'exceed');
+  groups.forEach(g => {
+    const hasStd = g.statuses.some(s => s !== 'no_std');
+    const hasExceed = g.statuses.some(s => s === 'exceed');
     if (!hasStd) notSet++;
     else if (hasExceed) exceeding++;
     else passing++;
     if (zThreshold > 0) {
-      const { isOutlier } = computeOutlierStats(group.map(r => r.val), zThreshold);
-      outlierCount += group.filter(r => isOutlier(r.val)).length;
+      const { isOutlier } = computeOutlierStats(g.vals, zThreshold);
+      outlierCount += g.vals.filter(isOutlier).length;
     }
   });
 

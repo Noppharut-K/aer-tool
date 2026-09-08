@@ -6,7 +6,7 @@ import { LANG } from '../utils/lang.js';
 import {
   getState, setRaw, getParamCols, resolveCanonical, getColMap, getColVal,
   setStandards, setRefMap, setBaselineMap, setDepthSummaryMethod, setCmpSettings, setCustomCmp,
-  setBdlMethod, getBdlMethod,
+  setBdlMethod, getBdlMethod, setExpectedReplicates, getExpectedReplicates,
 } from '../core/state.js';
 import { showColumnMappingScreen, exportConfigTemplate, importConfigTemplate } from './columnMapping.js';
 import { renderDashboard } from './renders.js';
@@ -38,8 +38,8 @@ function afterDataLoaded(t, meta) {
       document.getElementById(`${t}-cmd-map`).style.display = 'flex';
       document.getElementById(`${t}-btn-run`).disabled = false;
       document.getElementById(`${t}-btn-exportcfg`).disabled = false;
-      runDQ(t);
       runAnalysis(t, () => renderDashboard(t));
+      runDQ(t);
       document.getElementById(`${t}-btn-export`).disabled = !getState(t).analyzed;
       renderDashboard(t);
     },
@@ -129,13 +129,35 @@ export function runDQ(t) {
 
   const bdlNote = bdlNoteHtml(bdlCount, bdlMethod, isEN);
 
-  if (!issues.length) {
+  // Replicate-count check — needs the fully unpivoted rows (pk/st/yr/wl
+  // already resolved for both layouts), so it only has data once runCore()
+  // has run at least once; harmless no-op before that (dupGroups stays empty).
+  const expectedReps = getExpectedReplicates(t);
+  const repGroups = {};
+  state.rows.forEach(r => {
+    const key = [r.pk, r.st, r.yr, t === 'sea' ? r.wl : ''].join('||');
+    (repGroups[key] ??= []).push(r);
+  });
+  const dupGroups = Object.values(repGroups).filter(g => g.length > expectedReps);
+  const dupNote = dupGroups.length ? `<div class="dq-item">${isEN
+    ? `Unexpected duplicate readings found (expected ${expectedReps} per Parameter/Station/Year${t === 'sea' ? '/Depth' : ''}):`
+    : `พบข้อมูลซ้ำเกินจำนวนที่คาดไว้ (คาด ${expectedReps} ตัวอย่าง/กลุ่ม Parameter+Station+ปี${t === 'sea' ? '+ความลึก' : ''}):`}<br>
+    ${dupGroups.slice(0, 8).map(g => {
+      const r0 = g[0];
+      const depthPart = t === 'sea' && r0.wl ? ` · ${r0.wl}` : '';
+      return `${r0.pk} · ${r0.st} · ${r0.yr}${depthPart} — ${g.length} ${isEN ? 'readings' : 'ค่า'}`;
+    }).join('<br>')}
+    ${dupGroups.length > 8 ? (isEN ? `<br>+${dupGroups.length - 8} more group(s)` : `<br>+อีก ${dupGroups.length - 8} กลุ่ม`) : ''}
+  </div>` : '';
+
+  if (!issues.length && !dupGroups.length) {
     wrap.innerHTML = `<div class="dq-wrap dq-ok"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>${isEN ? 'Data quality check passed — no issues' : 'ข้อมูลผ่านการตรวจสอบ — ไม่พบปัญหา'}${bdlNote}</div>`;
     return;
   }
   wrap.innerHTML = `<div class="dq-wrap dq-warn">
-    <div class="dq-title"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>${isEN ? 'Non-numeric values found' : 'พบค่าที่ไม่ใช่ตัวเลข'}</div>
-    ${issues.map(i => `<div class="dq-item"><b>${i.col}</b>: ${i.samples.map(s => `${isEN ? 'row' : 'แถว'} ${s.row} = "${s.val}"`).join(', ')}</div>`).join('')}
+    <div class="dq-title"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>${isEN ? 'Data quality issues found' : 'พบปัญหาคุณภาพข้อมูล'}</div>
+    ${issues.length ? `<div class="dq-item">${isEN ? 'Non-numeric values:' : 'ค่าที่ไม่ใช่ตัวเลข:'}<br>${issues.map(i => `<b>${i.col}</b>: ${i.samples.map(s => `${isEN ? 'row' : 'แถว'} ${s.row} = "${s.val}"`).join(', ')}`).join('<br>')}</div>` : ''}
+    ${dupNote}
     ${bdlNote}
   </div>`;
 }
@@ -199,6 +221,7 @@ export function wireEvents(t, { loadDemo, downloadTemplate, doExport }) {
 
   el.querySelectorAll(`[data-run="${t}"]`).forEach(btn => btn.addEventListener('click', () => {
     runAnalysis(t, () => renderDashboard(t));
+    runDQ(t);
     document.getElementById(`${t}-btn-export`).disabled = !getState(t).analyzed;
   }));
 
@@ -207,8 +230,8 @@ export function wireEvents(t, { loadDemo, downloadTemplate, doExport }) {
     showColumnMappingScreen(t, {
       prefill: getState(t).colMap,
       onConfirm: () => {
-        runDQ(t);
         runAnalysis(t, () => renderDashboard(t));
+        runDQ(t);
       },
     });
   }));
@@ -232,8 +255,8 @@ export function wireEvents(t, { loadDemo, downloadTemplate, doExport }) {
           document.getElementById(`${t}-cmd-map`).style.display = 'flex';
           document.getElementById(`${t}-btn-run`).disabled = false;
           document.getElementById(`${t}-btn-exportcfg`).disabled = false;
-          runDQ(t);
           runAnalysis(t, () => renderDashboard(t));
+          runDQ(t);
         },
       });
     });
@@ -243,6 +266,10 @@ export function wireEvents(t, { loadDemo, downloadTemplate, doExport }) {
   document.getElementById(`${t}-bdl-method`)?.addEventListener('change', e => {
     setBdlMethod(t, e.target.value);
     runAnalysis(t, () => renderDashboard(t));
+    runDQ(t);
+  });
+  document.getElementById(`${t}-expected-reps`)?.addEventListener('change', e => {
+    setExpectedReplicates(t, Math.max(1, parseInt(e.target.value, 10) || 1));
     runDQ(t);
   });
   wireFieldPicker(t);

@@ -75,6 +75,7 @@ function createTabState() {
     customCmpHistory: [],
     bdlMethod: 'exclude',
     statsMethod: 'none',
+    expectedReplicates: 1,
     reportHidden: { overall: false, minmax: false, selfTrend: false, refTrend: false, baseTrend: false },
   };
 }
@@ -250,6 +251,15 @@ export function setBdlMethod(t, method) {
 }
 export function getBdlMethod(t) {
   return getState(t).bdlMethod;
+}
+
+// ── Expected replicate count (Data Quality: flags excess duplicates) ─────
+
+export function setExpectedReplicates(t, n) {
+  getState(t).expectedReplicates = n;
+}
+export function getExpectedReplicates(t) {
+  return getState(t).expectedReplicates;
 }
 
 // ── Statistical significance testing (Location-level comparisons) ────────

@@ -101,6 +101,7 @@ export function buildPage(t, el) {
             <option value="half">${isEN ? 'Half limit' : 'ครึ่งหนึ่งของ limit'}</option>
           </select>
         </div>
+        <div class="pill-field"><label>${isEN ? 'Expected replicates:' : 'จำนวนตัวอย่างซ้ำที่คาดไว้:'}</label><input type="number" id="${t}-expected-reps" min="1" step="1" value="1"></div>
         <div class="search-field">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
           <input type="text" id="${t}-search" placeholder="${isEN ? 'Search parameter, station, location…' : 'ค้นหา parameter, station, location…'}">
