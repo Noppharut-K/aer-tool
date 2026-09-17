@@ -14,18 +14,22 @@
 <div id="page-home">
   <nav class="home-nav">
     <div class="home-logo">
-      <svg width="40" height="40" viewBox="0 0 52 52" xmlns="http://www.w3.org/2000/svg">
+      <svg width="40" height="40" viewBox="0 0 240 240" xmlns="http://www.w3.org/2000/svg">
         <defs>
-          <linearGradient id="waveG" x1="0" y1="0" x2="1" y2="0">
-            <stop offset="0%" stop-color="#3b82c4"/>
-            <stop offset="100%" stop-color="#4dd9c0"/>
-          </linearGradient>
-          <clipPath id="box"><rect width="52" height="52" rx="11"/></clipPath>
+          <linearGradient id="arcGNav" x1="0" y1="1" x2="1" y2="0"><stop offset="0%" stop-color="#1a8f5e"/><stop offset="100%" stop-color="#2c9ee3"/></linearGradient>
+          <linearGradient id="leafGNav" x1="0" y1="1" x2="1" y2="0"><stop offset="0%" stop-color="#8fd694"/><stop offset="100%" stop-color="#0b8a5e"/></linearGradient>
+          <linearGradient id="globeGNav" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#3dd68c"/><stop offset="100%" stop-color="#2c9ee3"/></linearGradient>
         </defs>
-        <rect width="52" height="52" rx="11" fill="#1a2035"/>
-        <text x="26" y="27" text-anchor="middle" font-family="Arial Black,sans-serif" font-size="17" font-weight="900" fill="#f0f0f2" letter-spacing="1">AER</text>
-        <path d="M4 36 Q10 31 16 36 Q22 41 28 36 Q34 31 40 36 Q46 41 50 38" fill="none" stroke="url(#waveG)" stroke-width="2.2" stroke-linecap="round" clip-path="url(#box)"/>
-        <path d="M2 41 Q9 36 15 41 Q21 46 27 41 Q33 36 39 41 Q45 46 51 42" fill="none" stroke="url(#waveG)" stroke-width="1.5" stroke-linecap="round" opacity=".6" clip-path="url(#box)"/>
+        <path d="M35 165 A100 100 0 1 1 205 100" fill="none" stroke="url(#arcGNav)" stroke-width="16" stroke-linecap="round"/>
+        <path d="M50 210 C20 180 15 130 55 95 C90 65 130 70 145 100 C130 160 90 200 50 210 Z" fill="url(#leafGNav)"/>
+        <path d="M78 50 H148 L172 74 V198 Q172 204 166 204 H84 Q78 204 78 198 V56 Q78 50 84 50 Z" fill="#ffffff" stroke="#0b5c3c" stroke-width="6"/>
+        <path d="M148 50 L172 74 L152 74 Q148 74 148 70 Z" fill="#0b5c3c"/>
+        <rect x="90" y="130" width="13" height="24" fill="#22a06b"/>
+        <rect x="109" y="112" width="13" height="42" fill="#1a8f5e"/>
+        <rect x="128" y="96" width="13" height="58" fill="#0d6b4a"/>
+        <circle cx="178" cy="185" r="42" fill="url(#globeGNav)"/>
+        <path d="M160 165 Q168 158 178 162 Q188 158 194 168 Q190 178 180 176 Q170 182 162 174 Z" fill="#eef7f2" opacity=".92"/>
+        <path d="M185 198 Q195 194 200 202 Q196 210 186 208 Z" fill="#eef7f2" opacity=".92"/>
       </svg>
     </div>
     <div class="home-brand">
@@ -44,18 +48,28 @@
   <div class="home-body">
     <div class="home-hero">
       <div style="display:flex;justify-content:center;margin-bottom:20px">
-        <svg width="140" height="140" viewBox="0 0 52 52" xmlns="http://www.w3.org/2000/svg">
+        <svg width="140" height="140" viewBox="0 0 240 240" xmlns="http://www.w3.org/2000/svg">
           <defs>
-            <linearGradient id="wGh" x1="0" y1="0" x2="1" y2="0">
-              <stop offset="0%" stop-color="#3b82c4"/>
-              <stop offset="100%" stop-color="#4dd9c0"/>
-            </linearGradient>
-            <clipPath id="bh"><rect width="52" height="52" rx="11"/></clipPath>
+            <linearGradient id="arcGHero" x1="0" y1="1" x2="1" y2="0"><stop offset="0%" stop-color="#1a8f5e"/><stop offset="100%" stop-color="#2c9ee3"/></linearGradient>
+            <linearGradient id="leafGHero" x1="0" y1="1" x2="1" y2="0"><stop offset="0%" stop-color="#8fd694"/><stop offset="100%" stop-color="#0b8a5e"/></linearGradient>
+            <linearGradient id="globeGHero" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#3dd68c"/><stop offset="100%" stop-color="#2c9ee3"/></linearGradient>
           </defs>
-          <rect width="52" height="52" rx="11" fill="#1a2035"/>
-          <text x="26" y="27" text-anchor="middle" font-family="Arial Black,sans-serif" font-size="17" font-weight="900" fill="#f0f0f2" letter-spacing="1">AER</text>
-          <path d="M4 36 Q10 31 16 36 Q22 41 28 36 Q34 31 40 36 Q46 41 50 38" fill="none" stroke="url(#wGh)" stroke-width="2.2" stroke-linecap="round" clip-path="url(#bh)"/>
-          <path d="M2 41 Q9 36 15 41 Q21 46 27 41 Q33 36 39 41 Q45 46 51 42" fill="none" stroke="url(#wGh)" stroke-width="1.5" stroke-linecap="round" opacity=".6" clip-path="url(#bh)"/>
+          <path d="M35 165 A100 100 0 1 1 205 100" fill="none" stroke="url(#arcGHero)" stroke-width="16" stroke-linecap="round"/>
+          <path d="M50 210 C20 180 15 130 55 95 C90 65 130 70 145 100 C130 160 90 200 50 210 Z" fill="url(#leafGHero)"/>
+          <path d="M55 200 C60 160 75 125 130 90" stroke="#0b5c3c" stroke-width="3" fill="none" opacity=".45"/>
+          <path d="M78 50 H148 L172 74 V198 Q172 204 166 204 H84 Q78 204 78 198 V56 Q78 50 84 50 Z" fill="#ffffff" stroke="#0b5c3c" stroke-width="5"/>
+          <path d="M148 50 L172 74 L152 74 Q148 74 148 70 Z" fill="#0b5c3c"/>
+          <rect x="90" y="130" width="13" height="24" fill="#22a06b"/>
+          <rect x="109" y="112" width="13" height="42" fill="#1a8f5e"/>
+          <rect x="128" y="96" width="13" height="58" fill="#0d6b4a"/>
+          <rect x="150" y="100" width="16" height="6" rx="3" fill="#8aa79c"/>
+          <rect x="150" y="116" width="16" height="6" rx="3" fill="#8aa79c"/>
+          <rect x="90" y="172" width="76" height="6" rx="3" fill="#8aa79c"/>
+          <rect x="90" y="188" width="60" height="6" rx="3" fill="#8aa79c"/>
+          <circle cx="178" cy="185" r="42" fill="url(#globeGHero)"/>
+          <path d="M160 165 Q168 158 178 162 Q188 158 194 168 Q190 178 180 176 Q170 182 162 174 Z" fill="#eef7f2" opacity=".92"/>
+          <path d="M185 198 Q195 194 200 202 Q196 210 186 208 Z" fill="#eef7f2" opacity=".92"/>
+          <circle cx="207" cy="179" r="2.5" fill="#eef7f2" opacity=".85"/>
         </svg>
       </div>
       <h2><span class="hh2a" id="home-title">วิเคราะห์ข้อมูลสิ่งแวดล้อม</span><br><span class="hh2b"><em id="home-sub">อย่างมีระบบ</em></span></h2>
