@@ -91,6 +91,10 @@ export function renderReportUI(t) {
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
         ${isEN ? 'Print / Export PDF' : 'พิมพ์ / ส่งออก PDF'}
       </button>
+      <button type="button" class="btn" id="${t}-report-xlsx">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="9" x2="9" y2="21"/><line x1="15" y1="9" x2="15" y2="21"/></svg>
+        ${isEN ? 'Export Excel' : 'ส่งออก Excel'}
+      </button>
     </div>
     <div class="print-only" id="${t}-report-print-heading"></div>
     <div id="${t}-report-list"></div>
@@ -161,6 +165,12 @@ export function renderReportUI(t) {
     document.getElementById(`${t}-report-print-heading`).innerHTML = printHeadingHtml(t, isEN, q, hiddenItems.length, itemGrainLabel);
     printingTab = t;
     window.print();
+  });
+
+  document.getElementById(`${t}-report-xlsx`).addEventListener('click', () => {
+    const q = (searchEl.value || '').trim().toLowerCase();
+    const all = q ? visibleGroups.filter(g => String(g.key).toLowerCase().includes(q)) : visibleGroups;
+    if (all.length) exportReportExcel(t, all, isEN, reportGrain);
   });
 }
 
@@ -363,16 +373,21 @@ function standardsSummary(g, isEN) {
 
 /** Same trend.label field trendSuffix() reads per parameter — counted
     across every parameter in this Station/Location's self-trend list
-    instead of spelled out one row at a time. */
-function selfTrendSummaryHtml(selfTrend, isEN) {
-  if (!selfTrend.length) return `<span class="report-sum-trend flat">${isEN ? '— not enough data' : '— ข้อมูลไม่พอ'}</span>`;
+    instead of spelled out one row at a time. Plain {cls,label} (not
+    HTML) so both the on-screen chip and the Excel export can share it. */
+function selfTrendSummaryLabel(selfTrend, isEN) {
+  if (!selfTrend.length) return { cls: 'flat', label: isEN ? '— not enough data' : '— ข้อมูลไม่พอ' };
   const up = selfTrend.filter(s => s.trend?.label === 'up').length;
   const down = selfTrend.filter(s => s.trend?.label === 'down').length;
-  if (!up && !down) return `<span class="report-sum-trend flat">${isEN ? 'Stable' : 'คงที่'}</span>`;
+  if (!up && !down) return { cls: 'flat', label: isEN ? 'Stable' : 'คงที่' };
   const parts = [];
   if (up) parts.push(`↑${up}`);
   if (down) parts.push(`↓${down}`);
-  return `<span class="report-sum-trend ${up >= down ? 'up' : 'down'}">${parts.join(' ')}</span>`;
+  return { cls: up >= down ? 'up' : 'down', label: parts.join(' ') };
+}
+function selfTrendSummaryHtml(selfTrend, isEN) {
+  const o = selfTrendSummaryLabel(selfTrend, isEN);
+  return `<span class="report-sum-trend ${o.cls}">${o.label}</span>`;
 }
 
 /** Same p.status ('close'/'different') field refBaselineTrendListHtml()
@@ -413,6 +428,112 @@ function summaryTableHtml(groups, isEN) {
     <thead><tr>${theadCells}</tr></thead>
     <tbody>${rows}</tbody>
   </table></div>`;
+}
+
+function appendSheet(wb, rows, name) {
+  if (!rows.length) return;
+  const ws = window.XLSX.utils.json_to_sheet(rows);
+  window.XLSX.utils.book_append_sheet(wb, ws, name);
+}
+
+/** Excel export — deliberately independent of the Summary/Detail view
+    toggle and the "แสดง/ซ่อนหัวข้อ" section-visibility setting: this is
+    always the full computed detail, flattened one row per data point
+    per sheet (not one card per Station/Location like the PDF export),
+    since that's what makes it useful to sort/filter/pivot in Excel.
+    Reuses the exact same fields getReportGroups() already computes —
+    no new analysis, just reshaping. `groups` here is already filtered
+    to the currently visible/matching set (same as the Print button). */
+function exportReportExcel(t, groups, isEN, grain) {
+  const isStation = grain === 'station';
+  const wb = window.XLSX.utils.book_new();
+
+  const summaryRows = groups.map(g => {
+    const status = standardsSummary(g, isEN);
+    const trend = selfTrendSummaryLabel(g.selfTrend, isEN);
+    const base = refBaseSummary(g.baselineTrend, g.hasBaseline, isEN);
+    const yearsLabel = g.years.length ? `${g.years[0]}–${g.years[g.years.length - 1]}` : '';
+    return isStation
+      ? {
+          Station: g.key, Location: g.loc || '', Years: yearsLabel, Parameters: g.paramCount,
+          'Standards status': status.label, Trend: trend.label,
+          'vs REF': refBaseSummary(g.refTrend, g.hasRef, isEN).label, 'vs Baseline': base.label,
+        }
+      : {
+          Location: g.key, Stations: g.stationCount, Years: yearsLabel, Parameters: g.paramCount,
+          'Standards status': status.label, Trend: trend.label, 'vs Baseline': base.label,
+        };
+  });
+  appendSheet(wb, summaryRows, isEN ? 'Summary' : 'สรุป');
+
+  const exceedRows = [];
+  groups.forEach(g => g.exceeding.forEach(e => {
+    const limitWord = e.std.direction === 'min' ? (isEN ? 'not below' : 'ไม่ต่ำกว่า') : (isEN ? 'not exceed' : 'ไม่เกิน');
+    const row = {};
+    row[isStation ? 'Station' : 'Location'] = g.key;
+    if (!isStation) row.Station = e.st || '';
+    row.Parameter = e.pk;
+    row.Value = e.value;
+    row.Unit = e.unit || '';
+    row.Year = e.yr ?? '';
+    row.Standard = `${isEN ? `limit ${limitWord}` : `มาตรฐาน${limitWord}`} ${e.std.value} ${e.std.unit || ''}`.trim();
+    row.Tier = e.tier || '';
+    row.Status = e.tier || (isEN ? 'Exceeding' : 'เกิน');
+    exceedRows.push(row);
+  }));
+  appendSheet(wb, exceedRows, isEN ? 'Exceeding' : 'เกินมาตรฐาน');
+
+  const selfRows = [];
+  groups.forEach(g => g.selfTrend.forEach(s => {
+    let prevVal = null;
+    s.points.forEach(p => {
+      const row = {};
+      row[isStation ? 'Station' : 'Location'] = g.key;
+      row.Parameter = s.pk;
+      row.Year = p.yr;
+      row.Value = p.val;
+      row['% change vs previous year'] = prevVal != null && prevVal !== 0 ? `${((p.val - prevVal) / Math.abs(prevVal) * 100).toFixed(1)}%` : '';
+      row['Overall trend'] = trendSuffix(s.trend, isEN);
+      selfRows.push(row);
+      prevVal = p.val;
+    });
+  }));
+  appendSheet(wb, selfRows, isEN ? 'Self-trend' : 'แนวโน้มเทียบกับตัวเอง');
+
+  if (isStation) {
+    const refRows = [];
+    groups.forEach(g => g.refTrend.forEach(s => s.points.forEach(p => refRows.push({
+      Station: g.key, Parameter: s.pk, Year: p.yr, Value: p.compareVal, 'REF value': p.refVal,
+      '% diff': isFinite(p.pctDiff) ? `${p.pctDiff >= 0 ? '+' : ''}${p.pctDiff.toFixed(1)}%` : '',
+      Status: p.status === 'different' ? (isEN ? 'Different' : 'ต่าง') : (isEN ? 'Close' : 'ใกล้เคียง'),
+    }))));
+    appendSheet(wb, refRows, isEN ? 'vs REF' : 'แนวโน้มเทียบกับ REF');
+  }
+
+  const baseRows = [];
+  groups.forEach(g => g.baselineTrend.forEach(s => s.points.forEach(p => {
+    const row = {};
+    row[isStation ? 'Station' : 'Location'] = g.key;
+    row.Parameter = s.pk;
+    row.Year = p.yr;
+    row.Value = p.compareVal;
+    row['Baseline value'] = p.refVal;
+    row['% diff'] = isFinite(p.pctDiff) ? `${p.pctDiff >= 0 ? '+' : ''}${p.pctDiff.toFixed(1)}%` : '';
+    row.Status = p.status === 'different' ? (isEN ? 'Different' : 'ต่าง') : (isEN ? 'Close' : 'ใกล้เคียง');
+    baseRows.push(row);
+  })));
+  appendSheet(wb, baseRows, isEN ? 'vs Baseline' : 'แนวโน้มเทียบกับ Baseline');
+
+  if (!isStation) {
+    const mmRows = [];
+    groups.forEach(g => g.minMax.forEach(m => mmRows.push({
+      Location: g.key, Parameter: m.pk, Unit: m.unit || '', Min: m.min, Max: m.max,
+    })));
+    appendSheet(wb, mmRows, isEN ? 'Min-Max' : 'ช่วงค่า Min-Max');
+  }
+
+  const cfg = TYPE_CFG[t];
+  window.XLSX.writeFile(wb, `${cfg.name}_Report_${grain}_${new Date().toISOString().slice(0, 10)}.xlsx`);
 }
 
 function stationCardHtml(t, g, isEN) {
