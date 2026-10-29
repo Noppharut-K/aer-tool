@@ -59,6 +59,10 @@ export function buildBioPage(el) {
 function bioRoundup0(x){
   x = parseFloat(x);
   if(isNaN(x)) return 0;
+  /* Trim to 15 significant digits first, as Excel's ROUNDUP does — a mean
+     of thirds that is exactly 980 can sum to 980.0000000000001 in floating
+     point, which a bare Math.ceil would push up to 981. */
+  x = Number(x.toPrecision(15));
   return x>=0 ? Math.ceil(x) : Math.floor(x);
 }
 
@@ -302,9 +306,11 @@ function bioCalculate(mod){
 
     /* Section B: Density */
     rows2.push({label:'Density', vals:cols.map(function(){return '';}), sec:true});
+    var locDenSum = 0; /* Location Total = sum of the per-group Location values shown above it */
     lvl1s.forEach(function(lv1){
       var vals = stations.map(function(st){return stDens[st][lv1]||0;});
       var locDen = bioRoundup0(vals.reduce(function(a,v){return a+v;},0)/stations.length);
+      locDenSum += locDen;
       var divLabel = '  '+(mod==='phyto'?'Division: ':mod==='larvae'?'Order: ':'Phylum: ')+lv1;
       rows2.push({label:divLabel, vals:vals.concat([locDen]), sec:false});
 
@@ -328,7 +334,7 @@ function bioCalculate(mod){
       }
     });
     var totalDenSt = stations.map(function(st){return lvl1s.reduce(function(a,lv1){return a+(stDens[st][lv1]||0);},0);});
-    var totalDenLoc = bioRoundup0(totalDenSt.reduce(function(a,v){return a+v;},0)/stations.length);
+    var totalDenLoc = locDenSum;
     rows2.push({label:'  Total density', vals:totalDenSt.concat([totalDenLoc]), sec:false, bold:true});
     rows2.push({label:'', vals:cols.map(function(){return '';}), sec:false});
 
@@ -1353,6 +1359,10 @@ function bioCalculateByRep(mod) {
 
       /* Density */
       rows2.push({label:'Density', vals:cols.map(function(){return '';}), sec:true});
+      /* Totals are the sum of the per-group (ROUNDUP) rows shown above, per
+         station and for the Location column — same rule as the Calculate tab */
+      var totalDenSt = stations.map(function(){return 0;});
+      var totalDenAll = 0;
       allLvl1s.forEach(function(lv1){
         var vals = stations.map(function(st){
           if(!pivot[st]) return 0;
@@ -1360,14 +1370,11 @@ function bioCalculateByRep(mod) {
           return bioRoundup0(sum);
         });
         var total = bioRoundup0(vals.reduce(function(a,v){return a+v;},0)/stations.length);
+        vals.forEach(function(v,i){ totalDenSt[i] += v; });
+        totalDenAll += total;
         var prefix = mod==='phyto'?'Division: ':mod==='larvae'?'Order: ':'Phylum: ';
         rows2.push({label:'  '+prefix+lv1, vals:vals.concat([total]), sec:false});
       });
-      var totalDenSt = stations.map(function(st){
-        if(!pivot[st]) return 0;
-        return bioRoundup0(Object.values(pivot[st]).reduce(function(a,v){return a+v;},0));
-      });
-      var totalDenAll = bioRoundup0(totalDenSt.reduce(function(a,v){return a+v;},0)/stations.length);
       rows2.push({label:'  Total density', vals:totalDenSt.concat([totalDenAll]), sec:false, bold:true});
       rows2.push({label:'', vals:cols.map(function(){return '';}), sec:false});
 
