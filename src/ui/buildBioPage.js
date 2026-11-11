@@ -3,6 +3,7 @@
  * Migrated from AER_Program.html
  */
 import { LANG, L } from '../utils/lang.js';
+import { bioWideInit, bioWideFile, bioWideFromWorkbook, bioWideLooksWide } from './bioWideImport.js';
 
 var BIO_CFG = {
   benthos:  { title:'Benthos',       unit:'Taxon',   lvl1:'Phylum',  lvl2:'Taxon',  indices:'phylum' },
@@ -77,6 +78,20 @@ function bioDominant(densMap){
   return max>0 ? tops.join(' / ') : '';
 }
 
+/* Margalef d = (S − 1) / ln N — the plain formula, as in the lab workbooks, so a
+   single taxon (S = 1) gives d = 0 (see the Method tab); only ln N = 0 (N = 1)
+   is undefined. */
+function bioMargalef(S, N){
+  var lnN = Math.log(N);
+  return lnN !== 0 ? (S-1)/lnN : NaN;
+}
+
+/* Mean of the defined values (NaN = index undefined for that sample) */
+function bioMeanDefined(arr){
+  var v = arr.filter(function(x){ return !isNaN(x); });
+  return v.length ? v.reduce(function(a,b){ return a+b; }, 0)/v.length : NaN;
+}
+
 function bioCalcIndices(densities, groups){
   /* densities: array of numbers, groups: array of group strings (phylum/order) */
   var paired = densities.map(function(d,i){return{d:parseFloat(d)||0,g:groups?String(groups[i]||''):'ALL'};}).filter(function(x){return x.d>0;});
@@ -88,8 +103,8 @@ function bioCalcIndices(densities, groups){
   var N = Object.values(gSum).reduce(function(a,v){return a+bioRoundup0(v);},0);
   if(N<=0) return {N:NaN,S:0,H:NaN,R:NaN,E:NaN};
   var p = paired.map(function(x){return x.d/N;}).filter(function(v){return v>0;});
-  var H = -p.reduce(function(a,pi){return a+pi*Math.log(pi);},0);
-  var R = S>1 ? (S-1)/Math.log(N) : NaN;
+  var H = -p.reduce(function(a,pi){return a+pi*Math.log(pi);},0) || 0; /* || 0: no "-0" when S = 1 */
+  var R = bioMargalef(S, N);
   var E = S>1 ? H/Math.log(S) : NaN;
   return {N:N,S:S,H:H,R:R,E:E};
 }
@@ -101,8 +116,8 @@ function bioCalcIndicesDirect(densities){
   if(S===0) return {N:NaN,S:0,H:NaN,R:NaN,E:NaN};
   var N = dens.reduce(function(a,v){return a+v;},0);
   var p = dens.map(function(d){return d/N;}).filter(function(v){return v>0;});
-  var H = -p.reduce(function(a,pi){return a+pi*Math.log(pi);},0);
-  var R = S>1 ? (S-1)/Math.log(N) : NaN;
+  var H = -p.reduce(function(a,pi){return a+pi*Math.log(pi);},0) || 0; /* || 0: no "-0" when S = 1 */
+  var R = bioMargalef(S, N);
   var E = S>1 ? H/Math.log(S) : NaN;
   return {N:N,S:S,H:H,R:R,E:E};
 }
@@ -112,6 +127,12 @@ function bioCalcIndicesDirect(densities){
    densities; Benthos rounds each Phylum up before summing. */
 function bioIndicesFor(mod, dens, grps){
   return (mod==='benthos') ? bioCalcIndices(dens, grps) : bioCalcIndicesDirect(dens);
+}
+
+/* Station / taxon / file values go into table HTML — escape them so a name
+   with "<" or "&" shows as text instead of being parsed as markup */
+function bioEsc(v){
+  return String(v==null?'':v).replace(/[&<>"']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; });
 }
 
 function bioF2(x){ return (x==null||isNaN(x)) ? '' : parseFloat(x).toFixed(2); }
@@ -277,15 +298,17 @@ function bioCalculate(mod){
     stations.forEach(function(st){
       var reps = repIndices[st];
       if(!reps.length){ stIndices[st]={H:NaN,R:NaN,E:NaN}; return; }
+      /* bioMeanDefined, not "sum/count || NaN": that turned a real 0 (H′ of a
+         single-taxon station) into a blank and dropped it from the Location mean */
       stIndices[st]={
-        H: reps.reduce(function(a,x){return a+(isNaN(x.H)?0:x.H);},0)/reps.filter(function(x){return !isNaN(x.H);}).length||NaN,
-        R: reps.reduce(function(a,x){return a+(isNaN(x.R)?0:x.R);},0)/reps.filter(function(x){return !isNaN(x.R);}).length||NaN,
-        E: reps.reduce(function(a,x){return a+(isNaN(x.E)?0:x.E);},0)/reps.filter(function(x){return !isNaN(x.E);}).length||NaN
+        H: bioMeanDefined(reps.map(function(x){return x.H;})),
+        R: bioMeanDefined(reps.map(function(x){return x.R;})),
+        E: bioMeanDefined(reps.map(function(x){return x.E;}))
       };
     });
 
     /* Location indices = mean of station indices */
-    function meanArr(arr){ var v=arr.filter(function(x){return !isNaN(x);}); return v.length?v.reduce(function(a,b){return a+b;})/v.length:NaN; }
+    var meanArr = bioMeanDefined;
     var locH = meanArr(stations.map(function(st){return stIndices[st].H;}));
     var locR = meanArr(stations.map(function(st){return stIndices[st].R;}));
     var locE = meanArr(stations.map(function(st){return stIndices[st].E;}));
@@ -314,17 +337,21 @@ function bioCalculate(mod){
       /* For phyto: show Class breakdown under Division */
       if(mod==='phyto' && colCls){
         var classes = allClassesByLvl1[lv1] || [];
+        /* only species actually found (Density > 0), like the Division count —
+           lab reports record zeros for phytoplankton, which inflated these */
         classes.forEach(function(cls){
           var clsVals = stations.map(function(st){
             return new Set(grpRows.filter(function(r){
               return String(r[colSt]||'').trim()===st &&
                      String(r[colLvl1]||'').trim()===lv1 &&
-                     String(r[colCls]||'').trim()===cls;
+                     String(r[colCls]||'').trim()===cls &&
+                     (parseFloat(r[colDen])||0)>0;
             }).map(function(r){return String(r[colLvl2]||'').trim();})).size;
           });
           var clsTotal = new Set(grpRows.filter(function(r){
             return String(r[colLvl1]||'').trim()===lv1 &&
-                   String(r[colCls]||'').trim()===cls;
+                   String(r[colCls]||'').trim()===cls &&
+                   (parseFloat(r[colDen])||0)>0;
           }).map(function(r){return String(r[colLvl2]||'').trim();})).size;
           rows2.push({label:'    Class: '+cls, vals:clsVals.concat([clsTotal]), sec:false, indent:true});
         });
@@ -388,16 +415,16 @@ function bioCalculate(mod){
     /* ── Render table ── */
     var metaParts = metaKey.split('||');
     var metaLabel = metaKey==='ALL' ? 'All Data' : metaParts.join(' | ');
-    var tbl = '<div class="bio-result-title">'+metaLabel+'</div><div class="bio-tbl-wrap"><table>';
-    tbl += '<thead><tr><th style="text-align:left">Parameter</th>'+cols.map(function(c){return '<th>'+c+'</th>';}).join('')+'</tr></thead><tbody>';
+    var tbl = '<div class="bio-result-title">'+bioEsc(metaLabel)+'</div><div class="bio-tbl-wrap"><table>';
+    tbl += '<thead><tr><th style="text-align:left">Parameter</th>'+cols.map(function(c){return '<th>'+bioEsc(c)+'</th>';}).join('')+'</tr></thead><tbody>';
     rows2.forEach(function(row){
       if(row.sec){
-        tbl += '<tr><td class="sec-hd" colspan="'+(cols.length+1)+'">'+row.label+'</td></tr>';
+        tbl += '<tr><td class="sec-hd" colspan="'+(cols.length+1)+'">'+bioEsc(row.label)+'</td></tr>';
       } else if(!row.label&&row.vals.every(function(v){return v==='';})){
         tbl += '<tr><td colspan="'+(cols.length+1)+'" style="height:4px;padding:0"></td></tr>';
       } else {
         var cls = row.bold?'style="font-weight:700"':'';
-        tbl += '<tr><td class="row-hd" '+cls+'>'+row.label+'</td>'+row.vals.map(function(v){return '<td '+cls+'>'+v+'</td>';}).join('')+'</tr>';
+        tbl += '<tr><td class="row-hd" '+cls+'>'+bioEsc(row.label)+'</td>'+row.vals.map(function(v){return '<td '+cls+'>'+bioEsc(v)+'</td>';}).join('')+'</tr>';
       }
     });
     tbl += '</tbody></table></div>';
@@ -408,6 +435,19 @@ function bioCalculate(mod){
 }
 
 /* ── Export Excel ── */
+/* Excel sheet name: no : \ / ? * [ ], at most 31 characters, unique within the
+   workbook (a long project name cut at 31 characters, or two Phytoplankton
+   projects at the same Location/Zone/Year, used to collide and abort the export) */
+function bioSheetName(wb, name){
+  var base = String(name||'').replace(/[\\\/:*?\[\]]/g,'_').substring(0,31) || 'Sheet';
+  var n = base, i = 2;
+  while(wb.SheetNames.indexOf(n) >= 0){
+    var suf = '_'+i++;
+    n = base.substring(0, 31-suf.length) + suf;
+  }
+  return n;
+}
+
 function bioExport(mod){
   var calc = BIO[mod].calc;
   if(!calc||!Object.keys(calc).length){ bioErr(mod,'กรุณากด Calculate เพื่อคำนวณผลก่อนดำเนินการต่อ'); return; }
@@ -426,19 +466,34 @@ function bioExport(mod){
       var loc  = parts[2]||'';
       var zone = parts[3]||'';
       var yr   = parts[0]||'';
-      sheetName = (loc+'_'+zone+'_'+yr).substring(0,31);
+      sheetName = loc+'_'+zone+'_'+yr;
     } else {
-      sheetName = (metaKey==='ALL'?'Result':metaKey.replace(/\|\|/g,'_')).substring(0,31);
+      sheetName = metaKey==='ALL'?'Result':metaKey.replace(/\|\|/g,'_');
     }
-    XLSX.utils.book_append_sheet(wb, ws, sheetName);
+    XLSX.utils.book_append_sheet(wb, ws, bioSheetName(wb, sheetName));
   });
   var fname = bioFname(mod)+'_Results_'+new Date().toISOString().slice(0,10)+'.xlsx';
   XLSX.writeFile(wb, fname);
 }
 
+/* New data in a module: drop the previous file's results — otherwise they stayed
+   on screen and Export wrote them out as if they belonged to the new file.
+   closeWide: the data came from somewhere other than the lab report panel. */
+function bioResetResults(mod, closeWide) {
+  BIO[mod].calc = {};
+  BIO[mod].tax = {};
+  ['bio-results-','bio-taxsummary-','bio-byrep-'].forEach(function(id){
+    var el = document.getElementById(id+mod); if(el) el.innerHTML = '';
+  });
+  var calcBtn = document.getElementById('bio-sub-calc-'+mod);
+  if(calcBtn) bioSubTab(mod, 'calc', calcBtn);
+  if(closeWide){ var w = document.getElementById('bio-wide-'+mod); if(w) w.style.display = 'none'; }
+}
+
 function bioLoadDemo(mod) {
   var data = BIO_DEMO[mod];
   if(!data) return;
+  bioResetResults(mod, true);
   BIO[mod].raw = data;
   BIO[mod].filename = 'Demo_'+mod+'.xlsx';
   var fi = document.getElementById('bio-fi-'+mod);
@@ -580,7 +635,23 @@ function bioTaxSummary(mod) {
 
   if(!levels.length) { bioErr(mod,'กรุณาเลือก taxonomy columns ก่อน'); return; }
 
-  /* Build station mean density per taxon (fill 0 for missing in replicate) */
+  /* Build station mean density per taxon (fill 0 for missing in replicate).
+     Same rule as Calculate: sum over replicates / ALL replicates of that
+     station sample — dividing by only the replicates where the taxon occurs
+     made the dominant taxon here disagree with the Calculate table. A station
+     sample is Year+Project+Location+Zone+Station, so groups spanning several
+     years or zones don't pool different samples' replicates together. */
+  var colZone = (document.getElementById('bio-zone-'+mod)||{}).value||'';
+  function stKey(r){
+    return [colYear,colProj,colLoc,colZone,colSt].map(function(c){ return c ? String(r[c]||'').trim() : ''; }).join('||');
+  }
+  var repsBySt = {}; /* from all filtered rows, zero-density ones included */
+  rows.forEach(function(r){
+    var rep=String(r[colRep]||'').trim();
+    if(!rep || !String(r[colSt]||'').trim()) return;
+    var k=stKey(r);
+    (repsBySt[k]=repsBySt[k]||{})[rep]=1;
+  });
   function getStMean(grpRows) {
     var pivot = {};
     grpRows.forEach(function(r){
@@ -588,18 +659,15 @@ function bioTaxSummary(mod) {
           lv2=colLvl2?String(r[colLvl2]||'').trim():'?',
           den=parseFloat(r[colDen])||0;
       if(!st||!rep||den<0) return;
-      if(!pivot[st]) pivot[st]={};
-      if(!pivot[st][lv2]) pivot[st][lv2]={};
-      pivot[st][lv2][rep]=(pivot[st][lv2][rep]||0)+den;
+      var k=stKey(r);
+      if(!pivot[k]) pivot[k]={};
+      pivot[k][lv2]=(pivot[k][lv2]||0)+den;
     });
-    /* mean across reps per station per taxon */
     var stMean = {};
-    Object.keys(pivot).forEach(function(st){
-      stMean[st]={};
-      Object.keys(pivot[st]).forEach(function(lv2){
-        var reps=Object.values(pivot[st][lv2]);
-        stMean[st][lv2]=reps.reduce(function(a,v){return a+v;},0)/reps.length;
-      });
+    Object.keys(pivot).forEach(function(k){
+      var nReps = Object.keys(repsBySt[k]||{}).length || 1;
+      stMean[k]={};
+      Object.keys(pivot[k]).forEach(function(lv2){ stMean[k][lv2]=pivot[k][lv2]/nReps; });
     });
     return stMean;
   }
@@ -722,8 +790,8 @@ function bioShowTaxTable(mod, lbl, btn) {
   var tbl = BIO[mod].tax[lbl];
   if(!tbl){ document.getElementById('bio-tax-tbl-'+mod).innerHTML='<p style="color:var(--text3);font-size:12px">ไม่มีข้อมูล</p>'; return; }
 
-  var h = '<div class="bio-result-title">'+lbl+'</div><div class="bio-tbl-wrap"><table>';
-  h += '<thead><tr>'+tbl.cols.map(function(c){return '<th>'+c+'</th>';}).join('')+'</tr></thead><tbody>';
+  var h = '<div class="bio-result-title">'+bioEsc(lbl)+'</div><div class="bio-tbl-wrap"><table>';
+  h += '<thead><tr>'+tbl.cols.map(function(c){return '<th>'+bioEsc(c)+'</th>';}).join('')+'</tr></thead><tbody>';
   tbl.rows.sort(function(a,b){
     var ka=tbl.cols.map(function(c){return String(a[c]||'');}).join('|');
     var kb=tbl.cols.map(function(c){return String(b[c]||'');}).join('|');
@@ -732,7 +800,7 @@ function bioShowTaxTable(mod, lbl, btn) {
     h += '<tr>'+tbl.cols.map(function(c){
       var v=row[c]!=null?row[c]:'';
       var isNum = String(c).startsWith('n_');
-      return '<td'+(isNum?' style="font-weight:600;color:var(--navy)"':'')+'>'+v+'</td>';
+      return '<td'+(isNum?' style="font-weight:600;color:var(--navy)"':'')+'>'+bioEsc(v)+'</td>';
     }).join('')+'</tr>';
   });
   h += '</tbody></table></div>';
@@ -747,7 +815,7 @@ function bioExportTax(mod) {
     var tbl = tax[lbl];
     var data = [tbl.cols].concat(tbl.rows.map(function(row){ return tbl.cols.map(function(c){return row[c]!=null?row[c]:'';});}));
     var ws = XLSX.utils.aoa_to_sheet(data);
-    XLSX.utils.book_append_sheet(wb, ws, lbl.substring(0,31));
+    XLSX.utils.book_append_sheet(wb, ws, bioSheetName(wb, lbl));
   });
   XLSX.writeFile(wb, bioFname(mod)+'_TaxSummary_'+new Date().toISOString().slice(0,10)+'.xlsx');
 }
@@ -904,17 +972,23 @@ function initBioModule(mod) {
   h.push('<div style="font-size:15px;font-weight:800;color:var(--bio-c);margin-bottom:16px">'+cfg.title+'</div>');
 
   /* Upload + buttons row */
-  h.push('<div style="display:flex;align-items:stretch;gap:10px;margin-bottom:12px">');
-  h.push('  <div class="bio-upload" style="flex:1;min-height:64px;cursor:pointer" onclick="var f=document.getElementById(\'bio-file-'+mod+'\');f.value=\'\';f.click()">');
+  h.push('<div style="display:flex;flex-wrap:wrap;align-items:stretch;gap:10px;margin-bottom:12px">');
+  h.push('  <div class="bio-upload" style="flex:1 1 220px;min-height:64px;cursor:pointer" onclick="var f=document.getElementById(\'bio-file-'+mod+'\');f.value=\'\';f.click()">');
   h.push('    <input type="file" id="bio-file-'+mod+'" accept=".xlsx,.xls" onchange="bioLoadFile(\''+mod+'\',this)">');
   h.push('    <div class="bio-upload-lbl">Click to upload Excel (.xlsx)</div>');
   h.push('    <div class="bio-upload-sub">Long format — 1 row per specimen</div>');
+  h.push('  </div>');
+  h.push('  <div class="bio-upload" role="button" tabindex="0" style="flex:1 1 220px;min-height:64px;cursor:pointer" onclick="var f=document.getElementById(\'bio-wfile-'+mod+'\');f.value=\'\';f.click()" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();this.click()}">');
+  h.push('    <input type="file" id="bio-wfile-'+mod+'" accept=".xlsx,.xls" onclick="event.stopPropagation()" onchange="bioWideFile(\''+mod+'\',this)">');
+  h.push('    <div class="bio-upload-lbl">Import Lab Report (.xlsx)</div>');
+  h.push('    <div class="bio-upload-sub">Wide format — รายงานผลจากแล็บ แปลงให้อัตโนมัติ</div>');
   h.push('  </div>');
   h.push('  <div style="display:flex;flex-direction:column;gap:8px;justify-content:center;flex-shrink:0">');
   h.push('    <button class="bio-btn-outline" onclick="bioLoadDemo(\''+mod+'\')" style="white-space:nowrap">Load Demo</button>');
   h.push('    <button class="bio-btn-outline" onclick="bioDownloadTemplate(\''+mod+'\')" style="white-space:nowrap">Download Template</button>');
   h.push('  </div>');
   h.push('</div>');
+  h.push('<div id="bio-wide-'+mod+'" class="bio-wide" style="display:none"></div>');
   h.push('<div id="bio-fi-'+mod+'" style="display:none" class="bio-fi"></div>');
   h.push('<div id="bio-err-'+mod+'" style="display:none" class="bio-err"></div>');
 
@@ -1053,17 +1127,37 @@ function bioLoadSheet(mod, sheetName) {
   try {
     var wb = BIO[mod]._wb;
     var ws = wb.Sheets[sheetName];
+    /* A lab report in wide format → continue in the Import Lab Report panel */
+    if(bioWideLooksWide(ws)){
+      bioWideFromWorkbook(mod, wb, BIO[mod].filename, sheetName);
+      return;
+    }
     var rows = XLSX.utils.sheet_to_json(ws, {defval:''});
     if(!rows.length) { bioErr(mod,'ไม่พบข้อมูลภายในไฟล์ที่นำเข้า'); return; }
-    BIO[mod].raw = rows;
-    document.getElementById('bio-fi-'+mod).textContent = '✓ '+BIO[mod].filename+' ['+sheetName+'] — '+rows.length.toLocaleString()+' rows';
-    document.getElementById('bio-fi-'+mod).style.display = 'block';
-    document.getElementById('bio-err-'+mod).style.display = 'none';
-    bioPopulateCols(mod, Object.keys(rows[0]));
-    document.getElementById('bio-mapping-'+mod).style.display = 'block';
-    bioAutoDetect(mod, Object.keys(rows[0]));
-    bioUpdateFilters(mod);
+    bioLoadRows(mod, rows, BIO[mod].filename+' ['+sheetName+']', null);
   } catch(ex) { bioErr(mod,'ไม่สามารถอ่านไฟล์ได้: '+ex.message); }
+}
+
+/* Load long-format rows into a module: column selects, auto-detect, filters.
+   `map` ({selectKey: column}) overrides auto-detect — used by the lab report
+   import, whose output columns are known exactly. */
+function bioLoadRows(mod, rows, label, map, filename) {
+  bioResetResults(mod, !map);
+  BIO[mod].raw = rows;
+  if(filename) BIO[mod].filename = filename;
+  var fi = document.getElementById('bio-fi-'+mod);
+  fi.textContent = '✓ '+label+' — '+rows.length.toLocaleString()+' rows';
+  fi.style.display = 'block';
+  document.getElementById('bio-err-'+mod).style.display = 'none';
+  var cols = Object.keys(rows[0]);
+  bioPopulateCols(mod, cols);
+  document.getElementById('bio-mapping-'+mod).style.display = 'block';
+  bioAutoDetect(mod, cols);
+  if(map) Object.keys(map).forEach(function(k){
+    var sel = document.getElementById('bio-'+k+'-'+mod);
+    if(sel) sel.value = map[k] || '';
+  });
+  bioUpdateFilters(mod);
 }
 
 function bioErr(mod, msg) {
@@ -1115,11 +1209,17 @@ var BIO_EXACT_LVL = {
 };
 
 function bioAutoDetect(mod, cols) {
+  /* Keywords are tried in priority order (keyword first, then column), so a
+     file whose Family column comes before Taxon/Specie — the lab's Query
+     sheets do — still maps the taxon level to Taxon/Specie, not Family.
+     Family/Order only count as the taxon levels for Fish Larvae. */
+  var lvl = mod==='larvae' ? { lvl1:['order'], lvl2:['family'] }
+          : mod==='phyto'  ? { lvl1:['division','phylum','ไฟลัม'], lvl2:['species','specie','taxon','แท็กซอน'] }
+          :                  { lvl1:['phylum','division','ไฟลัม'], lvl2:['taxon','species','specie','แท็กซอน'] };
   var map = {
     year:['year','ปี'], proj:['project','proj'], loc:['location','loc','บริเวณ'],
     zone:['zone','โซน'], st:['station','สถานี'], rep:['replic','ซ้ำ'],
-    den:['density','ความหนาแน่น'], lvl1:['phylum','division','order','ไฟลัม'],
-    lvl2:['taxon','species','specie','family','แท็กซอน'],
+    den:['density','ความหนาแน่น'], lvl1:lvl.lvl1, lvl2:lvl.lvl2,
     class:['class','คลาส'], order:['order','ออเดอร์'], family:['family','แฟมิลี'], genus:['genus','จีนัส']
   };
   var exactLvl = BIO_EXACT_LVL[mod] || {};
@@ -1128,7 +1228,10 @@ function bioAutoDetect(mod, cols) {
     if(!sel) return;
     var exactTarget = exactLvl[k] || BIO_EXACT_MAP[k];
     var found = exactTarget && cols.find(function(c){ return c.trim().toLowerCase() === exactTarget.toLowerCase(); });
-    if(!found) found = cols.find(function(c){ return map[k].some(function(kw){ return c.toLowerCase().includes(kw); }); });
+    for(var i=0; !found && i<map[k].length; i++){
+      var kw = map[k][i];
+      found = cols.find(function(c){ return c.toLowerCase().includes(kw); });
+    }
     if(found) sel.value = found;
   });
 }
@@ -1305,6 +1408,7 @@ function bioCalculateByRep(mod) {
   var colProj = (document.getElementById('bio-proj-'+mod)||{}).value||'';
   var colLoc  = (document.getElementById('bio-loc-'+mod)||{}).value||'';
   var colZone = (document.getElementById('bio-zone-'+mod)||{}).value||'';
+  var colCls  = (document.getElementById('bio-class-'+mod)||{}).value||'';
 
   if(!colSt||!colRep||!colDen||!colLvl1||!colLvl2){
     bioErr(mod,'กรุณาระบุคอลัมน์ Station, Replicate, Density, '+BIO_CFG[mod].lvl1+' และ '+BIO_CFG[mod].lvl2+' ให้ครบถ้วนก่อนดำเนินการคำนวณ');
@@ -1340,7 +1444,16 @@ function bioCalculateByRep(mod) {
   Object.keys(byMeta).forEach(function(metaKey){
     var grpRows = byMeta[metaKey].rows;
     var stations = [...new Set(grpRows.map(function(r){return String(r[colSt]||'').trim();}))].sort();
-    var reps = [...new Set(grpRows.map(function(r){return String(r[colRep]||'').trim();}))].sort();
+    /* numeric order (1, 2, 10), same comparator as the replicate filter */
+    var reps = [...new Set(grpRows.map(function(r){return String(r[colRep]||'').trim();}))].sort(function(a,b){return parseFloat(a)-parseFloat(b)||a.localeCompare(b);});
+
+    /* {lv1|||lv2: class} — first non-empty class seen, as in Calculate */
+    var spCls = {};
+    if(mod==='phyto' && colCls) grpRows.forEach(function(r){
+      var k=String(r[colLvl1]||'').trim()+'|||'+String(r[colLvl2]||'').trim();
+      var c=String(r[colCls]||'').trim();
+      if(!spCls[k] && c) spCls[k]=c;
+    });
 
     reps.forEach(function(rep){
       var repRows = grpRows.filter(function(r){return String(r[colRep]||'').trim()===rep;});
@@ -1383,22 +1496,47 @@ function bioCalculateByRep(mod) {
 
       /* Density */
       rows2.push({label:'Density', vals:cols.map(function(){return '';}), sec:true});
-      /* Totals are the sum of the per-group (ROUNDUP) rows shown above, per
-         station and for the Location column — same rule as the Calculate tab */
+      /* A replicate's values follow the lab workbooks' per-sample columns
+         (e.g. Phyto (Cal) "Surface1" =SUM(B7:B9), Benthos (Cal St.) =SUM(B6:B7)):
+         plain sums, NOT rounded. Rounding only applies where Excel averages —
+         the Location column here is a mean across stations, so it is
+         ROUNDUP(mean), per Class for Phytoplankton with a Class column (as
+         Excel rounds each Class mean), per group otherwise. */
+      function clean15(x){ return Number(x.toPrecision(15)); } /* drop float noise like 20.799999999 */
+      var byClass = (mod==='phyto' && !!colCls);
+      var stClsSum = {}; /* {station: {lvl1: {class: sum}}} — unrounded */
+      if(byClass) stations.forEach(function(st){
+        stClsSum[st] = {};
+        Object.keys(pivot[st]||{}).forEach(function(k){
+          var lv1 = k.split('|||')[0], c = spCls[k]||'';
+          var m = stClsSum[st][lv1] = stClsSum[st][lv1]||{};
+          m[c] = (m[c]||0) + pivot[st][k];
+        });
+      });
       var totalDenSt = stations.map(function(){return 0;});
       var totalDenAll = 0;
       allLvl1s.forEach(function(lv1){
         var vals = stations.map(function(st){
           if(!pivot[st]) return 0;
           var sum = Object.keys(pivot[st]).filter(function(k){return k.startsWith(lv1+'|||');}).reduce(function(a,k){return a+pivot[st][k];},0);
-          return bioRoundup0(sum);
+          return clean15(sum);
         });
-        var total = bioRoundup0(vals.reduce(function(a,v){return a+v;},0)/stations.length);
+        var total;
+        if(byClass){
+          var clsKeys = {};
+          stations.forEach(function(st){ Object.keys((stClsSum[st]||{})[lv1]||{}).forEach(function(c){ clsKeys[c]=1; }); });
+          total = Object.keys(clsKeys).reduce(function(a,c){
+            return a + bioRoundup0(stations.reduce(function(b,st){ return b+(((stClsSum[st]||{})[lv1]||{})[c]||0); },0)/stations.length);
+          },0);
+        } else {
+          total = bioRoundup0(vals.reduce(function(a,v){return a+v;},0)/stations.length);
+        }
         vals.forEach(function(v,i){ totalDenSt[i] += v; });
         totalDenAll += total;
         var prefix = mod==='phyto'?'Division: ':mod==='larvae'?'Order: ':'Phylum: ';
         rows2.push({label:'  '+prefix+lv1, vals:vals.concat([total]), sec:false});
       });
+      totalDenSt = totalDenSt.map(clean15);
       rows2.push({label:'  Total density', vals:totalDenSt.concat([totalDenAll]), sec:false, bold:true});
       rows2.push({label:'', vals:cols.map(function(){return '';}), sec:false});
 
@@ -1411,7 +1549,7 @@ function bioCalculateByRep(mod) {
         var grps = stRepRows.map(function(r){return String(r[colLvl1]||'').trim();});
         stIdx[st] = bioIndicesFor(mod, dens, grps);
       });
-      function meanRepArr(arr){ var v=arr.filter(function(x){return !isNaN(x);}); return v.length?v.reduce(function(a,b){return a+b;})/v.length:NaN; }
+      var meanRepArr = bioMeanDefined;
       [["  Diversity (H')",'H'],['  Richness','R'],['  Evenness','E']].forEach(function(pair){
         var lbl=pair[0], key=pair[1];
         var vals = stations.map(function(st){return bioF2(stIdx[st][key]);});
@@ -1433,17 +1571,17 @@ function bioCalculateByRep(mod) {
       /* Render table */
       var metaParts = metaKey.split('||');
       var metaLabel = metaKey==='ALL' ? 'All Data' : metaParts.join(' | ');
-      var tbl = '<div class="bio-result-title">'+metaLabel+' | Rep '+rep+'</div>';
+      var tbl = '<div class="bio-result-title">'+bioEsc(metaLabel+' | Rep '+rep)+'</div>';
       tbl += '<div class="bio-tbl-wrap"><table>';
-      tbl += '<thead><tr><th style="text-align:left">Parameter</th>'+cols.map(function(c){return '<th>'+c+'</th>';}).join('')+'</tr></thead><tbody>';
+      tbl += '<thead><tr><th style="text-align:left">Parameter</th>'+cols.map(function(c){return '<th>'+bioEsc(c)+'</th>';}).join('')+'</tr></thead><tbody>';
       rows2.forEach(function(row){
         if(row.sec){
-          tbl += '<tr><td class="sec-hd" colspan="'+(cols.length+1)+'">'+row.label+'</td></tr>';
+          tbl += '<tr><td class="sec-hd" colspan="'+(cols.length+1)+'">'+bioEsc(row.label)+'</td></tr>';
         } else if(!row.label&&row.vals.every(function(v){return v==='';})){
           tbl += '<tr><td colspan="'+(cols.length+1)+'" style="height:4px;padding:0"></td></tr>';
         } else {
           var cls = row.bold?'style="font-weight:700"':'';
-          tbl += '<tr><td class="row-hd" '+cls+'>'+row.label+'</td>'+row.vals.map(function(v){return '<td '+cls+'>'+v+'</td>';}).join('')+'</tr>';
+          tbl += '<tr><td class="row-hd" '+cls+'>'+bioEsc(row.label)+'</td>'+row.vals.map(function(v){return '<td '+cls+'>'+bioEsc(v)+'</td>';}).join('')+'</tr>';
         }
       });
       tbl += '</tbody></table></div>';
@@ -1466,6 +1604,8 @@ window.bioShowTaxTable = bioShowTaxTable;
 window.switchBioTab = switchBioTab;
 window.bioRepChange = bioRepChange;
 window.bioLoadFile = bioLoadFile;
+window.bioWideFile = bioWideFile;
+bioWideInit({ loadRows: bioLoadRows });
 function bioExportByRep(mod) {
   var div = document.getElementById('bio-byrep-'+mod);
   if(!div||!div.innerHTML){ bioErr(mod,'กรุณากด Calculate by Rep เพื่อคำนวณผลก่อนดำเนินการต่อ'); return; }
@@ -1479,7 +1619,8 @@ function bioExportByRep(mod) {
   tables.forEach(function(tbl, i){
     var title = titles[i] ? titles[i].textContent.trim() : ('Rep_'+i);
     /* title format: "2026 | EIA | Loc-A | Rep 1" — strip last " | Rep X" */
-    var sheetName = title.replace(/\s*\|\s*Rep\s*\S+\s*$/,'').replace(/\s*\|\s*/g,'_').replace(/[\/:*?\[\]]/g,'_').substring(0,31) || 'Result';
+    /* grouping key only — bioSheetName cleans it when the sheet is added */
+    var sheetName = title.replace(/\s*\|\s*Rep\s*\S+\s*$/,'').replace(/\s*\|\s*/g,'_') || 'Result';
     if(!sheetMap[sheetName]) sheetMap[sheetName] = [];
 
     /* Add title row */
@@ -1498,13 +1639,7 @@ function bioExportByRep(mod) {
 
   Object.keys(sheetMap).forEach(function(sheetName){
     var ws = window.XLSX.utils.aoa_to_sheet(sheetMap[sheetName]);
-    var origName = sheetName;
-    var suffix = 1;
-    while(wb.SheetNames && wb.SheetNames.indexOf(sheetName)>=0){
-      sheetName = (origName.substring(0,28)+'_'+suffix).substring(0,31);
-      suffix++;
-    }
-    window.XLSX.utils.book_append_sheet(wb, ws, sheetName);
+    window.XLSX.utils.book_append_sheet(wb, ws, bioSheetName(wb, sheetName));
   });
 
   var fname = bioFname(mod)+'_ByRep_'+new Date().toISOString().slice(0,10)+'.xlsx';
