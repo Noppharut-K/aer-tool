@@ -94,8 +94,8 @@ function bioCalcIndices(densities, groups){
   return {N:N,S:S,H:H,R:R,E:E};
 }
 
-function bioCalcIndicesPhyto(densities){
-  /* Phytoplankton, Fish Larvae, Larvae: N = sum of densities directly */
+function bioCalcIndicesDirect(densities){
+  /* Phytoplankton, Zooplankton, Fish Larvae, Larvae: N = sum of densities directly */
   var dens = densities.map(function(d){return parseFloat(d)||0;}).filter(function(d){return d>0;});
   var S = dens.length;
   if(S===0) return {N:NaN,S:0,H:NaN,R:NaN,E:NaN};
@@ -107,11 +107,11 @@ function bioCalcIndicesPhyto(densities){
   return {N:N,S:S,H:H,R:R,E:E};
 }
 
-/* N for the diversity indices: Phytoplankton, Fish Larvae and Larvae follow the
-   lab workbooks (Diver sheets), where N is the plain sum of densities;
-   Benthos and Zooplankton round each Phylum up before summing. */
+/* N for the diversity indices: Phytoplankton, Zooplankton, Fish Larvae and
+   Larvae follow the lab workbooks (Diver sheets), where N is the plain sum of
+   densities; Benthos rounds each Phylum up before summing. */
 function bioIndicesFor(mod, dens, grps){
-  return (mod==='phyto'||mod==='larvae'||mod==='larvae2') ? bioCalcIndicesPhyto(dens) : bioCalcIndices(dens, grps);
+  return (mod==='benthos') ? bioCalcIndices(dens, grps) : bioCalcIndicesDirect(dens);
 }
 
 function bioF2(x){ return (x==null||isNaN(x)) ? '' : parseFloat(x).toFixed(2); }
@@ -475,7 +475,7 @@ function initBioMethod() {
     /* ── Section 2: N calculation ── */
     '<div class="bio-section">การคำนวณ N (Total Density)</div>',
     '<div style="background:var(--white);border-radius:var(--rm);padding:14px 16px;margin-bottom:14px">',
-    '<p style="font-size:12.5px;font-weight:700;color:var(--navy);margin-bottom:8px">Benthos &amp; Zooplankton (Phylum-based)</p>',
+    '<p style="font-size:12.5px;font-weight:700;color:var(--navy);margin-bottom:8px">Benthos (Phylum-based)</p>',
     '<p style="font-size:12.5px;color:var(--text2);line-height:1.8">',
     '1. รวม Density ของแต่ละ Phylum: <code>Phylum<sub>sum</sub> = &Sigma; Density</code><br>',
     '2. ROUNDUP ค่าผลรวมของแต่ละ Phylum ทีละตัว<br>',
@@ -483,7 +483,7 @@ function initBioMethod() {
     '</p>',
     '</div>',
     '<div style="background:var(--white);border-radius:var(--rm);padding:14px 16px;margin-bottom:14px">',
-    '<p style="font-size:12.5px;font-weight:700;color:var(--navy);margin-bottom:8px">Phytoplankton, Fish Larvae &amp; Larvae (Direct sum)</p>',
+    '<p style="font-size:12.5px;font-weight:700;color:var(--navy);margin-bottom:8px">Phytoplankton, Zooplankton, Fish Larvae &amp; Larvae (Direct sum)</p>',
     '<p style="font-size:12.5px;color:var(--text2);line-height:1.8">',
     'N = &Sigma; Density ทุก Taxa ที่ Density &gt; 0 (ไม่มีการ ROUNDUP ก่อนรวม)',
     '</p>',
