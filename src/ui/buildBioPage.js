@@ -216,14 +216,39 @@ function bioCalculate(mod){
     });
 
     /* ── Density per station per lvl1 (ROUNDUP of sum) ── */
+    /* Phytoplankton with a Class column follows the lab workbook (Phyto (Cal)):
+       each Class is rounded up on its own, and the Division / Total figures are
+       sums of those rounded Class values — rounding once per Division instead
+       leaves the totals 1–2 units short. */
+    var byClass = (mod==='phyto' && !!colCls);
+    var spCls = {}; /* {lv1|||lv2: class} — first non-empty class seen */
+    if(byClass) grpRows.forEach(function(r){
+      var k=String(r[colLvl1]||'').trim()+'|||'+String(r[colLvl2]||'').trim();
+      var c=String(r[colCls]||'').trim();
+      if(!spCls[k] && c) spCls[k]=c;
+    });
+    var stClsDens = {}; /* {station: {lvl1: {class: roundup(sum of mean)}}} */
     var stDens = {}; /* {station: {lvl1: roundup(sum of mean)}} */
     stations.forEach(function(st){
-      stDens[st]={};
+      stDens[st]={}; stClsDens[st]={};
       lvl1s.forEach(function(lv1){
-        var sum = stMean[st].filter(function(x){return x.lv1===lv1;}).reduce(function(a,x){return a+x.mean;},0);
-        stDens[st][lv1]=bioRoundup0(sum);
+        var items = stMean[st].filter(function(x){return x.lv1===lv1;});
+        if(byClass){
+          var cs = {};
+          items.forEach(function(x){ var c=spCls[x.lv1+'|||'+x.lv2]||''; cs[c]=(cs[c]||0)+x.mean; });
+          var cr = {};
+          Object.keys(cs).forEach(function(c){ cr[c]=bioRoundup0(cs[c]); });
+          stClsDens[st][lv1]=cr;
+          stDens[st][lv1]=Object.values(cr).reduce(function(a,v){return a+v;},0);
+        } else {
+          stDens[st][lv1]=bioRoundup0(items.reduce(function(a,x){return a+x.mean;},0));
+        }
       });
     });
+    /* Location value of one Class = ROUNDUP(mean of the stations' rounded Class values) */
+    function locClsDen(lv1, cls){
+      return bioRoundup0(stations.reduce(function(a,st){return a+((stClsDens[st][lv1]||{})[cls]||0);},0)/stations.length);
+    }
 
     /* ── Indices per station (avg across replicates) ── */
     /* First compute per replicate, then average */
@@ -309,7 +334,14 @@ function bioCalculate(mod){
     var locDenSum = 0; /* Location Total = sum of the per-group Location values shown above it */
     lvl1s.forEach(function(lv1){
       var vals = stations.map(function(st){return stDens[st][lv1]||0;});
-      var locDen = bioRoundup0(vals.reduce(function(a,v){return a+v;},0)/stations.length);
+      var locDen;
+      if(byClass){
+        var clsKeys = {};
+        stations.forEach(function(st){ Object.keys(stClsDens[st][lv1]||{}).forEach(function(c){clsKeys[c]=1;}); });
+        locDen = Object.keys(clsKeys).reduce(function(a,c){return a+locClsDen(lv1,c);},0);
+      } else {
+        locDen = bioRoundup0(vals.reduce(function(a,v){return a+v;},0)/stations.length);
+      }
       locDenSum += locDen;
       var divLabel = '  '+(mod==='phyto'?'Division: ':mod==='larvae'?'Order: ':'Phylum: ')+lv1;
       rows2.push({label:divLabel, vals:vals.concat([locDen]), sec:false});
@@ -318,16 +350,8 @@ function bioCalculate(mod){
       if(mod==='phyto' && colCls){
         var classes = allClassesByLvl1[lv1] || [];
         classes.forEach(function(cls){
-          var clsDens = stations.map(function(st){
-            var sum = stMean[st].filter(function(x){
-              return x.lv1===lv1 && String(grpRows.find(function(r){
-                return String(r[colLvl2]||'').trim()===x.lv2 && String(r[colLvl1]||'').trim()===lv1;
-              })||{})[colCls]===cls ||
-              grpRows.some(function(r){return String(r[colLvl2]||'').trim()===x.lv2 && String(r[colCls]||'').trim()===cls && String(r[colLvl1]||'').trim()===lv1;});
-            }).reduce(function(a,x){return a+x.mean;},0);
-            return bioRoundup0(sum);
-          });
-          var clsLocDen = bioRoundup0(clsDens.reduce(function(a,v){return a+v;},0)/stations.length);
+          var clsDens = stations.map(function(st){ return (stClsDens[st][lv1]||{})[cls]||0; });
+          var clsLocDen = locClsDen(lv1, cls);
           rows2.push({label:'    Class: '+cls, vals:clsDens.concat([clsLocDen]), sec:false, indent:true});
         });
         rows2.push({label:'', vals:cols.map(function(){return '';}), sec:false});
