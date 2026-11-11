@@ -70,6 +70,23 @@ document.querySelectorAll('.tc[data-tab]').forEach(card => {
   card.addEventListener('click', () => openPage(card.dataset.tab));
 });
 
+/* Aqueon is a separate page (aqueon/), so opening it in this tab discards
+   whatever is loaded in AER, which keeps everything in memory only. Ask first
+   when there is something to lose; a new tab (Cmd/Ctrl-click) is unaffected. */
+function aerHasLoadedData() {
+  const sea = getState('sea'), sed = getState('sed');
+  const bio = Object.values(window.BIO || {}).some(m => m && m.raw && m.raw.length);
+  return !!((sea && sea.raw.length) || (sed && sed.raw.length) || bio);
+}
+document.getElementById('tc-aqueon')?.addEventListener('click', e => {
+  if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
+  if (!aerHasLoadedData()) return;
+  const msg = LANG === 'en'
+    ? 'Opening Aqueon in this tab clears the data loaded in AER. Continue?'
+    : 'การเปิด Aqueon ในแท็บนี้จะล้างข้อมูลที่โหลดไว้ใน AER ต้องการดำเนินการต่อหรือไม่';
+  if (!confirm(msg)) e.preventDefault();
+});
+
 document.addEventListener('click', e => {
   if (e.target.closest('[data-back]')) goHome();
   if (e.target.closest('.theme-toggle')) toggleTheme();
