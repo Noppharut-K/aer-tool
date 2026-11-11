@@ -95,7 +95,7 @@ function bioCalcIndices(densities, groups){
 }
 
 function bioCalcIndicesPhyto(densities){
-  /* Phytoplankton: N = sum of densities directly */
+  /* Phytoplankton, Fish Larvae, Larvae: N = sum of densities directly */
   var dens = densities.map(function(d){return parseFloat(d)||0;}).filter(function(d){return d>0;});
   var S = dens.length;
   if(S===0) return {N:NaN,S:0,H:NaN,R:NaN,E:NaN};
@@ -105,6 +105,13 @@ function bioCalcIndicesPhyto(densities){
   var R = S>1 ? (S-1)/Math.log(N) : NaN;
   var E = S>1 ? H/Math.log(S) : NaN;
   return {N:N,S:S,H:H,R:R,E:E};
+}
+
+/* N for the diversity indices: Phytoplankton, Fish Larvae and Larvae follow the
+   lab workbooks (Diver sheets), where N is the plain sum of densities;
+   Benthos and Zooplankton round each Phylum up before summing. */
+function bioIndicesFor(mod, dens, grps){
+  return (mod==='phyto'||mod==='larvae'||mod==='larvae2') ? bioCalcIndicesPhyto(dens) : bioCalcIndices(dens, grps);
 }
 
 function bioF2(x){ return (x==null||isNaN(x)) ? '' : parseFloat(x).toFixed(2); }
@@ -261,7 +268,7 @@ function bioCalculate(mod){
         var repRows = grpRows.filter(function(r){return String(r[colSt]||'').trim()===st&&String(r[colRep]||'').trim()===rep;});
         var dens = repRows.map(function(r){return parseFloat(r[colDen])||0;});
         var grps = colLvl1 ? repRows.map(function(r){return String(r[colLvl1]||'').trim();}) : null;
-        var idx = (mod==='phyto') ? bioCalcIndicesPhyto(dens) : bioCalcIndices(dens, grps);
+        var idx = bioIndicesFor(mod, dens, grps);
         repIndices[st].push(idx);
       });
     });
@@ -468,7 +475,7 @@ function initBioMethod() {
     /* ── Section 2: N calculation ── */
     '<div class="bio-section">การคำนวณ N (Total Density)</div>',
     '<div style="background:var(--white);border-radius:var(--rm);padding:14px 16px;margin-bottom:14px">',
-    '<p style="font-size:12.5px;font-weight:700;color:var(--navy);margin-bottom:8px">Benthos, Zooplankton &amp; Larvae (Phylum-based)</p>',
+    '<p style="font-size:12.5px;font-weight:700;color:var(--navy);margin-bottom:8px">Benthos &amp; Zooplankton (Phylum-based)</p>',
     '<p style="font-size:12.5px;color:var(--text2);line-height:1.8">',
     '1. รวม Density ของแต่ละ Phylum: <code>Phylum<sub>sum</sub> = &Sigma; Density</code><br>',
     '2. ROUNDUP ค่าผลรวมของแต่ละ Phylum ทีละตัว<br>',
@@ -476,16 +483,9 @@ function initBioMethod() {
     '</p>',
     '</div>',
     '<div style="background:var(--white);border-radius:var(--rm);padding:14px 16px;margin-bottom:14px">',
-    '<p style="font-size:12.5px;font-weight:700;color:var(--navy);margin-bottom:8px">Phytoplankton (Direct sum)</p>',
+    '<p style="font-size:12.5px;font-weight:700;color:var(--navy);margin-bottom:8px">Phytoplankton, Fish Larvae &amp; Larvae (Direct sum)</p>',
     '<p style="font-size:12.5px;color:var(--text2);line-height:1.8">',
-    'N = &Sigma; Density ทุก Species ที่ Density &gt; 0 (ไม่มีการ ROUNDUP ก่อนรวม)',
-    '</p>',
-    '</div>',
-    '<div style="background:var(--white);border-radius:var(--rm);padding:14px 16px;margin-bottom:14px">',
-    '<p style="font-size:12.5px;font-weight:700;color:var(--navy);margin-bottom:8px">Fish Larvae (Order-based)</p>',
-    '<p style="font-size:12.5px;color:var(--text2);line-height:1.8">',
-    '1. รวม Density ของแต่ละ Order: <code>Order<sub>sum</sub> = &Sigma; Density</code><br>',
-    '2. N = &Sigma; ROUNDUP(Order<sub>sum</sub>)',
+    'N = &Sigma; Density ทุก Taxa ที่ Density &gt; 0 (ไม่มีการ ROUNDUP ก่อนรวม)',
     '</p>',
     '</div>',
 
@@ -885,8 +885,8 @@ var BIO_DEMO=(function(){
     });
   });
 
-  /* Larvae2 ("Larvae") reuses Benthos's demo data — same taxa, same
-     calculation method (Phylum-based), just a different tab/name */
+  /* Larvae2 ("Larvae") reuses Benthos's demo data — same Phylum-based
+     taxa, though its N for the indices is a direct sum (see bioIndicesFor) */
   return {benthos:benthos, phyto:phyto, zoo:zoo, larvae:larvae, larvae2:benthos};
 })();
 
@@ -1409,7 +1409,7 @@ function bioCalculateByRep(mod) {
         var stRepRows = repRows.filter(function(r){return String(r[colSt]||'').trim()===st;});
         var dens = stRepRows.map(function(r){return parseFloat(r[colDen])||0;});
         var grps = stRepRows.map(function(r){return String(r[colLvl1]||'').trim();});
-        stIdx[st] = (mod==='phyto') ? bioCalcIndicesPhyto(dens) : bioCalcIndices(dens, grps);
+        stIdx[st] = bioIndicesFor(mod, dens, grps);
       });
       function meanRepArr(arr){ var v=arr.filter(function(x){return !isNaN(x);}); return v.length?v.reduce(function(a,b){return a+b;})/v.length:NaN; }
       [["  Diversity (H')",'H'],['  Richness','R'],['  Evenness','E']].forEach(function(pair){
