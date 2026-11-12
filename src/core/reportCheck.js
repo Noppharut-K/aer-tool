@@ -45,7 +45,7 @@ export function tokenize(text) {
 const SPELL = [
   ['อนุญาติ', 'อนุญาต'], ['ผลลัพท์', 'ผลลัพธ์'], ['(?<!ปรา)กฏ', 'กฎ'], ['ปรากฎ', 'ปรากฏ'],
   ['อุณภูมิ', 'อุณหภูมิ'], ['ทะเลสาป', 'ทะเลสาบ'], ['สังเกตุ', 'สังเกต'], ['เกณท์', 'เกณฑ์'],
-  ['เกณฑ', 'เกณฑ์', '(?!์)'], ['มาตรฐาณ', 'มาตรฐาน'], ['ฟอสเฟส', 'ฟอสเฟต'],
+  ['เกณฑ', 'เกณฑ์', '(?!\u0E4C)'], ['มาตรฐาณ', 'มาตรฐาน'], ['ฟอสเฟส', 'ฟอสเฟต'],
   ['แพลงตอน', 'แพลงก์ตอน'], ['แพลงค์ตอน', 'แพลงก์ตอน'], ['แพงก์ตอน', 'แพลงก์ตอน'],
   ['ประสิทธิ์ภาพ', 'ประสิทธิภาพ'], ['อัตตรา', 'อัตรา'], ['ปฎิบัติ', 'ปฏิบัติ'],
   ['ปฏิกริยา', 'ปฏิกิริยา'], ['ปฎิกิริยา', 'ปฏิกิริยา'],
@@ -108,7 +108,8 @@ function capNum(raw) {
 
 /* ── main ───────────────────────────────────────────────────────────────── */
 
-export function runChecks(doc) {
+export function runChecks(doc, opts = {}) {
+  const scope = opts.scope === 'doc' ? 'doc' : 'para';
   const issues = [];
   const add = makeAdder(issues);
   const paras = doc.paras;
@@ -136,21 +137,21 @@ export function runChecks(doc) {
       add({ cat: 'char', sev: 'err', para: pi, ranges: [[m.index, m.index + 2]], found: 'เเ', suggest: 'แ',
         msg: 'ee', key: 'char:ee' });
     }
-    for (const m of t.matchAll(/ํา/g)) {
-      add({ cat: 'char', sev: 'err', para: pi, ranges: [[m.index, m.index + 2]], found: 'ํา', suggest: 'ำ',
+    for (const m of t.matchAll(/\u0E4Dา/g)) {
+      add({ cat: 'char', sev: 'err', para: pi, ranges: [[m.index, m.index + 2]], found: '\u0E4Dา', suggest: 'ำ',
         msg: 'am', key: 'char:am' });
     }
-    for (const m of t.matchAll(/([ัิ-ฺ็-๎])\1+/g)) {
+    for (const m of t.matchAll(/([\u0E31\u0E34-\u0E3A\u0E47-\u0E4E])\1+/g)) {
       add({ cat: 'char', sev: 'err', para: pi, ranges: [[m.index, m.index + m[0].length]], found: m[0], suggest: m[1],
         msg: 'mark2', key: 'char:mark2' });
     }
     if (!isPdf) {
-      for (const m of t.matchAll(/[่-๋][ัิ-ื]/g)) {
+      for (const m of t.matchAll(/[\u0E48-\u0E4B][\u0E31\u0E34-\u0E37]/g)) {
         add({ cat: 'char', sev: 'warn', para: pi, ranges: [[m.index, m.index + 2]], found: m[0], suggest: m[0][1] + m[0][0],
           msg: 'order', key: 'char:order' });
       }
     }
-    const zw = [...t.matchAll(/[​-‍⁠﻿]/g)].map(m => [m.index, m.index + 1]);
+    const zw = [...t.matchAll(/[\u200B-\u200D\u2060\uFEFF]/g)].map(m => [m.index, m.index + 1]);
     if (zw.length) add({ cat: 'char', sev: 'info', para: pi, ranges: zw, found: '', suggest: '', msg: 'zw', key: 'char:zw', count: zw.length });
     for (const m of t.matchAll(/(?<=[0-9๐-๙]\s?)(?:[º˚]|o)\s?C(?![A-Za-z])/g)) {
       add({ cat: 'char', sev: 'warn', para: pi, ranges: [[m.index, m.index + m[0].length]], found: m[0], suggest: '°C',
@@ -245,8 +246,12 @@ export function runChecks(doc) {
     }
   });
 
-  /* ── Whole paragraphs that appear twice ── */
-  {
+  /* ── Repeated passages ──
+     Reports repeat set sentences on purpose (the same wording for every
+     station), so by default a repeat only counts inside one paragraph:
+       scope 'para' — 8+ words repeated within the same paragraph
+       scope 'doc'  — whole paragraphs, or 12+ words, repeated anywhere   */
+  if (scope === 'doc') {
     const seen = new Map();
     paras.forEach((p, pi) => {
       if (p.hf || p.toc || p.inTable) return;
@@ -259,14 +264,14 @@ export function runChecks(doc) {
       } else seen.set(k, pi);
     });
   }
-
-  /* ── Long passages (12+ words) repeated elsewhere — usually copy-paste ── */
   {
-    const N = 12;
-    const first = new Map(); // n-gram -> [para, tokenIndex] of its first occurrence
-    const cover = new Map(); // para -> Map(tokenIndex -> earlier para)
+    const N = scope === 'doc' ? 12 : 8;
+    const MIN_CHARS = scope === 'doc' ? 40 : 24;
+    let first = new Map(); // n-gram -> [para, tokenIndex] of its first occurrence
+    const cover = new Map(); // para -> Map(tokenIndex -> [earlier para, earlier tokenIndex])
     paras.forEach((p, pi) => {
       if (p.hf || p.toc || p.inTable || dupParaSkip.has(pi)) return;
+      if (scope !== 'doc') first = new Map();
       const ws = toks[pi].map(x => lc(x.w));
       for (let k = 0; k + N <= ws.length; k++) {
         const g = ws.slice(k, k + N).join('\u0001');
@@ -275,7 +280,7 @@ export function runChecks(doc) {
         if (f[0] === pi && k - f[1] < N) continue; // overlapping run inside one paragraph
         if (!cover.has(pi)) cover.set(pi, new Map());
         const c = cover.get(pi);
-        for (let j = k; j < k + N; j++) if (!c.has(j)) c.set(j, f[0]);
+        for (let j = k; j < k + N; j++) if (!c.has(j)) c.set(j, [f[0], f[1] + (j - k)]);
       }
     });
     for (const [pi, c] of cover) {
@@ -285,9 +290,16 @@ export function runChecks(doc) {
       for (let i = 1; i <= idx.length; i++) {
         if (i < idx.length && idx[i] === idx[i - 1] + 1) continue;
         const a = tk[idx[s]], b = tk[idx[i - 1]];
-        if (b.e - a.s >= 40) {
-          add({ cat: 'dupphrase', sev: 'info', para: pi, ranges: [[a.s, b.e]], found: '', suggest: '',
-            msg: 'phrase', ref: c.get(idx[s]), key: 'dupphrase:' + pi + ':' + a.s });
+        if (b.e - a.s >= MIN_CHARS) {
+          const [rp, rk] = c.get(idx[s]);
+          const ranges = [[a.s, b.e]];
+          if (rp === pi) {
+            /* same paragraph: also mark the earlier copy */
+            const rEnd = c.get(idx[i - 1])[1];
+            ranges.push([tk[rk].s, tk[Math.min(rEnd, tk.length - 1)].e]);
+          }
+          add({ cat: 'dupphrase', sev: rp === pi ? 'warn' : 'info', para: pi, ranges, found: '', suggest: '',
+            msg: rp === pi ? 'phraseSame' : 'phrase', ref: rp === pi ? null : rp, key: 'dupphrase:' + pi + ':' + a.s });
         }
         s = i;
       }

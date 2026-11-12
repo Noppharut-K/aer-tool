@@ -6,8 +6,12 @@
 import { LANG, L } from '../utils/lang.js';
 import { runChecks, CATS, SEV_ORDER } from '../core/reportCheck.js';
 import { extractDocx, extractPdf, extractText } from '../core/reportExtract.js';
+import { renderWord, renderPdf, renderPlain, stopPdf } from './reportView.js';
 
-const RPT = { doc: null, name: '', issues: [], ignored: new Set(), ignoredKeys: new Set(), off: new Set(), sel: null };
+/* Where a repeated passage counts: 'para' (same paragraph only) or 'doc' */
+function savedScope() { try { return localStorage.getItem('aer-rc-scope') === 'doc' ? 'doc' : 'para'; } catch (e) { return 'para'; } }
+const RPT = { doc: null, name: '', issues: [], ignored: new Set(), ignoredKeys: new Set(), off: new Set(), sel: null,
+  scope: savedScope(), pdfCache: new Map(), zoom: null };
 window.RPT = RPT;
 
 const LIST_CAP = 1500;
@@ -21,7 +25,10 @@ const TX = {
     privacy: 'ไฟล์ไม่ถูกส่งออกจากเครื่อง ตรวจในเบราว์เซอร์ทั้งหมด',
     paste: 'หรือวางข้อความเพื่อตรวจ', pastePh: 'วางข้อความจากรายงานที่นี่…', pasteBtn: 'ตรวจข้อความ',
     checks: 'สิ่งที่ตรวจ',
+    scopeLbl: 'ตรวจข้อความซ้ำ', scopePara: 'ในย่อหน้าเดียวกัน', scopeDoc: 'ทั้งเล่ม',
+    scopeHint: { para: 'ขึ้นย่อหน้าใหม่แล้วไม่นับว่าซ้ำ', doc: 'แจ้งเมื่อข้อความซ้ำที่ใดก็ได้ในเล่ม' },
     reading: 'กำลังอ่านไฟล์…', readingPdf: 'กำลังอ่าน PDF หน้า', checking: 'กำลังตรวจ…',
+    zoomIn: 'ขยาย', zoomOut: 'ย่อ', zoomFit: 'พอดีความกว้าง',
     newFile: 'เปิดไฟล์อื่น', export: 'Export Excel', restore: 'คืนรายการที่ข้าม',
     pages: 'หน้า', paras: 'ย่อหน้า', pastedName: 'ข้อความที่วาง',
     total: 'จุดที่พบ', none: 'ไม่พบจุดที่ต้องตรวจในหมวดที่เลือก',
@@ -37,9 +44,9 @@ const TX = {
     },
     catDesc: {
       spell: 'คำที่พบบ่อยว่าสะกดผิด เช่น อนุญาติ, ปรากฎ, แพลงตอน, คลอโรฟิล',
-      char: 'ตัวอักษรที่ดูเหมือนถูกแต่ค้นหาไม่เจอ เช่น เ+เ แทน แ, ํ+า แทน ำ, อักขระล่องหน, oC',
+      char: 'ตัวอักษรที่ดูเหมือนถูกแต่ค้นหาไม่เจอ เช่น เ+เ แทน แ, \u0E4D+า แทน ำ, อักขระล่องหน, oC',
       dupword: 'คำเดียวกันติดกัน เช่น "การการ", "the the"',
-      dupphrase: 'ย่อหน้าหรือข้อความยาวที่ซ้ำกับที่อื่น มักเกิดจาก copy แล้วลืมแก้',
+      dupphrase: 'ข้อความ 8 คำขึ้นไปที่ซ้ำในย่อหน้าเดียวกัน หรือเลือกให้ตรวจทั้งเล่ม (ย่อหน้าซ้ำ / ข้อความ 12 คำขึ้นไป)',
       number: 'เลขตาราง/รูปข้าม ซ้ำ สลับลำดับ อ้างถึงตารางที่ไม่มี และลิงก์อ้างอิงใน Word ที่เสีย',
       consist: 'หน่วยหรือคำเดียวกันเขียนหลายแบบ เช่น mg/L กับ mg/l, ไนเตรท กับ ไนเตรต, ๆ เว้นวรรคไม่เหมือนกัน',
       overuse: 'คำเดิมใช้ 3 ครั้งขึ้นไปในช่วงสั้น ๆ',
@@ -48,7 +55,7 @@ const TX = {
     },
     msg: {
       ee: 'พิมพ์ เ สองตัวแทน แ — ดูเหมือนกันแต่ค้นหาและเรียงคำไม่ได้',
-      am: 'พิมพ์ ํ กับ า แยกกันแทน ำ — ดูเหมือนกันแต่ค้นหาไม่เจอ',
+      am: 'พิมพ์ \u0E4D กับ า แยกกันแทน ำ — ดูเหมือนกันแต่ค้นหาไม่เจอ',
       mark2: 'สระหรือวรรณยุกต์ซ้อนกันสองตัว',
       order: 'พิมพ์วรรณยุกต์ก่อนสระบน — ดูเหมือนถูกแต่ค้นหาไม่เจอ',
       zw: n => `มีอักขระล่องหน ${n} ตัว (มักติดมาจากการคัดลอกเว็บ)`,
@@ -61,6 +68,7 @@ const TX = {
       close: 'พบตัวปิดโดยไม่มีตัวเปิด',
       para: 'ทั้งย่อหน้าซ้ำกับ',
       phrase: 'ข้อความช่วงนี้ซ้ำกับ',
+      phraseSame: 'ข้อความช่วงนี้ซ้ำกับช่วงก่อนหน้าในย่อหน้าเดียวกัน (ไฮไลต์ทั้งสองช่วง)',
       capdup: 'เลขซ้ำกับที่มีแล้วใน',
       capstart: 'ลำดับไม่ได้เริ่มที่ 1',
       capgap: n => `เลขข้าม — ก่อนหน้านี้ถึงเลข ${n}`,
@@ -95,7 +103,10 @@ const TX = {
     privacy: 'Your file stays on this computer — everything runs in the browser',
     paste: 'Or paste text to check', pastePh: 'Paste report text here…', pasteBtn: 'Check text',
     checks: 'What is checked',
+    scopeLbl: 'Repeated passages', scopePara: 'Within a paragraph', scopeDoc: 'Whole report',
+    scopeHint: { para: 'A new paragraph does not count as a repeat', doc: 'Flag a passage repeated anywhere in the report' },
     reading: 'Reading file…', readingPdf: 'Reading PDF page', checking: 'Checking…',
+    zoomIn: 'Zoom in', zoomOut: 'Zoom out', zoomFit: 'Fit to width',
     newFile: 'Open another file', export: 'Export Excel', restore: 'Restore skipped',
     pages: 'pages', paras: 'paragraphs', pastedName: 'Pasted text',
     total: 'Found', none: 'Nothing to check in the selected categories',
@@ -111,9 +122,9 @@ const TX = {
     },
     catDesc: {
       spell: 'Thai words often misspelled, e.g. อนุญาติ, ปรากฎ, แพลงตอน, คลอโรฟิล',
-      char: 'Characters that look right but break search: เ+เ for แ, ํ+า for ำ, invisible characters, oC',
+      char: 'Characters that look right but break search: เ+เ for แ, \u0E4D+า for ำ, invisible characters, oC',
       dupword: 'The same word twice in a row, e.g. "การการ", "the the"',
-      dupphrase: 'Paragraphs or long passages repeated elsewhere — often copy-paste left unedited',
+      dupphrase: 'Passages of 8+ words repeated within one paragraph — or, if chosen, anywhere in the report (whole paragraphs / 12+ words)',
       number: 'Skipped, duplicated or out-of-order table/figure numbers, references to missing ones, broken Word cross-references',
       consist: 'Units or terms written more than one way: mg/L vs mg/l, ไนเตรท vs ไนเตรต, ๆ spacing',
       overuse: 'The same word 3+ times within a short span',
@@ -122,7 +133,7 @@ const TX = {
     },
     msg: {
       ee: 'Two เ typed instead of แ — looks the same but breaks search and sorting',
-      am: 'ํ and า typed separately instead of ำ — looks the same but breaks search',
+      am: '\u0E4D and า typed separately instead of ำ — looks the same but breaks search',
       mark2: 'The same vowel or tone mark twice',
       order: 'Tone mark typed before the upper vowel — looks right but breaks search',
       zw: n => `${n} invisible character(s), usually pasted from the web`,
@@ -135,6 +146,7 @@ const TX = {
       close: 'Closed without an opening one',
       para: 'Whole paragraph repeats',
       phrase: 'This passage repeats',
+      phraseSame: 'This passage repeats an earlier one in the same paragraph (both are highlighted)',
       capdup: 'Number already used at',
       capstart: 'Numbering does not start at 1',
       capgap: n => `Number skipped — the previous one was ${n}`,
@@ -203,6 +215,7 @@ function renderStart() {
     '<details class="rc-paste"><summary>' + esc(t.paste) + '</summary>' +
     '<textarea id="rc-text" rows="8" placeholder="' + esc(t.pastePh) + '"></textarea>' +
     '<button class="btn btn-primary" id="rc-text-go">' + esc(t.pasteBtn) + '</button></details>' +
+    '<div class="rc-opt-row">' + scopeHtml() + '</div>' +
     '<h3 class="rc-h3">' + esc(t.checks) + '</h3><div class="rc-checks">' +
     CATS.map(c => '<div class="rc-check"><b>' + esc(t.cat[c]) + '</b><span>' + esc(t.catDesc[c]) + '</span></div>').join('') +
     '</div></div>';
@@ -220,6 +233,7 @@ function renderStart() {
     const f = e.dataTransfer.files && e.dataTransfer.files[0];
     if (f) openFile(f);
   });
+  document.querySelector('#rc-body .rc-opt-row').addEventListener('click', onScope);
   document.getElementById('rc-text-go').addEventListener('click', () => {
     const s = document.getElementById('rc-text').value;
     if (!s.trim()) return;
@@ -275,10 +289,38 @@ async function openFile(file) {
   progress(null);
 }
 
+function scopeHtml() {
+  const t = tx();
+  return '<div class="rc-opt"><span class="rc-opt-lbl">' + esc(t.scopeLbl) + '</span><div class="rc-seg" role="group" aria-label="' + esc(t.scopeLbl) + '">' +
+    ['para', 'doc'].map(v => '<button data-scope="' + v + '" aria-pressed="' + (RPT.scope === v) + '">' + esc(v === 'para' ? t.scopePara : t.scopeDoc) + '</button>').join('') +
+    '</div><span class="rc-opt-hint">' + esc(t.scopeHint[RPT.scope]) + '</span></div>';
+}
+function onScope(e) {
+  const b = e.target.closest('[data-scope]');
+  if (!b || b.dataset.scope === RPT.scope) return;
+  RPT.scope = b.dataset.scope;
+  try { localStorage.setItem('aer-rc-scope', RPT.scope); } catch (err) { /* private mode */ }
+  if (RPT.doc) { RPT.issues = runChecks(RPT.doc, { scope: RPT.scope }); RPT.sel = null; refresh(); }
+  else { const row = document.querySelector('#rc-body .rc-opt-row'); if (row) row.innerHTML = scopeHtml(); }
+}
+
+/* Free what the previous file held: image URLs, the PDF, rendered pages */
+function unload() {
+  const d = RPT.doc;
+  stopPdf();
+  if (d && d.urls) d.urls.forEach(u => URL.revokeObjectURL(u));
+  if (d && d.pdf) d.pdf.destroy();
+  RPT.pdfCache.forEach(u => URL.revokeObjectURL(u));
+  RPT.pdfCache.clear();
+  RPT.doc = null;
+  RPT.issues = [];
+}
+
 function load(doc, name) {
+  unload();
   RPT.doc = doc;
   RPT.name = name;
-  RPT.issues = runChecks(doc);
+  RPT.issues = runChecks(doc, { scope: RPT.scope });
   RPT.ignored = new Set();
   RPT.ignoredKeys = new Set();
   RPT.off = new Set();
@@ -288,21 +330,25 @@ function load(doc, name) {
 
 /* ── Results ────────────────────────────────────────────────────────────── */
 
-const live = () => RPT.issues.filter(i => !RPT.ignored.has(i.id) && !RPT.ignoredKeys.has(i.key));
+const sig = i => i.cat + '|' + i.para + '|' + i.ranges[0][0] + '|' + (i.msg || '');
+const live = () => RPT.issues.filter(i => !RPT.ignored.has(sig(i)) && !RPT.ignoredKeys.has(i.key));
 const shown = () => live().filter(i => !RPT.off.has(i.cat));
 
-function locText(p, pi) {
+/* Page of a text offset: PDFs know it; Word files know it when Word saved
+   its page breaks (most files saved by Word do). */
+function pageAt(p, off = 0) {
+  if (RPT.doc.kind === 'pdf') return p.page;
+  if (RPT.doc.kind === 'docx' && RPT.doc.hasPages) return p.page + (p.breaks || []).filter(b => b <= off).length;
+  return null;
+}
+function locText(p, pi, off) {
   const t = tx();
-  const a = [];
-  if (p.page) a.push(t.page + ' ' + p.page);
-  else a.push(t.para + ' ' + (pi + 1));
+  const pg = pageAt(p, off);
+  const a = [pg ? t.page + ' ' + pg : t.para + ' ' + (p.no || pi + 1)];
   if (p.inTable) a.push(t.table);
   return a.join(' · ');
 }
-const locShort = pi => {
-  const p = RPT.doc.paras[pi];
-  return p.page ? tx().page + ' ' + p.page : tx().para + ' ' + (pi + 1);
-};
+const locShort = pi => locText(RPT.doc.paras[pi], pi, 0).split(' · ')[0];
 
 function message(i) {
   const m = tx().msg;
@@ -326,7 +372,7 @@ function context(i) {
   if (e - s > 120) return '<b>' + esc(text.slice(s, s + 110)) + '…</b>';
   const a = Math.max(0, s - 36), b = Math.min(text.length, e + 36);
   const mid = text.slice(s, e);
-  const midHtml = /^\s*$/.test(mid) || mid.length <= 2 && /[​-‍⁠﻿]/.test(mid) ? '<b class="ws">' + showWs(mid || '◌') + '</b>' : '<b>' + esc(mid) + '</b>';
+  const midHtml = /^\s*$/.test(mid) || mid.length <= 2 && /[\u200B-\u200D\u2060\uFEFF]/.test(mid) ? '<b class="ws">' + showWs(mid || '◌') + '</b>' : '<b>' + esc(mid) + '</b>';
   return (a > 0 ? '…' : '') + esc(text.slice(a, s)).replace(/\n/g, ' ') + midHtml + esc(text.slice(e, b)).replace(/\n/g, ' ') + (b < text.length ? '…' : '');
 }
 
@@ -334,7 +380,7 @@ function searchText(i) {
   const text = RPT.doc.paras[i.para].text;
   const [s, e] = i.ranges[0];
   let q = text.slice(s, e);
-  if (q.trim().length < 3 || /[​-‍⁠﻿]/.test(q)) q = text.slice(Math.max(0, s - 12), Math.min(text.length, e + 12));
+  if (q.trim().length < 3 || /[\u200B-\u200D\u2060\uFEFF]/.test(q)) q = text.slice(Math.max(0, s - 12), Math.min(text.length, e + 12));
   return q.split('\n')[0].trim().slice(0, 60);
 }
 
@@ -343,7 +389,7 @@ function renderResult() {
   const body = document.getElementById('rc-body');
   body.classList.add('has-doc');
   const d = RPT.doc;
-  const meta = d.kind === 'pdf' ? d.pages + ' ' + t.pages : d.paras.length + ' ' + t.paras;
+  const meta = d.kind === 'pdf' || (d.kind === 'docx' && d.hasPages) ? d.pages + ' ' + t.pages : d.paras.filter(p => p.text.trim()).length + ' ' + t.paras;
   body.innerHTML =
     '<div class="rc-top">' +
     '<div class="rc-file"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M14 3H7a2 2 0 00-2 2v14a2 2 0 002 2h10a2 2 0 002-2V8z"/><polyline points="14 3 14 8 19 8"/></svg>' +
@@ -353,14 +399,17 @@ function renderResult() {
     (d.notes || []).map(n => '<div class="rc-note' + (n === 'pdfspace' ? '' : ' warn') + '">' + esc(t.note[n]) + '</div>').join('') +
     '<div class="rc-sum" id="rc-sum"></div>' +
     '<div class="rc-main"><div class="rc-list" id="rc-list" aria-label="' + esc(t.total) + '"></div>' +
-    '<div class="rc-doc" id="rc-doc"></div></div>';
+    '<div class="rc-docpane"><div class="rc-doc" id="rc-doc"></div>' +
+    '<div class="rc-zoom" id="rc-zoom" role="group" aria-label="Zoom"><button data-z="out" aria-label="' + esc(t.zoomOut) + '">−</button>' +
+    '<button data-z="fit" id="rc-zoom-v" title="' + esc(t.zoomFit) + '"></button><button data-z="in" aria-label="' + esc(t.zoomIn) + '">+</button></div></div></div>';
 
-  document.getElementById('rc-new').addEventListener('click', () => { RPT.doc = null; RPT.issues = []; renderStart(); });
+  document.getElementById('rc-new').addEventListener('click', () => { unload(); renderStart(); });
   document.getElementById('rc-export').addEventListener('click', exportXlsx);
   document.getElementById('rc-restore').addEventListener('click', () => {
     RPT.ignored.clear(); RPT.ignoredKeys.clear(); refresh();
   });
   document.getElementById('rc-sum').addEventListener('click', e => {
+    if (e.target.closest('[data-scope]')) return onScope(e);
     const b = e.target.closest('[data-cat]');
     if (!b) return;
     const c = b.dataset.cat;
@@ -368,8 +417,18 @@ function renderResult() {
     refresh();
   });
   document.getElementById('rc-list').addEventListener('click', onListClick);
+  document.getElementById('rc-zoom').addEventListener('click', e => {
+    const b = e.target.closest('[data-z]');
+    if (!b) return;
+    const el = document.getElementById('rc-doc');
+    const cur = currentZoom(el);
+    RPT.zoom = b.dataset.z === 'fit' ? null : Math.min(2, Math.max(0.3, b.dataset.z === 'in' ? cur * 1.2 : cur / 1.2));
+    const mid = (el.scrollTop + el.clientHeight / 2) / (el.scrollHeight || 1);
+    fit(el);
+    el.scrollTop = mid * el.scrollHeight - el.clientHeight / 2;
+  });
   document.getElementById('rc-doc').addEventListener('click', e => {
-    const m = e.target.closest('mark[data-i]');
+    const m = e.target.closest('[data-i]');
     if (m) select(+m.dataset.i, 'doc');
   });
   refresh();
@@ -391,8 +450,9 @@ function renderSummary() {
   all.forEach(i => { by[i.cat] = (by[i.cat] || 0) + 1; });
   shown().forEach(i => { sev[i.sev]++; });
   const el = document.getElementById('rc-sum');
-  el.innerHTML =
+  el.innerHTML = '<div class="rc-sum-row">' +
     '<div class="rc-sev">' + ['err', 'warn', 'info'].map(s => '<span class="rc-sevc sev-' + s + '"><i></i>' + esc(t.sev[s]) + ' <b>' + sev[s] + '</b></span>').join('') + '</div>' +
+    '</div>' + scopeHtml() + '</div>' +
     '<div class="rc-chips">' + CATS.filter(c => by[c]).map(c =>
       '<button class="rc-chip" data-cat="' + c + '" aria-pressed="' + !RPT.off.has(c) + '">' + esc(t.cat[c]) + ' <b>' + by[c] + '</b></button>').join('') + '</div>';
 }
@@ -412,7 +472,7 @@ function renderList() {
     const p = RPT.doc.paras[i.para];
     h.push('<div class="rc-item sev-' + i.sev + (RPT.sel === i.id ? ' sel' : '') + '" data-id="' + i.id + '" tabindex="0" role="button">' +
       '<div class="rc-item-hd"><span class="rc-dot"></span><span class="rc-cat">' + esc(t.cat[i.cat]) + '</span>' +
-      '<span class="rc-loc">' + esc(locText(p, i.para)) + '</span></div>' +
+      '<span class="rc-loc">' + esc(locText(p, i.para, i.ranges[0][0])) + '</span></div>' +
       '<div class="rc-ctx">' + context(i) + '</div>' +
       (i.suggest && i.suggest.trim() ? '<div class="rc-fix">' + esc(t.fix) + ' <b>' + esc(i.suggest) + '</b></div>' : '') +
       '<div class="rc-msg">' + esc(message(i)) + '</div>' +
@@ -433,7 +493,7 @@ function onListClick(e) {
   const act = e.target.closest('[data-act]');
   if (act) {
     e.stopPropagation();
-    if (act.dataset.act === 'ignore') { RPT.ignored.add(id); if (RPT.sel === id) RPT.sel = null; refresh(); }
+    if (act.dataset.act === 'ignore') { RPT.ignored.add(sig(iss)); if (RPT.sel === id) RPT.sel = null; refresh(); }
     else if (act.dataset.act === 'ignoreAll') { RPT.ignoredKeys.add(iss.key); refresh(); }
     else if (act.dataset.act === 'copy') {
       const q = searchText(iss);
@@ -449,57 +509,53 @@ function onListClick(e) {
 
 function select(id, from) {
   RPT.sel = id;
-  document.querySelectorAll('.rc-item.sel, mark.sel').forEach(x => x.classList.remove('sel'));
+  document.querySelectorAll('.rc-item.sel, #rc-doc .sel').forEach(x => x.classList.remove('sel'));
   const item = document.querySelector('.rc-item[data-id="' + id + '"]');
-  const mark = document.querySelector('#rc-doc mark[data-i="' + id + '"]');
   if (item) { item.classList.add('sel'); if (from === 'doc') item.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }
-  document.querySelectorAll('#rc-doc mark[data-i="' + id + '"]').forEach(m => m.classList.add('sel'));
+  const marks = document.querySelectorAll('#rc-doc [data-i="' + id + '"]');
+  marks.forEach(m => m.classList.add('sel'));
   if (from === 'list') {
-    const target = mark || document.getElementById('rc-p-' + (RPT.issues.find(x => x.id === id) || {}).para);
+    const iss = RPT.issues.find(x => x.id === id) || {};
+    const p = RPT.doc.paras[iss.para] || {};
+    const target = marks[0] || document.getElementById('rc-p-' + (p.idx ?? iss.para)) ||
+      document.querySelector('#rc-doc .rc-sheet[data-pg="' + p.page + '"]');
     if (target) target.scrollIntoView({ block: 'center', behavior: 'smooth' });
   }
 }
 
-/* Document view: every paragraph, with the shown issues highlighted.
-   Overlapping ranges are split so each piece keeps its most severe issue. */
+/* Document view: the report drawn as pages (reportView.js), with the shown
+   findings highlighted; scaled down to fit the panel. */
+let fitObs = null;
 function renderDoc() {
   const t = tx();
   const d = RPT.doc;
+  const el = document.getElementById('rc-doc');
   const byPara = new Map();
   shown().forEach(i => {
     if (!byPara.has(i.para)) byPara.set(i.para, []);
     byPara.get(i.para).push(i);
   });
-  const h = [];
-  let page = 0;
-  d.paras.forEach((p, pi) => {
-    if (p.page && p.page !== page) { page = p.page; h.push('<div class="rc-pg">' + esc(t.page) + ' ' + page + '</div>'); }
-    const cls = 'rc-p' + (p.isHeading ? ' hd' : '') + (p.inTable ? ' tbl' : '') + (p.hf ? ' hf' : '') + (p.toc ? ' toc' : '');
-    h.push('<p class="' + cls + '" id="rc-p-' + pi + '">' + markup(p.text, byPara.get(pi) || []) + '</p>');
-  });
-  document.getElementById('rc-doc').innerHTML = h.join('');
+  const keep = el.scrollTop;
+  const w = d.kind === 'docx' ? renderWord(el, d, byPara, RPT.sel, t.page)
+    : d.kind === 'pdf' ? renderPdf(el, d, byPara, RPT.sel, RPT.pdfCache, t.page)
+    : renderPlain(el, d, byPara, RPT.sel);
+  el.dataset.w = w;
+  fit(el);
+  el.scrollTop = keep;
+  if (!fitObs) fitObs = new ResizeObserver(() => { const e = document.getElementById('rc-doc'); if (e) fit(e); });
+  fitObs.disconnect();
+  fitObs.observe(el);
 }
-
-function markup(text, issues) {
-  if (!issues.length) return esc(text);
-  const cuts = new Set([0, text.length]);
-  const spans = [];
-  issues.forEach(i => i.ranges.forEach(([s, e]) => {
-    if (e <= s) return;
-    spans.push([s, e, i]); cuts.add(s); cuts.add(e);
-  }));
-  const pts = [...cuts].sort((a, b) => a - b);
-  let out = '';
-  for (let k = 0; k + 1 < pts.length; k++) {
-    const a = pts[k], b = pts[k + 1];
-    const seg = text.slice(a, b);
-    let best = null;
-    for (const [s, e, i] of spans) if (s <= a && e >= b && (!best || SEV_ORDER[i.sev] < SEV_ORDER[best.sev])) best = i;
-    if (!best) { out += esc(seg); continue; }
-    const vis = /^[\s​-‍⁠﻿]+$/.test(seg) ? showWs(seg.replace(/[​-‍⁠﻿]/g, '◌')) : esc(seg);
-    out += '<mark class="rc-m sev-' + best.sev + (RPT.sel === best.id ? ' sel' : '') + '" data-i="' + best.id + '">' + vis + '</mark>';
-  }
-  return out;
+/* Zoom: "fit" scales the page to the panel width; +/- set it by hand */
+function fitZoom(el) { return Math.min(1, Math.max(0.3, (el.clientWidth - 32) / (+el.dataset.w || 794))); }
+function currentZoom(el) { return RPT.zoom ?? fitZoom(el); }
+function fit(el) {
+  const pages = el.querySelector('.rc-pages');
+  if (!pages) return;
+  const z = currentZoom(el);
+  pages.style.zoom = z.toFixed(3);
+  const v = document.getElementById('rc-zoom-v');
+  if (v) { v.textContent = Math.round(z * 100) + '%'; v.setAttribute('aria-pressed', String(RPT.zoom == null)); }
 }
 
 function exportXlsx() {
@@ -510,7 +566,7 @@ function exportXlsx() {
   shown().sort((a, b) => a.para - b.para || a.ranges[0][0] - b.ranges[0][0]).forEach((i, n) => {
     const p = RPT.doc.paras[i.para];
     const [s, e] = i.ranges[0];
-    rows.push([n + 1, t.sev[i.sev], t.cat[i.cat], locText(p, i.para), p.heading || '',
+    rows.push([n + 1, t.sev[i.sev], t.cat[i.cat], locText(p, i.para, s), p.heading || '',
       p.text.slice(s, Math.min(e, s + 200)), i.suggest || '', message(i),
       p.text.slice(Math.max(0, s - 40), Math.min(p.text.length, e + 40)).replace(/\n/g, ' ')]);
   });
