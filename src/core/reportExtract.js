@@ -969,7 +969,7 @@ export function extractDocx(buf) {
   const addTable = T => {
     const entry = { no: tables.length, rows: [], cap: '' };
     tables.push(entry);
-    entry.rows = T.rows.map(r => r.map(c => ({ col: c.col, span: c.span, paras: cellParas(c.blocks) })));
+    entry.rows = T.rows.map(r => r.map(c => ({ col: c.col, span: c.span, rowspan: c.rowspan || 1, paras: cellParas(c.blocks) })));
     entry.rows.forEach((r, ri) => r.forEach(c => c.paras.forEach(i => { paras[i].tbl = entry.no; paras[i].row = ri + 1; })));
   };
   const scan = bs => { for (const b of bs) { if (b.t === 'tbl') addTable(b); else if (b.t === 'tbx') scan(b.blocks); } };

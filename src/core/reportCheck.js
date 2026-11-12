@@ -914,12 +914,18 @@ const parenAbbr = s => { const m = /\(([A-Za-z][A-Za-z0-9\-]{0,9})\)/.exec(s); r
 function tableSeries(doc, paras) {
   const out = [];
   if (!doc.tables) return out;
+  const isNum = c => numVal(c.text) != null;
+  const notParam = label => /^\s*(?:[A-Z]{1,4}[\s\-_.]?[0-9]+|สถานี|จุด|ฤดู|เดือน|ปี|ครั้งที่|ไตรมาส|[0-9๐-๙])/i.test(label); // a station or a time
   doc.tables.forEach((T, ti) => {
     const grid = T.rows.map(r => r.map(c => {
       const ps = c.paras.filter(i => paras[i].text.trim());
-      return { col: c.col, span: c.span, ps, text: ps.map(i => paras[i].text).join(' ').replace(/\s+/g, ' ').trim() };
+      return { col: c.col, span: c.span, rowspan: c.rowspan || 1, ps, text: ps.map(i => paras[i].text).join(' ').replace(/\s+/g, ' ').trim() };
     }));
-    const isNum = c => numVal(c.text) != null;
+    /* which cell covers each row/column, merged cells included */
+    const occ = grid.map(() => []);
+    grid.forEach((r, ri) => r.forEach(c => {
+      for (let k = 0; k < c.rowspan && ri + k < grid.length; k++) for (let q = c.col; q < c.col + c.span; q++) occ[ri + k][q] = c;
+    }));
     let h = 0;
     while (h < grid.length) {
       const r = grid[h], n = r.filter(isNum).length;
@@ -929,29 +935,38 @@ function tableSeries(doc, paras) {
     if (h === grid.length) return;
     const first = T.rows.map(r => r[0]).find(Boolean);
     const anchor = first && first.paras[0];
-    const push = (label, cells) => {
+    const push = (label, cells, dir) => {
       const vals = cells.filter(isNum).map(c => ({ v: numVal(c.text), dec: decOf(c.text), c }));
-      if (vals.length < 2 || !label) return;
-      if (/^\s*(?:[A-Z]{1,4}[\s\-_.]?[0-9]+|สถานี|จุด|ฤดู|เดือน|ปี|ครั้งที่|ไตรมาส|[0-9๐-๙])/i.test(label)) return; // a station or a time, not a parameter
+      if (vals.length < 2 || !label || notParam(label)) return;
       const keys = [paramKey(label)];
       const ab = parenAbbr(label);
       if (ab) keys.push(ab);
-      out.push({ ti, label, keys: keys.filter(Boolean), vals, anchor, dir: cells.dir });
+      out.push({ ti, label, keys: keys.filter(Boolean), vals, anchor, dir });
     };
-    /* columns */
+    /* columns: header text above, values below */
     const cols = new Set(grid.slice(h).flatMap(r => r.filter(c => c.span === 1).map(c => c.col)));
     for (const col of cols) {
       const label = grid.slice(0, h).map(r => r.find(c => c.col <= col && col < c.col + c.span)).filter(Boolean).map(c => c.text).join(' ');
-      const cells = grid.slice(h).map(r => r.find(c => c.col === col && c.span === 1)).filter(Boolean);
-      cells.dir = 'col';
-      push(label, cells);
+      push(label, grid.slice(h).map(r => r.find(c => c.col === col && c.span === 1)).filter(Boolean), 'col');
     }
-    /* rows */
-    for (const r of grid.slice(h)) {
-      if (!r.length || isNum(r[0])) continue;
-      const cells = r.slice(1);
-      cells.dir = 'row';
-      push(r[0].text, cells);
+    /* rows: the name in the first column; a name merged down over several
+       rows (1 m, 10 m, 20 m …) covers all of them, and each value column
+       of that block is a series of its own */
+    let ri = h;
+    while (ri < grid.length) {
+      const L = occ[ri][0] || occ[ri].find(Boolean);
+      if (!L) { ri++; continue; }
+      let end = ri + 1;
+      while (end < grid.length && occ[end][0] === L) end++;
+      if (!isNum(L)) {
+        const cells = grid.slice(ri, end).flat().filter(c => c !== L);
+        push(L.text, cells, end - ri > 1 ? 'rows' : 'row'); // 'rows': the whole merged block, mixed columns
+        if (end - ri > 1) {
+          const cs = new Set(cells.map(c => c.col));
+          for (const col of cs) push(L.text, cells.filter(c => c.col === col), 'block');
+        }
+      }
+      ri = end;
     }
   });
   return out;
@@ -964,6 +979,7 @@ const CLAIMS = [
   ['max', new RegExp('สูงสุด\\s*(?:เท่ากับ|อยู่ที่|คือ)?\\s*' + NUM, 'g')],
   ['min', new RegExp('ต่ำสุด\\s*(?:เท่ากับ|อยู่ที่|คือ)?\\s*' + NUM, 'g')],
 ];
+const RANGE = new RegExp(NUM + '\\s*(?:[-–]|ถึง)\\s*' + NUM, 'g');
 const roundTo = (v, d) => Math.round(v * 10 ** d) / 10 ** d;
 function claimChecks(doc, paras, add) {
   if (doc.kind !== 'docx' || !doc.tables || !doc.tables.length) return;
@@ -979,10 +995,65 @@ function claimChecks(doc, paras, add) {
     for (const d of ds) if (d.full) alias.set(paramKey(d.full), k);
   }
   const names = [...alias.keys()].filter(n => n.length >= 2).sort((x, y) => y.length - x.length);
+  /* a word from a list ("ปริมาณออกซิเจนละลาย") to a table name */
+  const resolve = item => {
+    const x = paramKey(item).replace(/^(?:และ|หรือ|มี|ค่า|ปริมาณ|ระดับ)+/, '');
+    if (x.length < 2) return null;
+    if (alias.has(x)) return alias.get(x);
+    for (const [n, k] of alias) if (n.length >= 3 && ((x.length >= 5 && n.startsWith(x)) || x.endsWith(n))) return k;
+    return null;
+  };
   const capIdx = new Map();
   doc.tables.forEach((T, ti) => { if (T.cap) capIdx.set(normT(T.cap), ti); });
   const seenClaim = new Map();
   const tablePara = ti => { const T = doc.tables[ti]; const c = T.rows.map(r => r[0]).find(Boolean); return c ? c.paras[0] : null; };
+  const stat = vs => { const v = vs.map(x => x.v); return { min: Math.min(...v), max: Math.max(...v), mean: v.reduce((a, b) => a + b, 0) / v.length }; };
+  /* one claim against the table(s) */
+  const judge = (p, pi, named, kind, key, numsRaw, s0, e0) => {
+    let cands = series.filter(s => s.keys.includes(key));
+    if (!cands.length) return;
+    let explicit = false;
+    if (named.length) { const c = cands.filter(s => named.includes(s.ti)); if (c.length) { cands = c; explicit = true; } }
+    if (!explicit) {
+      /* the nearest table under the same heading */
+      const near = cands.map(s => ({ s, d: Math.abs((tablePara(s.ti) ?? 1e9) - pi) }))
+        .filter(x => { const tp = tablePara(x.s.ti); return tp != null && (paras[tp].heading || '') === (p.heading || ''); });
+      if (!near.length) return;
+      const best = Math.min(...near.map(x => x.d));
+      cands = near.filter(x => x.d === best).map(x => x.s);
+    }
+    const ti = cands[0].ti;
+    cands = cands.filter(s => s.ti === ti);
+    const sets = [cands.filter(s => s.dir !== 'block').flatMap(s => s.vals), ...cands.map(s => s.vals)].filter(v => v.length);
+    const nums = numsRaw.map(x => parseFloat(thaiDigits(x)));
+    const decs = numsRaw.map(x => decOf(x));
+    for (const vs of sets) {
+      const s = stat(vs);
+      if (kind === 'range') {
+        const lo = nums[0] <= nums[1] ? 0 : 1, hi = 1 - lo;
+        if (roundTo(s.min, decs[lo]) === nums[lo] && roundTo(s.max, decs[hi]) === nums[hi]) return;
+      } else {
+        const want = kind === 'mean' ? s.mean : s[kind];
+        if (Math.abs(roundTo(want, decs[0]) - nums[0]) <= 10 ** -decs[0] * (kind === 'mean' ? 1 : 0) + 1e-9) return;
+      }
+    }
+    const st = stat(sets[0]);
+    let out = true;
+    if (kind === 'range') {
+      const [a, b] = nums[0] <= nums[1] ? nums : [nums[1], nums[0]];
+      out = a < roundTo(st.min, decs[0]) || b > roundTo(st.max, decs[1]);
+    }
+    const T = doc.tables[ti];
+    const found = p.text.slice(s0, e0);
+    const gk = ti + '|' + kind + '|' + key + '|' + found;
+    const here = [pi, s0, e0];
+    if (seenClaim.has(gk)) { const g = seenClaim.get(gk); (g.also || (g.also = [])).push(here); g.n++; return; }
+    const d = Math.max(...decs);
+    seenClaim.set(gk, add({ cat: 'datamatch', sev: out && explicit ? 'warn' : 'info', para: pi, ranges: [[s0, e0]], found,
+      suggest: '', msg: 'claim', kind, label: cands[0].label.slice(0, 40), table: T.cap || null, tno: ti + 1, n: 1,
+      actual: kind === 'range' ? st.min.toFixed(d) + '–' + st.max.toFixed(d) : (kind === 'mean' ? st.mean : st[kind]).toFixed(d),
+      ref: tablePara(ti), key: 'datamatch:' + gk }));
+  };
   paras.forEach((p, pi) => {
     if (p.hf || p.toc || p.inTable) return;
     const t = p.text;
@@ -992,63 +1063,38 @@ function claimChecks(doc, paras, add) {
     for (const m of t.matchAll(/(ตาราง(?:ที่)?|Table)\s*([0-9๐-๙]+(?:\s?[.\-–]\s?[0-9๐-๙]+)*)/gi)) {
       for (const [cap, ti] of capIdx) if (normT(cap).endsWith(normT(m[2]))) named.push(ti);
     }
+    /* "A, B และ C อยู่ในช่วง a–b, c–d และ e–f ตามลำดับ": pair them in order */
+    const done = [];
+    let from = 0;
+    for (const m of t.matchAll(/ตามลำดับ/g)) {
+      const S = from, E = m.index;
+      from = E + m[0].length;
+      const rs = [...t.slice(S, E).matchAll(RANGE)].map(r => ({ s: S + r.index, e: S + r.index + r[0].length, nums: [r[1], r[2]] }));
+      if (rs.length < 2) continue;
+      done.push([rs[0].s, E]);
+      const keys = [];
+      for (const item of t.slice(Math.max(S, rs[0].s - 300), rs[0].s).split(/[\s,]+/)) {
+        const k = resolve(item);
+        if (k && keys[keys.length - 1] !== k) keys.push(k);
+      }
+      if (keys.length < rs.length) continue; // cannot tell which is which: say nothing
+      const use = keys.slice(-rs.length);
+      rs.forEach((r, k) => judge(p, pi, named, 'range', use[k], r.nums, r.s, r.e));
+    }
     for (const [kind, re] of CLAIMS) {
       re.lastIndex = 0;
       for (const m of t.matchAll(re)) {
+        const s0 = m.index + m[0].search(/[0-9๐-๙]/), e0 = m.index + m[0].length;
+        if (done.some(([a, b]) => s0 >= a && s0 < b)) continue;
         /* the parameter: the nearest name before the number, same clause */
-        const from = Math.max(0, m.index - 90);
-        const win = low.slice(from, m.index + 1);
+        const win = low.slice(Math.max(0, m.index - 90), m.index + 1);
         let key = null, at = -1;
         for (const n of names) {
           const latin = /^[a-z0-9\-]+$/.test(n);
           const re2 = latin ? new RegExp('(?<![a-z0-9])' + escRe(n) + '(?![a-z0-9])', 'g') : new RegExp(escRe(n), 'g');
           for (const x of win.matchAll(re2)) if (x.index > at) { at = x.index; key = alias.get(n); }
         }
-        if (!key) continue;
-        let cands = series.filter(s => s.keys.includes(key));
-        let explicit = false;
-        if (named.length) { const c = cands.filter(s => named.includes(s.ti)); if (c.length) { cands = c; explicit = true; } }
-        if (!explicit) {
-          /* the nearest table under the same heading */
-          const near = cands.map(s => ({ s, d: Math.abs((tablePara(s.ti) ?? 1e9) - pi) }))
-            .filter(x => { const tp = tablePara(x.s.ti); return tp != null && (paras[tp].heading || '') === (p.heading || ''); });
-          if (!near.length) continue;
-          const best = Math.min(...near.map(x => x.d));
-          cands = near.filter(x => x.d === best).map(x => x.s);
-        }
-        const ti = cands[0].ti;
-        const sets = [cands.flatMap(s => s.vals), ...cands.map(s => s.vals)];
-        const nums = m.slice(1).map(x => parseFloat(thaiDigits(x)));
-        const decs = m.slice(1).map(x => decOf(x));
-        const stat = vs => { const v = vs.map(x => x.v); return { min: Math.min(...v), max: Math.max(...v), mean: v.reduce((a, b) => a + b, 0) / v.length }; };
-        let ok = false, out = false, st = stat(sets[0]);
-        for (const vs of sets) {
-          const s = stat(vs);
-          if (kind === 'range') {
-            const [a, b] = nums[0] <= nums[1] ? [nums[0], nums[1]] : [nums[1], nums[0]];
-            const da = decs[nums[0] <= nums[1] ? 0 : 1], db = decs[nums[0] <= nums[1] ? 1 : 0];
-            if (roundTo(s.min, da) === a && roundTo(s.max, db) === b) { ok = true; break; }
-          } else {
-            const want = kind === 'mean' ? s.mean : s[kind];
-            if (Math.abs(roundTo(want, decs[0]) - nums[0]) <= 10 ** -decs[0] * (kind === 'mean' ? 1 : 0) + 1e-9) { ok = true; break; }
-          }
-        }
-        if (ok) continue;
-        if (kind === 'range') {
-          const [a, b] = nums[0] <= nums[1] ? nums : [nums[1], nums[0]];
-          out = a < roundTo(st.min, decs[0]) || b > roundTo(st.max, decs[1]);
-        } else out = true;
-        const T = doc.tables[ti];
-        const s0 = m.index + m[0].search(/[0-9๐-๙]/);
-        const found = t.slice(s0, m.index + m[0].length);
-        const gk = ti + '|' + kind + '|' + key + '|' + found;
-        const here = [pi, s0, m.index + m[0].length];
-        if (seenClaim.has(gk)) { const g = seenClaim.get(gk); (g.also || (g.also = [])).push(here); g.n++; continue; }
-        const d = Math.max(...decs);
-        seenClaim.set(gk, add({ cat: 'datamatch', sev: out && explicit ? 'warn' : 'info', para: pi, ranges: [[here[1], here[2]]], found,
-          suggest: '', msg: 'claim', kind, label: cands[0].label.slice(0, 40), table: T.cap || null, tno: ti + 1, n: 1,
-          actual: kind === 'range' ? st.min.toFixed(d) + '–' + st.max.toFixed(d) : (kind === 'mean' ? st.mean : st[kind]).toFixed(d),
-          ref: tablePara(ti), key: 'datamatch:' + gk }));
+        if (key) judge(p, pi, named, kind, key, m.slice(1), s0, e0);
       }
     }
   });
@@ -1140,7 +1186,8 @@ function moreConsistency(doc, paras, add) {
   /* decimal places that differ within a table column or row */
   if (doc.kind !== 'docx') return;
   const done = new Set();
-  const series = tableSeries(doc, paras).sort((x, y) => (x.dir === 'col' ? 0 : 1) - (y.dir === 'col' ? 0 : 1));
+  /* per column (or per row of one name); a merged block mixes columns, so not that */
+  const series = tableSeries(doc, paras).filter(s => s.dir !== 'rows').sort((x, y) => (x.dir === 'col' ? 0 : 1) - (y.dir === 'col' ? 0 : 1));
   for (const s of series) {
     const vals = s.vals.filter(v => !done.has(v.c));
     if (vals.length < 4) continue;
