@@ -4,7 +4,7 @@
  * edited and nothing leaves the browser.
  */
 import { LANG, L } from '../utils/lang.js';
-import { runChecks, CATS, SEV_ORDER } from '../core/reportCheck.js';
+import { runChecks, CATS, SEV_ORDER, scanAbbr } from '../core/reportCheck.js';
 import { extractDocx, extractPdf, extractText } from '../core/reportExtract.js';
 import { renderWord, renderPdf, renderPlain, stopPdf, ensureFonts, guessBreaks, pdfRects } from './reportView.js';
 
@@ -47,10 +47,14 @@ const TX = {
     fix: 'แก้เป็น',
     sev: { err: 'ควรแก้', warn: 'ควรตรวจ', info: 'ข้อสังเกต' },
     cat: {
-      spell: 'คำที่มักสะกดผิด', char: 'อักขระผิดปกติ', dupword: 'คำ/ตัวเลขซ้ำติดกัน', dupphrase: 'ข้อความซ้ำ', tabledup: 'ข้อมูลซ้ำในตาราง',
+      prep: 'ตรวจก่อนส่ง', spell: 'คำที่มักสะกดผิด', char: 'อักขระผิดปกติ', dupword: 'คำ/ตัวเลขซ้ำติดกัน', dupphrase: 'ข้อความซ้ำ', tabledup: 'ข้อมูลซ้ำในตาราง', toc: 'สารบัญ', abbr: 'คำย่อ', sci: 'ชื่อวิทยาศาสตร์',
       number: 'เลขตาราง/รูป', consist: 'เขียนไม่เหมือนกัน', overuse: 'คำเดิมถี่', space: 'เว้นวรรค', pair: 'วงเล็บ/คำพูด',
     },
     catDesc: {
+      prep: 'สิ่งที่ลืมไว้ก่อนส่ง: ความเห็น (Comment), การแก้ไขที่ยังไม่ยอมรับ (Track Changes), ไฮไลต์, ข้อความที่ซ่อนไว้ และข้อความรอเติม เช่น xxx, ???, [ใส่ข้อมูล], TBD',
+      toc: 'เลขหน้าในสารบัญ/สารบัญตาราง/สารบัญรูปที่ไม่ตรงกับหน้าจริง และชื่อในสารบัญที่ไม่ตรงกับหัวข้อ (ไฟล์ Word ที่บันทึกจาก Word)',
+      abbr: 'คำย่อที่ใช้ก่อนนิยาม นิยามซ้ำหรือคนละความหมาย เขียนหลายแบบ (DO / D.O.) และชื่อเต็มที่เขียนซ้ำหลังนิยามแล้ว — Export Excel มีตารางคำย่อให้ด้วย',
+      sci: 'ชื่อวิทยาศาสตร์ (สกุล ชนิด) ที่ไม่เป็นตัวเอียง เช่น Chaetoceros curvisetus, Nitzschia sp. (เฉพาะไฟล์ Word)',
       spell: 'คำที่พบบ่อยว่าสะกดผิด เช่น อนุญาติ, ปรากฎ, แพลงตอน, คลอโรฟิล',
       char: 'ตัวอักษรที่ดูเหมือนถูกแต่ค้นหาไม่เจอ เช่น เ+เ แทน แ, \u0E4D+า แทน ำ, อักขระล่องหน, oC',
       dupword: 'คำหรือตัวเลขเดียวกันติดกัน เช่น "การการ", "the the", "25.3 25.3" (รวมในช่องตาราง)',
@@ -79,6 +83,20 @@ const TX = {
       phrase: 'ข้อความช่วงนี้ซ้ำกับ',
       phraseSame: 'ข้อความช่วงนี้ซ้ำกับช่วงก่อนหน้าในย่อหน้าเดียวกัน (ไฮไลต์ทั้งสองช่วง)',
       num: 'ตัวเลขเดียวกันซ้ำติดกัน',
+      comment: i => 'มีความเห็น (Comment) ค้างอยู่' + (i.author || i.note ? ' — ' + (i.author ? i.author + ': ' : '') + (i.note ? '"' + i.note.slice(0, 120) + '"' : '') : ''),
+      track: i => `มีการแก้ไขที่ยังไม่ได้ยอมรับ (Track Changes) ${i.count} จุดในย่อหน้านี้` + (i.kinds.includes('del') ? ' รวมข้อความที่ถูกลบ' : '') + ' — ใน Word ไปที่ Review › Accept',
+      hidden: i => `มีข้อความที่ซ่อนไว้ (Hidden) ${i.count} ตัวอักษร — จะไม่แสดงแต่ยังอยู่ในไฟล์`,
+      hl: 'มีไฮไลต์ค้างอยู่ — ตรวจแล้วอย่าลืมเอาไฮไลต์ออก',
+      placeholder: 'ข้อความที่ดูเหมือนเว้นไว้รอเติม',
+      tocpage: i => `สารบัญระบุหน้านี้ แต่หัวข้ออยู่หน้า ${i.real} — คลิกขวาที่สารบัญใน Word แล้วเลือก Update Field`,
+      toctitle: i => `ชื่อในสารบัญไม่ตรงกับหัวข้อจริง: "${i.now}"`,
+      abbrBefore: i => `ใช้คำย่อ ${i.abbr} ก่อนนิยาม` + (i.n > 1 ? ` (${i.n} ครั้ง)` : '') + ' — นิยามครั้งแรกที่',
+      abbrTwice: i => `นิยามคำย่อ ${i.abbr} ซ้ำอีก ${i.n} ครั้ง (ไฮไลต์ทุกจุด) — นิยามครั้งแรกที่`,
+      abbrMeaning: i => `คำย่อ ${i.abbr} นิยามคนละความหมาย: "${i.full}" กับ "${i.first}" ที่`,
+      abbrFull: i => `นิยามคำย่อ ${i.abbr} ไว้แล้ว แต่ยังเขียนชื่อเต็ม ${i.n} ครั้ง (ไฮไลต์ทุกจุด) — ใช้คำย่อแทนได้`,
+      abbrForm: i => `คำย่อเขียนต่างจากที่นิยาม (${i.abbr})`,
+      sci: 'ชื่อวิทยาศาสตร์ควรเป็นตัวเอียง',
+      sciRank: 'sp. / spp. / cf. ไม่ต้องเป็นตัวเอียง (เอียงเฉพาะชื่อสกุลและชนิด)',
       rowSame: () => 'ทั้งแถวซ้ำกับแถวก่อนหน้าในตารางเดียวกัน',
       rowData: i => `ตัวเลขทั้งแถวตรงกับแถว${i.other ? ' "' + i.other + '"' : 'ก่อนหน้า'} ทุกช่อง — อาจคัดลอกแล้วลืมแก้ค่า`,
       colData: i => `ตัวเลขในคอลัมน์${i.label ? ' "' + i.label + '"' : 'นี้'} ตรงกับคอลัมน์${i.other ? ' "' + i.other + '"' : 'ก่อนหน้า'} ทุกแถว — อาจคัดลอกแล้วลืมแก้ค่า`,
@@ -108,6 +126,7 @@ const TX = {
       nolib: 'โหลดตัวอ่านไฟล์ไม่สำเร็จ ตรวจการเชื่อมต่ออินเทอร์เน็ตแล้วลองใหม่', empty: 'ไม่พบข้อความในไฟล์นี้',
     },
     xlsx: ['ลำดับ', 'ระดับ', 'หมวด', 'ตำแหน่ง', 'หัวข้อ', 'ที่พบ', 'แก้เป็น', 'รายละเอียด', 'ข้อความรอบ ๆ'],
+    abbrSheet: 'คำย่อ', abbrHead: ['คำย่อ', 'ชื่อเต็ม', 'นิยามครั้งแรก', 'ใช้ (ครั้ง)'],
   },
   en: {
     title: 'Report Check', sub: 'Proofread reports · repeated words · misspellings · table/figure numbers',
@@ -138,10 +157,14 @@ const TX = {
     fix: 'Change to',
     sev: { err: 'Fix', warn: 'Check', info: 'Note' },
     cat: {
-      spell: 'Common misspellings', char: 'Odd characters', dupword: 'Repeated words/numbers', dupphrase: 'Repeated passages', tabledup: 'Repeated table data',
+      prep: 'Before sending', spell: 'Common misspellings', char: 'Odd characters', dupword: 'Repeated words/numbers', dupphrase: 'Repeated passages', tabledup: 'Repeated table data', toc: 'Contents', abbr: 'Abbreviations', sci: 'Scientific names',
       number: 'Table/figure numbers', consist: 'Inconsistent forms', overuse: 'Overused words', space: 'Spacing', pair: 'Brackets/quotes',
     },
     catDesc: {
+      prep: 'Left in by mistake: comments, tracked changes not yet accepted, highlighter, hidden text, and text to fill in such as xxx, ???, [insert], TBD',
+      toc: 'Page numbers in the contents / lists of tables and figures that do not match the real page, and entries whose title differs from the heading (Word files saved by Word)',
+      abbr: 'Abbreviations used before they are defined, defined twice or with two meanings, written two ways (DO / D.O.), and full names repeated after the definition — Export Excel includes a table of abbreviations',
+      sci: 'Scientific names (genus, species) not in italics, e.g. Chaetoceros curvisetus, Nitzschia sp. (Word files only)',
       spell: 'Thai words often misspelled, e.g. อนุญาติ, ปรากฎ, แพลงตอน, คลอโรฟิล',
       char: 'Characters that look right but break search: เ+เ for แ, \u0E4D+า for ำ, invisible characters, oC',
       dupword: 'The same word or number twice in a row, e.g. "การการ", "the the", "25.3 25.3" (table cells too)',
@@ -170,6 +193,20 @@ const TX = {
       phrase: 'This passage repeats',
       phraseSame: 'This passage repeats an earlier one in the same paragraph (both are highlighted)',
       num: 'The same number twice in a row',
+      comment: i => 'A comment is still in the file' + (i.author || i.note ? ' — ' + (i.author ? i.author + ': ' : '') + (i.note ? '"' + i.note.slice(0, 120) + '"' : '') : ''),
+      track: i => `${i.count} tracked change(s) not yet accepted in this paragraph` + (i.kinds.includes('del') ? ', including deleted text' : '') + ' — in Word: Review › Accept',
+      hidden: i => `${i.count} character(s) of hidden text — not shown, but still in the file`,
+      hl: 'Highlighter left on — remove it once checked',
+      placeholder: 'Looks like text left to fill in',
+      tocpage: i => `The contents give this page, but the heading is on page ${i.real} — in Word right-click the contents and choose Update Field`,
+      toctitle: i => `Contents entry differs from the heading: "${i.now}"`,
+      abbrBefore: i => `${i.abbr} is used before it is defined` + (i.n > 1 ? ` (${i.n} times)` : '') + ' — first defined at',
+      abbrTwice: i => `${i.abbr} is defined ${i.n} more time(s) (all marked) — first defined at`,
+      abbrMeaning: i => `${i.abbr} is defined with two meanings: "${i.full}" and "${i.first}" at`,
+      abbrFull: i => `${i.abbr} is defined, but the full name is written ${i.n} more time(s) (all marked) — the abbreviation can be used`,
+      abbrForm: i => `Abbreviation written differently from its definition (${i.abbr})`,
+      sci: 'Scientific names should be in italics',
+      sciRank: 'sp. / spp. / cf. stay upright (only genus and species are italic)',
       rowSame: () => 'The whole row repeats an earlier row of this table',
       rowData: i => `Every number matches row${i.other ? ' "' + i.other + '"' : ' above'} — copied and not updated?`,
       colData: i => `Every number in column${i.label ? ' "' + i.label + '"' : ''} matches column${i.other ? ' "' + i.other + '"' : ' before it'} — copied and not updated?`,
@@ -199,6 +236,7 @@ const TX = {
       nolib: 'The file reader did not load. Check the internet connection and try again.', empty: 'No text was found in this file',
     },
     xlsx: ['No.', 'Level', 'Category', 'Location', 'Section', 'Found', 'Change to', 'Details', 'Context'],
+    abbrSheet: 'Abbreviations', abbrHead: ['Abbreviation', 'Full name', 'First defined', 'Uses'],
   },
 };
 const tx = () => TX[LANG] || TX.th;
@@ -407,6 +445,11 @@ function message(i) {
   if (i.cat === 'spell') return m.spell;
   if (i.cat === 'overuse') return m.overuse(i.count);
   if (i.cat === 'tabledup') return m[i.msg](i) + (i.ref != null ? ' (' + refText(i) + ')' : '');
+  if (i.cat === 'prep' || i.cat === 'toc' || i.cat === 'abbr' || i.cat === 'sci') {
+    const f = m[i.msg];
+    const base = typeof f === 'function' ? f(i) : f || '';
+    return /^abbr(Before|Twice|Meaning)$/.test(i.msg) && i.ref != null ? base + ' ' + locShort(i.ref) : base;
+  }
   const f = m[i.msg];
   if (typeof f === 'function') {
     if (i.msg === 'zw') return f(i.count);
@@ -917,6 +960,18 @@ function exportXlsx() {
   ws['!cols'] = [6, 10, 18, 16, 30, 30, 16, 50, 60].map(w => ({ wch: w }));
   const wb = X.utils.book_new();
   X.utils.book_append_sheet(wb, ws, 'Report Check');
+  /* table of abbreviations, ready to paste into the report */
+  const { defs, uses } = scanAbbr(RPT.doc);
+  if (defs.size) {
+    const ar = [t.abbrHead];
+    [...defs.keys()].sort((a, b) => a.localeCompare(b, 'en', { sensitivity: 'base' })).forEach(a => {
+      const d = defs.get(a)[0];
+      ar.push([a, d.full, locText(RPT.doc.paras[d.pi], d.pi, d.s), uses.get(a).length]);
+    });
+    const ws2 = X.utils.aoa_to_sheet(ar);
+    ws2['!cols'] = [12, 50, 20, 10].map(w => ({ wch: w }));
+    X.utils.book_append_sheet(wb, ws2, t.abbrSheet);
+  }
   const base = RPT.name.replace(/\.[^.]+$/, '').replace(/[\\/:*?"<>|]/g, '_').slice(0, 60) || 'report';
   X.writeFile(wb, 'ReportCheck_' + base + '.xlsx');
 }

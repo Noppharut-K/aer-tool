@@ -406,6 +406,28 @@ function dmlText(txBody, theme) {
   return out;
 }
 
+/* The page number printed on each physical page (1-based index), from
+   each section's numbering start and format */
+function pageLabels(paras, secs, n) {
+  const first = {};
+  const secOf = [];
+  for (const p of paras) {
+    if (typeof p.idx !== 'number') continue;
+    if (first[p.sec] == null || p.page < first[p.sec]) first[p.sec] = p.page;
+    for (let k = 0; k <= (p.breaks || []).length; k++) if (secOf[p.page + k] == null) secOf[p.page + k] = p.sec;
+  }
+  const out = [null];
+  let num = 0, prev = -1;
+  for (let pg = 1; pg <= n; pg++) {
+    const si = secOf[pg] ?? prev;
+    const s = secs[si] || {};
+    num = si !== prev && first[si] === pg && s.numStart != null ? s.numStart : num + 1;
+    prev = si;
+    out.push(fmtNum(num, s.numFmt || 'decimal'));
+  }
+  return out;
+}
+
 const IMG_TYPES = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', bmp: 'image/bmp', webp: 'image/webp', svg: 'image/svg+xml' };
 
 /* ── Word ───────────────────────────────────────────────────────────────── */
@@ -475,7 +497,7 @@ export function extractDocx(buf) {
   /* Word records where each page started the last time it laid the file out
      (<w:lastRenderedPageBreak/>); that gives real page numbers. */
   const hasLR = xml.includes('lastRenderedPageBreak');
-  const ctx = { page: 1, heading: '', cnt: {}, paras: [], fld: [], sec: 0, hard: false, pre: '', inHf: false };
+  const ctx = { page: 1, heading: '', cnt: {}, paras: [], fld: [], sec: 0, hard: false, pre: '', inHf: false, cmt: {}, bm: {} };
   const blocks = [];
   const normalR = merge(S.defR, styleChain(S, S.normal).rPr);
 
@@ -561,6 +583,7 @@ export function extractDocx(buf) {
     };
     ctx.paras.push(P);
     out.push({ t: 'p', p: P });
+    if (!ctx.inHf && kid(pPrEl, 'pPrChange')) P.revs = [{ k: 'fmt', s: 0, e: 0 }];
     let lastKey = null;
 
     const add = (str, rp) => {
@@ -776,7 +799,13 @@ export function extractDocx(buf) {
       if (dd.rStyle) rp = merge(rp, styleChain(S, dd.rStyle).rPr);
       rp = merge(rp, dd);
       delete rp.rStyle;
-      if (rp.vanish) return; // hidden text
+      if (rp.vanish) { // hidden text: not shown, but counted for the before-sending check
+        let n = 0;
+        for (const c of r.children) if (c.localName === 't' && c.namespaceURI === W) n += c.textContent.length;
+        if (n && !ctx.inHf) (P.hidden || (P.hidden = [])).push({ at: P.text.length, n });
+        return;
+      }
+      if (!ctx.inHf && kid(kid(r, 'rPr'), 'rPrChange')) (P.revs || (P.revs = [])).push({ k: 'fmt', s: P.text.length, e: P.text.length });
       for (const c of r.children) {
         if (c.namespaceURI === W) {
           switch (c.localName) {
@@ -790,13 +819,17 @@ export function extractDocx(buf) {
             case 'fldChar': {
               const ty = at(c, 'fldCharType');
               if (ty === 'begin') ctx.fld.push({ code: '', res: false });
-              else if (ty === 'separate') { const f = ctx.fld[ctx.fld.length - 1]; if (f) f.res = true; }
+              else if (ty === 'separate') {
+                const f = ctx.fld[ctx.fld.length - 1];
+                if (f) { f.res = true; const m = /PAGEREF\s+(\S+)/.exec(f.code); if (m && P.toc && !P.tocAnchor) P.tocAnchor = m[1]; }
+              }
               else if (ty === 'end') ctx.fld.pop();
               break;
             }
             case 'instrText': { const f = ctx.fld[ctx.fld.length - 1]; if (f && !f.res) f.code += c.textContent; break; }
             case 'drawing': drawing(c); break;
             case 'pict': case 'object': pict(c); break;
+            case 'commentReference': { const id = at(c, 'id'); if (!ctx.inHf && !ctx.cmt[id]) ctx.cmt[id] = { p: P.idx, s: P.text.length, e: P.text.length }; break; }
           }
         } else if (c.localName === 'AlternateContent') {
           /* modern content in Choice; Fallback repeats it for old Word */
@@ -813,7 +846,18 @@ export function extractDocx(buf) {
         }
         switch (c.localName) {
           case 'r': run(c); break;
-          case 'hyperlink': case 'ins': case 'smartTag': case 'customXml': case 'moveTo': inl(c); break;
+          case 'hyperlink': if (P.toc && !P.tocAnchor && at(c, 'anchor')) P.tocAnchor = at(c, 'anchor'); inl(c); break;
+          case 'smartTag': case 'customXml': inl(c); break;
+          case 'ins': case 'moveTo': {
+            const s0 = P.text.length;
+            inl(c);
+            if (!ctx.inHf) (P.revs || (P.revs = [])).push({ k: 'ins', s: s0, e: P.text.length });
+            break;
+          }
+          case 'del': case 'moveFrom': if (!ctx.inHf) (P.revs || (P.revs = [])).push({ k: 'del', s: P.text.length, e: P.text.length }); break;
+          case 'commentRangeStart': if (!ctx.inHf) ctx.cmt[at(c, 'id')] = { p: P.idx, s: P.text.length, e: null }; break;
+          case 'commentRangeEnd': { const m = ctx.cmt[at(c, 'id')]; if (m && m.p === P.idx && m.e == null) m.e = P.text.length; break; }
+          case 'bookmarkStart': if (!ctx.inHf && at(c, 'name')) ctx.bm[at(c, 'name')] = { p: P.idx, off: P.text.length }; break;
           case 'fldSimple': ctx.fld.push({ code: at(c, 'instr') || '', res: true }); inl(c); ctx.fld.pop(); break;
           case 'sdt': { const sc = kid(c, 'sdtContent'); if (sc) inl(sc); break; }
         }
@@ -885,6 +929,18 @@ export function extractDocx(buf) {
   }
 
   walk(body, blocks, false);
+
+  /* Comments: where they sit, who wrote them, what they say */
+  const comments = [];
+  {
+    const cx = read('word/comments.xml');
+    const texts = {};
+    if (cx) for (const c of parseXml(cx).getElementsByTagNameNS(W, 'comment')) {
+      texts[at(c, 'id')] = { author: at(c, 'author') || '', text: [...c.getElementsByTagNameNS(W, 't')].map(t => t.textContent).join('').trim() };
+    }
+    for (const [id, m] of Object.entries(ctx.cmt)) comments.push({ ...m, e: m.e ?? m.s, ...(texts[id] || { author: '', text: '' }) });
+    for (const id of Object.keys(texts)) if (!ctx.cmt[id]) comments.push({ p: null, s: 0, e: 0, ...texts[id] });
+  }
   secs.push(parseSect(kids(body, 'sectPr').pop()));
   /* a section without its own header/footer uses the previous section's */
   for (let i = 1; i < secs.length; i++) {
@@ -939,6 +995,7 @@ export function extractDocx(buf) {
 
   return {
     kind: 'docx', paras, blocks, tables, notes: [], urls, hasPages: hasLR || ctx.page > 1, hasLR, pages: ctx.page,
+    comments, bookmarks: ctx.bm, pageLabels: pageLabels(paras, secs, ctx.page),
     pg: secs[secs.length - 1].pg, secs, defTab, evenOdd, theme, normalR,
   };
 }

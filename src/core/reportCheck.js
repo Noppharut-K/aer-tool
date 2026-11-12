@@ -18,10 +18,10 @@ const SEG = (typeof Intl !== 'undefined' && Intl.Segmenter)
   ? new Intl.Segmenter('th', { granularity: 'word' }) : null;
 
 /* Display order of the categories */
-export const CATS = ['spell', 'char', 'dupword', 'dupphrase', 'tabledup', 'number', 'consist', 'overuse', 'space', 'pair'];
+export const CATS = ['prep', 'spell', 'char', 'dupword', 'dupphrase', 'tabledup', 'number', 'toc', 'abbr', 'sci', 'consist', 'overuse', 'space', 'pair'];
 export const SEV_ORDER = { err: 0, warn: 1, info: 2 };
 
-const THAI = /[฀-๿]/;
+const THAI = /[\u0E00-\u0E7F]/;
 const NUMERIC = /^[0-9๐-๙.,%]+$/;
 const lc = w => w.toLowerCase();
 const thaiDigits = s => s.replace(/[๐-๙]/g, d => String(d.charCodeAt(0) - 0x0E50));
@@ -33,7 +33,7 @@ export function tokenize(text) {
       if (s.isWordLike) out.push({ w: s.segment, s: s.index, e: s.index + s.segment.length });
     }
   } else {
-    for (const m of text.matchAll(/[฀-๿]+|[A-Za-z]+|[0-9]+/g)) {
+    for (const m of text.matchAll(/[\u0E00-\u0E7F]+|[A-Za-z]+|[0-9]+/g)) {
       out.push({ w: m[0], s: m.index, e: m.index + m[0].length });
     }
   }
@@ -397,6 +397,10 @@ export function runChecks(doc, opts = {}) {
   }
 
   tableChecks(doc, paras, add);
+  prepChecks(doc, paras, add);
+  tocChecks(doc, paras, add);
+  abbrChecks(doc, paras, add);
+  sciChecks(doc, paras, add);
 
   /* ── Consistency across the whole report ── */
   const body = paras.map((p, pi) => [p, pi]).filter(([p]) => !p.hf && !p.toc);
@@ -608,6 +612,289 @@ function pdfRows(paras, add) {
           msg: label === prev.label ? 'rowSame' : 'rowData', other: short(prev.label), ref: prev.para,
           key: 'tabledup:r:' + pi + ':' + s });
       } else seen.set(k, { page: p.page, label, para: pi });
+    }
+  });
+}
+
+/* ── Before sending: comments, tracked changes, highlighter, hidden text,
+   text left to fill in ── */
+const PLACEHOLDER = /x{3,}|X{3,}|\?{3,}|\.{6,}|_{6,}|…{2,}|\[(?:ใส่|เติม|ระบุ|รอ|insert|add|todo)[^\]]{0,40}\]|\((?:ใส่|เติม|รอ)[^)]{0,30}\)|(?<![A-Za-z])(?:TBD|TBC|TODO|FIXME|Lorem ipsum)(?![A-Za-z])/gi;
+function prepChecks(doc, paras, add) {
+  const len = pi => paras[pi].text.length;
+  const one = (pi, s) => [Math.min(s, Math.max(0, len(pi) - 1)), Math.min(len(pi), Math.min(s, Math.max(0, len(pi) - 1)) + 1)];
+  for (const c of doc.comments || []) {
+    if (c.p == null || !paras[c.p]) continue;
+    const r = c.e > c.s ? [c.s, c.e] : one(c.p, c.s);
+    add({ cat: 'prep', sev: 'err', para: c.p, ranges: [r], found: paras[c.p].text.slice(r[0], r[1]), suggest: '',
+      msg: 'comment', author: c.author, note: c.text, key: 'prep:comment' });
+  }
+  paras.forEach((p, pi) => {
+    if (p.hf) return;
+    if (p.revs && p.revs.length) {
+      const ranges = p.revs.map(r => (r.e > r.s ? [r.s, r.e] : one(pi, r.s)));
+      const kinds = new Set(p.revs.map(r => r.k));
+      add({ cat: 'prep', sev: 'err', para: pi, ranges, found: '', suggest: '', msg: 'track', count: p.revs.length,
+        kinds: [...kinds], key: 'prep:track' });
+    }
+    if (p.hidden && p.hidden.length) {
+      add({ cat: 'prep', sev: 'warn', para: pi, ranges: [one(pi, p.hidden[0].at)], found: '', suggest: '', msg: 'hidden',
+        count: p.hidden.reduce((a, h) => a + h.n, 0), key: 'prep:hidden' });
+    }
+    if (p.runs) {
+      const ranges = [];
+      for (const r of p.runs) if (!r.img && r.rp && r.rp.hl && r.rp.hl !== 'none' && r.e > r.s) {
+        const last = ranges[ranges.length - 1];
+        if (last && last[1] === r.s) last[1] = r.e; else ranges.push([r.s, r.e]);
+      }
+      if (ranges.length) add({ cat: 'prep', sev: 'warn', para: pi, ranges, found: p.text.slice(ranges[0][0], ranges[0][1]), suggest: '', msg: 'hl', key: 'prep:hl' });
+    }
+    if (p.toc) return;
+    PLACEHOLDER.lastIndex = 0;
+    for (const m of p.text.matchAll(PLACEHOLDER)) {
+      add({ cat: 'prep', sev: 'err', para: pi, ranges: [[m.index, m.index + m[0].length]], found: m[0], suggest: '', msg: 'placeholder', key: 'prep:ph' });
+    }
+  });
+}
+
+/* ── Table of contents: page numbers and titles against the real ones.
+   Word records the page each heading landed on when it saved; a TOC that
+   was not updated after edits shows old numbers. ── */
+const normT = s => thaiDigits(s).replace(/[\s\t\u00A0\u200B]+/g, '').toLowerCase();
+function tocChecks(doc, paras, add) {
+  if (!doc.hasLR || !doc.pageLabels) return;
+  const pageOf = (pi, off) => paras[pi].page + (paras[pi].breaks || []).filter(b => b <= off).length;
+  /* fallback when an entry has no link: a heading or caption with the same text */
+  const byText = new Map();
+  paras.forEach((p, pi) => {
+    if (p.toc || p.hf || !p.text.trim()) return;
+    const k = normT((p.label || '') + p.text);
+    if (!byText.has(k)) byText.set(k, pi); else byText.set(k, -1);
+  });
+  paras.forEach((p, pi) => {
+    if (!p.toc) return;
+    const m = /^(.*\S)\t\s*([0-9๐-๙]+|[ivxlcdm]+|[ก-ฮ])\s*$/i.exec(p.text);
+    if (!m) return;
+    const title = m[1].replace(/\t/g, ' ').trim();
+    const shown = m[2];
+    let target = null;
+    if (p.tocAnchor && doc.bookmarks && doc.bookmarks[p.tocAnchor]) target = doc.bookmarks[p.tocAnchor];
+    else { const t = byText.get(normT(title)); if (t != null && t >= 0) target = { p: t, off: 0 }; }
+    if (!target || !paras[target.p]) return;
+    const real = doc.pageLabels[pageOf(target.p, target.off)];
+    const numAt = p.text.length - m[2].length - (p.text.length - p.text.trimEnd().length);
+    if (real != null && normT(real) !== normT(shown)) {
+      add({ cat: 'toc', sev: 'warn', para: pi, ranges: [[numAt, numAt + shown.length]], found: shown, suggest: real,
+        msg: 'tocpage', real, ref: target.p, key: 'toc:page' });
+    }
+    const tp = paras[target.p];
+    /* compare without the leading number ("2.1", "บทที่ 3") */
+    const bare = x => normT(x).replace(/^(?:บทที่|chapter|appendix)?[0-9.\-–]*/i, '');
+    const want = bare((tp.label || '') + ' ' + tp.text), have = bare(title);
+    if (have && want && want !== have) {
+      add({ cat: 'toc', sev: 'info', para: pi, ranges: [[0, Math.min(p.text.length, m[1].length)]], found: title, suggest: '',
+        msg: 'toctitle', now: ((tp.label ? tp.label + ' ' : '') + tp.text).replace(/\s+/g, ' ').trim().slice(0, 80), ref: target.p, key: 'toc:title' });
+    }
+  });
+}
+
+/* ── Abbreviations ──
+   Definitions: "ออกซิเจนละลายน้ำ (DO)", "Dissolved Oxygen (DO)",
+   "(Dissolved Oxygen; DO)", "กรมควบคุมมลพิษ (คพ.)", and rows of an
+   abbreviations table (first cell the abbreviation). */
+const ABBR_EN = '[A-Za-z][A-Za-z0-9&\\-/]{0,9}';
+const isAbbr = a => {
+  const up = (a.match(/[A-Z]/g) || []).length;
+  return a.length >= 2 && a.length <= 10 && (up >= 2 || /^[a-z]+[A-Z][A-Za-z]*$/.test(a)) && !/\//.test(a);
+};
+const SMALL = new Set(['of', 'and', 'the', 'for', 'in', 'on', 'to', 'by', 'at', '&']);
+const keyOf = a => a.replace(/[.\s\-]/g, '').toUpperCase();
+/* words that lead into a name but are not part of it */
+const LEAD = /^(?:ตามเกณฑ์ของ|ตามประกาศของ|ค่า|ของ|ตาม|และ|หรือ|โดย|จาก|ใน|ที่|คือ|ได้แก่|ซึ่ง|เช่น|ปริมาณ|ระดับ|หน่วยงาน)/;
+function trimThai(s) {
+  for (let i = 0; i < 4; i++) { const t = s.replace(LEAD, ''); if (t === s || t.length < 4) break; s = t; }
+  return s;
+}
+function commonEnd(a, b) { let k = 0; while (k < a.length && k < b.length && a[a.length - 1 - k] === b[b.length - 1 - k]) k++; return a.slice(a.length - k); }
+const escRe = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+export function scanAbbr(doc) {
+  const paras = doc.paras;
+  const defs = new Map(); // abbreviation -> [{ pi, s, e, full }]
+  const addDef = (abbr, pi, s, e, full) => {
+    if (!defs.has(abbr)) defs.set(abbr, []);
+    defs.get(abbr).push({ pi, s, e, full: (full || '').trim() });
+  };
+  /* an abbreviations table: right after a heading/caption that says so */
+  let listMode = 0;
+  paras.forEach((p, pi) => {
+    if (p.hf || p.toc) return;
+    const t = p.text;
+    if (!p.inTable && /คำย่อ|อักษรย่อ|ตัวย่อ|abbreviation/i.test(t) && t.length < 80) listMode = 3;
+    else if (!p.inTable && t.trim()) listMode = Math.max(0, listMode - 1);
+    if (p.inTable && listMode && p.tbl != null && doc.tables) {
+      const T = doc.tables[p.tbl];
+      const row = T && T.rows[p.row - 1];
+      if (row && row[0] && row[0].paras[0] === pi) {
+        const a = t.trim();
+        const rest = row.slice(1).flatMap(c => c.paras).map(i => paras[i].text).join(' ').trim();
+        if ((isAbbr(a) || /^[ก-ฮ]{1,5}\.(?:[ก-ฮ]{1,5}\.)*$/.test(a)) && rest) addDef(a, pi, 0, a.length, rest);
+      }
+    }
+    for (const m of t.matchAll(new RegExp('\\(([^()]{3,80}?)[;,]\\s*(' + ABBR_EN + ')\\)', 'g'))) {
+      if (isAbbr(m[2])) addDef(m[2], pi, m.index + m[0].length - m[2].length - 1, m.index + m[0].length - 1, m[1]);
+    }
+    for (const m of t.matchAll(new RegExp('\\((' + ABBR_EN + ')\\)', 'g'))) {
+      const a = m[1];
+      if (!isAbbr(a)) continue;
+      const before = t.slice(0, m.index).replace(/\s+$/, '');
+      let full = '';
+      const words = before.split(/\s+/);
+      const letters = a.replace(/[^A-Za-z]/g, '');
+      /* English: the words whose initials spell the abbreviation */
+      for (let n = Math.min(words.length, letters.length + 3); n >= 2; n--) {
+        const ws = words.slice(-n);
+        const ini = ws.filter(w => !SMALL.has(w.toLowerCase())).map(w => w[0] || '').join('').toUpperCase();
+        if (ini === letters.toUpperCase() && /^[A-Za-z]/.test(ws[0])) { full = ws.join(' '); break; }
+      }
+      /* Thai: the run of Thai text right before the bracket */
+      if (!full) { const th = /([\u0E00-\u0E7F]{3,40})$/.exec(before); if (th) full = trimThai(th[1]); }
+      if (full || /[\u0E00-\u0E7F]$/.test(before)) addDef(a, pi, m.index + 1, m.index + 1 + a.length, full);
+    }
+    for (const m of t.matchAll(/([\u0E00-\u0E7F]{3,40})\s*\(([ก-ฮ]{1,5}\.(?:[ก-ฮ]{1,5}\.)*)\)/g)) {
+      addDef(m[2], pi, m.index + m[0].length - m[2].length - 1, m.index + m[0].length - 1, trimThai(m[1]));
+    }
+  });
+  /* a name defined more than once: the common ending is the name itself
+     ("ตามเกณฑ์ของกรมควบคุมมลพิษ", "ตามประกาศกรมควบคุมมลพิษ" → "กรมควบคุมมลพิษ") */
+  for (const ds of defs.values()) {
+    const th = ds.filter(d => /[\u0E00-\u0E7F]/.test(d.full));
+    for (const d of th) for (const o of th) {
+      if (d === o) continue;
+      const c = commonEnd(d.full, o.full);
+      if (c.length >= 4 && c.length < d.full.length) d.full = c;
+    }
+  }
+  /* uses of each defined abbreviation (not the definitions themselves) */
+  const uses = new Map();
+  for (const a of defs.keys()) {
+    const thai = /[ก-ฮ]/.test(a);
+    const re = thai ? new RegExp(escRe(a), 'g') : new RegExp('(?<![A-Za-z0-9])' + escRe(a) + '(?![A-Za-z0-9])', 'g');
+    const list = [];
+    paras.forEach((p, pi) => {
+      if (p.hf || p.toc) return;
+      for (const m of p.text.matchAll(re)) {
+        if (defs.get(a).some(d => d.pi === pi && d.s === m.index)) continue;
+        list.push({ pi, s: m.index, e: m.index + a.length });
+      }
+    });
+    uses.set(a, list);
+  }
+  return { defs, uses };
+}
+function abbrChecks(doc, paras, add) {
+  const { defs, uses } = scanAbbr(doc);
+  const before = (x, d) => x.pi < d.pi || (x.pi === d.pi && x.s < d.s);
+  for (const [a, ds] of defs) {
+    const d0 = ds[0];
+    /* used before it is defined (headings and table cells too) */
+    const early = uses.get(a).filter(u => before(u, d0));
+    if (early.length) {
+      const u = early[0];
+      add({ cat: 'abbr', sev: 'warn', para: u.pi, ranges: [[u.s, u.e]], found: a, suggest: '', msg: 'abbrBefore', abbr: a, n: early.length,
+        ref: d0.pi, key: 'abbr:before:' + a });
+    }
+    /* defined more than once */
+    const same = (x, y) => { const a = normT(x), b = normT(y); return !a || !b || a === b || a.endsWith(b) || b.endsWith(a) || commonEnd(a, b).length >= 5; };
+    const diff = ds.slice(1).filter(d => !same(d.full, d0.full));
+    for (const d of diff) {
+      add({ cat: 'abbr', sev: 'warn', para: d.pi, ranges: [[d.s, d.e]], found: a, suggest: '',
+        msg: 'abbrMeaning', abbr: a, full: d.full, first: d0.full, ref: d0.pi, key: 'abbr:meaning:' + a });
+    }
+    /* the same definition again: one finding, every place marked */
+    const again = ds.slice(1).filter(d => !diff.includes(d));
+    if (again.length) {
+      add({ cat: 'abbr', sev: 'info', para: again[0].pi, ranges: [[again[0].s, again[0].e]], also: again.slice(1).map(d => [d.pi, d.s, d.e]),
+        found: a, suggest: '', msg: 'abbrTwice', abbr: a, n: again.length, ref: d0.pi, key: 'abbr:twice:' + a });
+    }
+    /* the full name written out again after the abbreviation was defined */
+    const full = d0.full;
+    if (full && full.length >= 4 && !/[;,]/.test(full)) {
+      const re = new RegExp(escRe(full) + '(?!\\s*\\()', 'g');
+      const at = [];
+      paras.forEach((p, pi) => {
+        if (p.hf || p.toc || p.inTable || pi < d0.pi) return;
+        for (const m of p.text.matchAll(re)) {
+          if (pi === d0.pi && m.index <= d0.s) continue;
+          if (ds.some(d => d.pi === pi && Math.abs(d.s - (m.index + full.length)) < 6)) continue;
+          at.push([pi, m.index, m.index + full.length]);
+        }
+      });
+      if (at.length) add({ cat: 'abbr', sev: 'info', para: at[0][0], ranges: [[at[0][1], at[0][2]]], also: at.slice(1), found: full, suggest: a,
+        msg: 'abbrFull', abbr: a, n: at.length, key: 'abbr:full:' + a });
+    }
+  }
+  /* the same abbreviation written another way: DO / D.O. / Do, pH / PH */
+  const keys = new Map([...defs.keys()].filter(a => !/[ก-ฮ]/.test(a)).map(a => [keyOf(a), a]));
+  paras.forEach((p, pi) => {
+    if (p.hf || p.toc) return;
+    for (const m of p.text.matchAll(/(?<![A-Za-z0-9])[A-Za-z](?:\.?[A-Za-z0-9]){1,9}\.?(?![A-Za-z0-9])/g)) {
+      const f = m[0].replace(/\.$/, m[0].length > 2 && /\.[A-Za-z]\.$/.test(m[0]) ? '.' : '');
+      const a = keys.get(keyOf(f));
+      if (!a || f === a) continue;
+      if (!/[A-Z].*[A-Z]|\./.test(f) || /^[a-z]+$/.test(f)) continue; // "do", "Do" are words
+      add({ cat: 'abbr', sev: 'warn', para: pi, ranges: [[m.index, m.index + f.length]], found: f, suggest: a, msg: 'abbrForm', abbr: a,
+        key: 'abbr:form:' + f });
+    }
+  });
+}
+
+/* ── Scientific names in italics (Word files: needs the formatting) ──
+   Genus + species ("Chaetoceros curvisetus"), Genus + sp./spp./cf., and
+   abbreviated genus ("C. curvisetus"). sp./spp. themselves stay upright. */
+const RANKS = /^(?:sp|spp|cf|aff|var|subsp|ssp|nov)\.$/;
+const LATIN_END = /(?:us|um|a|ae|is|es|ii|i|ensis|oides|ata|ina|ella|ica|alis|ius|on|ix|ax|ex|eus|ea)$/;
+const NOT_GENUS = new Set(['The', 'This', 'These', 'That', 'Those', 'There', 'Station', 'Stations', 'Table', 'Figure', 'Fig', 'Total', 'Mean', 'Average',
+  'Sea', 'Water', 'Data', 'Phase', 'Zone', 'Area', 'Site', 'Point', 'Season', 'Dry', 'Wet', 'Rainy', 'Summer', 'Winter', 'Note', 'Source', 'Unit',
+  'Group', 'Class', 'Order', 'Family', 'Phylum', 'Division', 'Kingdom', 'Others', 'Other', 'Unidentified', 'Number', 'Index', 'Value', 'Standard']);
+function sciChecks(doc, paras, add) {
+  if (doc.kind !== 'docx') return;
+  const italicAt = (p, i) => { for (const r of p.runs) if (!r.img && r.s <= i && i < r.e) return !!(r.rp && r.rp.i); return false; };
+  const allItalic = (p, s, e) => { for (let i = s; i < e; i++) if (!/\s/.test(p.text[i]) && !italicAt(p, i)) return false; return true; };
+  const anyItalic = (p, s, e) => { for (let i = s; i < e; i++) if (!/[\s.]/.test(p.text[i]) && italicAt(p, i)) return true; return false; };
+  const known = new Set();
+  const BIN = /(?<![A-Za-z])([A-Z][a-z]{2,})\s+(sp\.|spp\.|cf\.|aff\.|var\.|[a-z]{3,})(?![A-Za-z])/g;
+  /* is this a name, not two words of an English sentence ("Water quality …")? */
+  const isName = (t, m) => {
+    const [, g, ep] = m;
+    if (NOT_GENUS.has(g)) return false;
+    if (RANKS.test(ep) || known.has(g)) return true;
+    if (!LATIN_END.test(ep)) return false;
+    const prev = t.slice(0, m.index).match(/([A-Za-z]+)\s*$/);
+    const next = t.slice(m.index + m[0].length).match(/^\s*([a-z]+)/);
+    return !prev && !next;
+  };
+  paras.forEach(p => { if (!p.hf) for (const m of p.text.matchAll(BIN)) if (RANKS.test(m[2]) && !NOT_GENUS.has(m[1])) known.add(m[1]); });
+  paras.forEach(p => { if (!p.hf) for (const m of p.text.matchAll(BIN)) if (isName(p.text, m)) known.add(m[1]); });
+  const initials = new Set([...known].map(g => g[0]));
+  paras.forEach((p, pi) => {
+    if (p.hf || p.toc || !p.runs) return;
+    const t = p.text;
+    for (const m of t.matchAll(BIN)) {
+      const [, g, ep] = m;
+      if (!isName(t, m)) continue;
+      const rank = RANKS.test(ep);
+      const gs = m.index, ge = gs + g.length, es = m.index + m[0].length - ep.length, ee = m.index + m[0].length;
+      const ok = allItalic(p, gs, ge) && (rank || allItalic(p, es, ee));
+      if (!ok) {
+        add({ cat: 'sci', sev: 'warn', para: pi, ranges: [[gs, rank ? ge : ee]], found: t.slice(gs, rank ? ge : ee), suggest: '', msg: 'sci',
+          key: 'sci:' + g });
+      } else if (rank && anyItalic(p, es, ee)) {
+        add({ cat: 'sci', sev: 'info', para: pi, ranges: [[es, ee]], found: ep, suggest: '', msg: 'sciRank', key: 'sci:rank' });
+      }
+    }
+    for (const m of t.matchAll(/(?<![A-Za-z])([A-Z])\.\s?([a-z]{4,})(?![A-Za-z])/g)) {
+      if (!initials.has(m[1]) || !LATIN_END.test(m[2])) continue;
+      const s = m.index, e = m.index + m[0].length;
+      if (!allItalic(p, s, e)) add({ cat: 'sci', sev: 'warn', para: pi, ranges: [[s, e]], found: m[0], suggest: '', msg: 'sci', key: 'sci:' + m[1] + '.' });
     }
   });
 }
