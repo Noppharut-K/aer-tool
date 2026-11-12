@@ -6,7 +6,7 @@
 import { LANG, L } from '../utils/lang.js';
 import { runChecks, CATS, SEV_ORDER } from '../core/reportCheck.js';
 import { extractDocx, extractPdf, extractText } from '../core/reportExtract.js';
-import { renderWord, renderPdf, renderPlain, stopPdf, ensureFonts, guessBreaks } from './reportView.js';
+import { renderWord, renderPdf, renderPlain, stopPdf, ensureFonts, guessBreaks, pdfRects } from './reportView.js';
 
 /* Where a repeated passage counts: 'para' (same paragraph only) or 'doc' */
 function savedScope() { try { return localStorage.getItem('aer-rc-scope') === 'doc' ? 'doc' : 'para'; } catch (e) { return 'para'; } }
@@ -30,8 +30,11 @@ const TX = {
     scopeHint: { para: 'ขึ้นย่อหน้าใหม่แล้วไม่นับว่าซ้ำ', doc: 'แจ้งเมื่อข้อความซ้ำที่ใดก็ได้ในเล่ม' },
     reading: 'กำลังอ่านไฟล์…', readingPdf: 'กำลังอ่าน PDF หน้า', checking: 'กำลังตรวจ…',
     zoomIn: 'ขยาย', zoomOut: 'ย่อ', zoomFit: 'พอดีความกว้าง',
-    searchPh: 'ค้นหาในรายการ เช่น คำ หรือ หน้า 12', sevLbl: 'ระดับ', sevAll: 'ทั้งหมด', noMatch: 'ไม่พบรายการที่ตรงกับคำค้น',
-    found: (m, n) => `พบ ${m} จาก ${n} รายการ`, resize: 'ลากเพื่อปรับขนาดรายการกับหน้ารายงาน',
+    searchPh: 'ค้นหาในรายการและในเนื้อรายงาน (Enter = ไปจุดถัดไป)', sevLbl: 'ระดับ', sevAll: 'ทั้งหมด', noMatch: 'ไม่พบรายการที่ตรงกับคำค้น',
+    found: (m, n) => `พบ ${m} จาก ${n} รายการที่แสดงอยู่`,
+    hiddenMatch: n => `แต่พบ ${n} รายการในหมวดหรือระดับที่ปิดไว้`, showAll: 'แสดงทุกหมวด',
+    inDoc: n => `ในเนื้อรายงาน ${n} แห่ง`, docMatch: n => `แต่พบคำนี้ในเนื้อรายงาน ${n} แห่ง (ไฮไลต์สีเหลือง) — กด ‹ › ด้านบนรายงาน หรือ Enter เพื่อไปทีละแห่ง`,
+    findNone: 'ไม่พบในรายงาน', findPos: (i, n) => `แห่งที่ ${i} / ${n}`, findPrev: 'แห่งก่อนหน้า', findNext: 'แห่งถัดไป', resize: 'ลากเพื่อปรับขนาดรายการกับหน้ารายงาน',
     prevPage: 'หน้าก่อน', nextPage: 'หน้าถัดไป', goPage: 'ไปที่หน้า',
     brkLbl: 'ตัดบรรทัดแบบ', brkHint: 'Word บน Mac ตัดบรรทัดภาษาไทยที่ช่องว่างเท่านั้น ส่วน Word บน Windows ตัดระหว่างคำ — เลือกให้ตรงกับเครื่องที่เปิดดูไฟล์ (โปรแกรมเดาจากไฟล์ให้แล้ว)',
     newFile: 'เปิดไฟล์อื่น', export: 'Export Excel', restore: 'คืนรายการที่ข้าม',
@@ -118,8 +121,11 @@ const TX = {
     scopeHint: { para: 'A new paragraph does not count as a repeat', doc: 'Flag a passage repeated anywhere in the report' },
     reading: 'Reading file…', readingPdf: 'Reading PDF page', checking: 'Checking…',
     zoomIn: 'Zoom in', zoomOut: 'Zoom out', zoomFit: 'Fit to width',
-    searchPh: 'Search the list, e.g. a word or "page 12"', sevLbl: 'Level', sevAll: 'All', noMatch: 'No findings match the search',
-    found: (m, n) => `${m} of ${n} findings`, resize: 'Drag to resize the list and the report',
+    searchPh: 'Search the list and the report text (Enter = next match)', sevLbl: 'Level', sevAll: 'All', noMatch: 'No findings match the search',
+    found: (m, n) => `${m} of ${n} shown findings`,
+    hiddenMatch: n => `${n} more match in hidden categories or levels`, showAll: 'Show all categories',
+    inDoc: n => `${n} in the report`, docMatch: n => `Found ${n} times in the report text (yellow) — use ‹ › above the report or Enter to step through`,
+    findNone: 'Not in the report', findPos: (i, n) => `${i} of ${n}`, findPrev: 'Previous match', findNext: 'Next match', resize: 'Drag to resize the list and the report',
     prevPage: 'Previous page', nextPage: 'Next page', goPage: 'Go to page',
     brkLbl: 'Line breaks', brkHint: 'Word for Mac breaks Thai lines only at spaces; Word for Windows breaks between words — pick the one you view the file in (guessed from the file)',
     newFile: 'Open another file', export: 'Export Excel', restore: 'Restore skipped',
@@ -337,6 +343,7 @@ function unload() {
   RPT.pdfCache.clear();
   RPT.doc = null;
   RPT.issues = [];
+  clearFind();
 }
 
 function load(doc, name) {
@@ -459,6 +466,8 @@ function renderResult() {
     '<div class="rc-pnav" id="rc-pnav"><button data-pg="prev" aria-label="' + esc(t.prevPage) + '">‹</button><span>' + esc(t.page) + '</span>' +
     '<input id="rc-pg" inputmode="numeric" aria-label="' + esc(t.goPage) + '"><span class="rc-pgn" id="rc-pgn"></span>' +
     '<button data-pg="next" aria-label="' + esc(t.nextPage) + '">›</button></div>' +
+    '<div class="rc-find" id="rc-find" hidden><span id="rc-find-n" aria-live="polite"></span>' +
+    '<button data-f="-1" aria-label="' + esc(t.findPrev) + '">‹</button><button data-f="1" aria-label="' + esc(t.findNext) + '">›</button></div>' +
     (d.kind === 'docx' ? '<div class="rc-opt compact rc-brk" id="rc-brk" title="' + esc(t.brkHint) + '"><span class="rc-opt-lbl">' + esc(t.brkLbl) + '</span><div class="rc-seg" role="group" aria-label="' + esc(t.brkLbl) + '">' +
       '<button data-brk="mac">Word Mac</button><button data-brk="win">Word Windows</button></div></div>' : '') +
     '<div class="rc-zoom" id="rc-zoom" role="group" aria-label="Zoom"><button data-z="out" aria-label="' + esc(t.zoomOut) + '">−</button>' +
@@ -481,9 +490,21 @@ function renderResult() {
     refresh();
   });
   let qt = null;
-  document.getElementById('rc-q').addEventListener('input', e => {
+  const qEl = document.getElementById('rc-q');
+  qEl.addEventListener('input', e => {
     clearTimeout(qt);
-    qt = setTimeout(() => { RPT.q = e.target.value; renderList(); renderCount(); }, 120);
+    qt = setTimeout(() => { RPT.q = e.target.value; findInDoc(); renderList(); renderCount(); }, 150);
+  });
+  qEl.addEventListener('keydown', e => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    clearTimeout(qt);
+    if (RPT.q !== qEl.value) { RPT.q = qEl.value; findInDoc(); renderList(); renderCount(); }
+    gotoFind(e.shiftKey ? -1 : 1);
+  });
+  document.getElementById('rc-find').addEventListener('click', e => {
+    const b = e.target.closest('[data-f]');
+    if (b) gotoFind(+b.dataset.f);
   });
   const list = document.getElementById('rc-list');
   list.addEventListener('click', onListClick);
@@ -562,7 +583,7 @@ function renderCount() {
   const el = document.getElementById('rc-count');
   if (!el) return;
   const n = shown().length, m = listed().length;
-  el.textContent = RPT.q.trim() ? tx().found(m, n) : '';
+  el.textContent = RPT.q.trim() ? tx().found(m, n) + ' · ' + tx().inDoc(findCount()) : '';
   el.hidden = !RPT.q.trim();
 }
 
@@ -572,9 +593,8 @@ function searchable(i) {
   return [tx().cat[i.cat], message(i), i.found, i.suggest, p.heading, locText(p, i.para, i.ranges[0][0]),
     p.text.slice(Math.max(0, i.ranges[0][0] - 30), i.ranges[0][1] + 30)].join(' ').toLowerCase();
 }
-function listed() {
+function listed(list = shown()) {
   const q = RPT.q.trim().toLowerCase();
-  const list = shown();
   if (!q) return list;
   const words = q.split(/\s+/);
   return list.filter(i => { const s = searchable(i); return words.every(w => s.includes(w)); });
@@ -585,7 +605,12 @@ function renderList() {
   const list = listed().sort((a, b) => SEV_ORDER[a.sev] - SEV_ORDER[b.sev] || a.para - b.para || a.ranges[0][0] - b.ranges[0][0]);
   const el = document.getElementById('rc-list');
   if (!list.length) {
-    el.innerHTML = '<div class="rc-empty">' + esc(RPT.q.trim() ? t.noMatch : RPT.issues.length ? t.none : t.clean) + '</div>';
+    /* the search only looks at the shown categories/levels: say so when
+       hidden ones would match */
+    const hidden = RPT.q.trim() ? listed(live()).length : 0;
+    el.innerHTML = '<div class="rc-empty">' + esc(RPT.q.trim() ? t.noMatch : RPT.issues.length ? t.none : t.clean) +
+      (hidden ? '<div class="rc-hidden">' + esc(t.hiddenMatch(hidden)) + '</div><button class="btn" data-act="showAll">' + esc(t.showAll) + '</button>' : '') +
+      (RPT.q.trim() && findCount() ? '<div class="rc-hidden">' + esc(t.docMatch(findCount())) + '</div>' : '') + '</div>';
     return;
   }
   const keyCount = new Map();
@@ -609,6 +634,7 @@ function renderList() {
 }
 
 function onListClick(e) {
+  if (e.target.closest('[data-act="showAll"]')) { RPT.off.clear(); RPT.sev = 'all'; refresh(); return; }
   const item = e.target.closest('.rc-item');
   if (!item) return;
   const id = +item.dataset.id;
@@ -690,6 +716,7 @@ function renderDoc(force) {
     if (pgn) pgn.textContent = '/ ' + n;
     trackPage();
     document.querySelectorAll('#rc-brk [data-brk]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.brk === breakMode())));
+    findInDoc();
   }
   applyMarks();
 }
@@ -709,6 +736,110 @@ function applyMarks() {
     m.classList.add('sev-' + sevOf.get(id));
     if (id === RPT.sel) m.classList.add('sel');
   });
+}
+
+/* ── Search in the report text ──
+   Word and pasted text: every match becomes a DOM Range, painted with the
+   CSS Highlight API (the pages are not changed). PDF: boxes over the page
+   image from the text positions. The page script's invisible characters
+   (word joiners) are skipped, so matches are found across them. */
+const FIND = { ranges: [], boxes: [], cur: -1 };
+const HAS_HL = typeof CSS !== 'undefined' && CSS.highlights && typeof Highlight !== 'undefined';
+const lowerAscii = s => s.replace(/[A-Z]/g, c => c.toLowerCase()); // keeps every index in place
+const findCount = () => FIND.ranges.length || FIND.boxes.length;
+function clearFind() {
+  FIND.ranges = []; FIND.boxes = []; FIND.cur = -1;
+  if (HAS_HL) { CSS.highlights.delete('rc-find'); CSS.highlights.delete('rc-find-cur'); }
+  document.querySelectorAll('#rc-doc .rc-findbox').forEach(b => b.remove());
+}
+function findInDoc() {
+  const el = document.getElementById('rc-doc');
+  clearFind();
+  const q = lowerAscii(RPT.q.trim().replace(/[\u2060\u200B]/g, ''));
+  if (el && q && RPT.doc) {
+    if (RPT.doc.kind === 'pdf') findPdf(el, q); else findDom(el, q);
+  }
+  findBar();
+}
+function findDom(el, q) {
+  for (const p of el.querySelectorAll('.rc-wp')) {
+    let str = '';
+    const map = [];
+    const w = document.createTreeWalker(p, NodeFilter.SHOW_TEXT);
+    for (let n = w.nextNode(); n; n = w.nextNode()) {
+      if (n.parentElement.closest('.rc-wp') !== p) continue; // text boxes inside are their own paragraphs
+      const t = n.data;
+      for (let i = 0; i < t.length; i++) {
+        if (t[i] === '\u2060' || t[i] === '\u200B') continue;
+        str += t[i];
+        map.push(n, i);
+      }
+    }
+    const low = lowerAscii(str);
+    for (let k = low.indexOf(q); k >= 0 && FIND.ranges.length < 3000; k = low.indexOf(q, k + q.length)) {
+      const e = k + q.length - 1;
+      const r = document.createRange();
+      r.setStart(map[2 * k], map[2 * k + 1]);
+      r.setEnd(map[2 * e], map[2 * e + 1] + 1);
+      FIND.ranges.push(r);
+    }
+  }
+  if (HAS_HL && FIND.ranges.length) CSS.highlights.set('rc-find', new Highlight(...FIND.ranges));
+}
+function findPdf(el, q) {
+  const d = RPT.doc;
+  d.paras.forEach((p, pi) => {
+    const low = lowerAscii(p.text);
+    for (let k = low.indexOf(q); k >= 0 && FIND.boxes.length < 3000; k = low.indexOf(q, k + q.length)) FIND.boxes.push({ pi, s: k, e: k + q.length });
+  });
+  FIND.boxes.forEach((m, i) => {
+    const p = d.paras[m.pi];
+    const sheet = el.querySelector('.rc-sheet.pdf[data-pg="' + p.page + '"]');
+    if (!sheet) return;
+    for (const r of pdfRects(d, p, [[m.s, m.e]])) {
+      const b = document.createElement('div');
+      b.className = 'rc-findbox';
+      b.dataset.f = i;
+      b.style.cssText = 'left:' + r[0].toFixed(1) + 'px;top:' + r[1].toFixed(1) + 'px;width:' + r[2].toFixed(1) + 'px;height:' + r[3].toFixed(1) + 'px';
+      sheet.appendChild(b);
+    }
+  });
+}
+function findBar() {
+  const bar = document.getElementById('rc-find');
+  if (!bar) return;
+  const n = findCount();
+  bar.hidden = !RPT.q.trim();
+  bar.classList.toggle('none', !n);
+  document.getElementById('rc-find-n').textContent = !n ? tx().findNone : FIND.cur >= 0 ? tx().findPos(FIND.cur + 1, n) : tx().inDoc(n);
+}
+/* Show match number cur: bring its page into view first (off-screen pages
+   are not laid out), then centre the match */
+function gotoFind(step) {
+  const n = findCount();
+  const el = document.getElementById('rc-doc');
+  if (!n || !el) return;
+  FIND.cur = (FIND.cur + step + n) % n;
+  let target, sheet;
+  if (FIND.ranges.length) {
+    const r = FIND.ranges[FIND.cur];
+    if (HAS_HL) CSS.highlights.set('rc-find-cur', new Highlight(r));
+    sheet = r.startContainer.parentElement.closest('.rc-sheet');
+    target = () => r.getBoundingClientRect();
+  } else {
+    el.querySelectorAll('.rc-findbox.cur').forEach(b => b.classList.remove('cur'));
+    const bs = el.querySelectorAll('.rc-findbox[data-f="' + FIND.cur + '"]');
+    bs.forEach(b => b.classList.add('cur'));
+    sheet = bs[0] && bs[0].closest('.rc-sheet');
+    target = () => (bs[0] ? bs[0].getBoundingClientRect() : null);
+  }
+  if (sheet) el.scrollTop += sheet.getBoundingClientRect().top - el.getBoundingClientRect().top;
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    const rc = target();
+    if (rc && rc.height) el.scrollTop += rc.top - el.getBoundingClientRect().top - el.clientHeight / 3;
+    trackPage();
+  }));
+  findBar();
 }
 
 /* Page navigation */

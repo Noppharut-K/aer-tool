@@ -852,13 +852,29 @@ body.dark .rc-sevf button[aria-pressed="true"],body.dark .rc-sevf button[aria-pr
 .rc-split:hover::after,.rc-split.drag::after,.rc-split:focus-visible::after{background:var(--navy);}
 .rc-split:focus-visible{outline:none;}
 .rc-dbar{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:6px 8px;border-bottom:1px solid var(--border);background:var(--white);}
-.rc-pnav{display:flex;align-items:center;gap:5px;font-size:12.5px;color:var(--text2);}
+.rc-pnav{display:flex;align-items:center;gap:5px;font-size:12.5px;color:var(--text2);white-space:nowrap;}
+.rc-dbar{flex-wrap:wrap;row-gap:6px;}
+.rc-docpane{container-type:inline-size;}
+@container (max-width:700px){.rc-brk .rc-opt-lbl{display:none;}}
+.rc-brk .rc-seg button{white-space:nowrap;}
 .rc-pnav[hidden]{visibility:hidden;}
 .rc-pnav button{font-family:var(--font);font-size:16px;line-height:1;width:28px;height:28px;border-radius:var(--rs);border:1px solid var(--border2);background:var(--white);color:var(--text2);cursor:pointer;}
 .rc-pnav button:hover{border-color:var(--text4);color:var(--text);}
 .rc-pnav input{width:46px;height:28px;text-align:center;font-family:var(--font);font-size:12.5px;font-variant-numeric:tabular-nums;border:1px solid var(--border2);border-radius:var(--rs);background:var(--white);color:var(--text);}
 .rc-pnav input:focus{outline:none;border-color:var(--navy);box-shadow:0 0 0 3px var(--navy-l);}
 .rc-pgn{font-variant-numeric:tabular-nums;color:var(--text3);}
+.rc-find{display:flex;align-items:center;gap:4px;font-size:12.5px;color:var(--text2);padding:2px 4px 2px 10px;border-radius:999px;background:#fff3bf;}
+body.dark .rc-find{background:#4a3f12;color:#fff;}
+.rc-find[hidden]{display:none;}
+.rc-find.none{background:var(--bg2);color:var(--text3);}
+.rc-find.none button{display:none;}
+.rc-find span{font-variant-numeric:tabular-nums;white-space:nowrap;}
+.rc-find button{font-family:var(--font);font-size:15px;line-height:1;width:26px;height:26px;border-radius:50%;border:none;background:transparent;color:inherit;cursor:pointer;}
+.rc-find button:hover{background:rgba(0,0,0,.08);}
+::highlight(rc-find){background-color:#ffe066;color:#000;}
+::highlight(rc-find-cur){background-color:#ff9632;color:#000;}
+.rc-findbox{position:absolute;background:rgba(255,214,0,.38);border-radius:2px;pointer-events:none;}
+.rc-findbox.cur{background:rgba(255,140,30,.55);outline:2px solid #ff8a00;}
 .rc-list{overflow:auto;min-height:0;flex:1;background:var(--white);}
 .rc-list{display:flex;flex-direction:column;}
 .rc-item{padding:10px 14px 10px;border-bottom:1px solid var(--border);cursor:pointer;display:flex;flex-direction:column;gap:5px;box-shadow:inset 3px 0 0 transparent;}
@@ -883,6 +899,7 @@ body.dark .rc-sevf button[aria-pressed="true"],body.dark .rc-sevf button[aria-pr
 .rc-btns button:hover{color:var(--text);border-color:var(--text4);}
 .rc-empty,.rc-more{padding:24px 16px;text-align:center;color:var(--text3);font-size:13px;}
 .rc-more{padding:12px;font-size:12px;}
+.rc-hidden{margin:8px 0 10px;font-size:12.5px;color:var(--text2);}
 
 /* Document panel: pages on a grey desk. Pages stay paper-white in both
    themes (like Word's page view), so they carry their own colours. */

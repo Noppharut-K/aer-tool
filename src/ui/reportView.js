@@ -1050,6 +1050,9 @@ function rects(doc, p, issue) {
   return out;
 }
 
+/* Boxes over [start,end) ranges of a PDF paragraph, in page px (for search) */
+export function pdfRects(doc, p, ranges) { return rects(doc, p, { ranges }); }
+
 export function renderPdf(el, doc, byPara, cache, pageLbl) {
   const hl = new Map();
   byPara.forEach((issues, pi) => {
