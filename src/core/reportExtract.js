@@ -17,7 +17,6 @@ const W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 const R = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
 const A = 'http://schemas.openxmlformats.org/drawingml/2006/main';
 const WP = 'http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing';
-const V = 'urn:schemas-microsoft-com:vml';
 
 /* ── small XML helpers ──────────────────────────────────────────────────── */
 
@@ -32,15 +31,32 @@ function onOff(el) {
   const v = at(el, 'val');
   return !(v === '0' || v === 'false' || v === 'off' || v === 'none');
 }
+const onAttr = v => v === '1' || v === 'true' || v === 'on';
 const num = v => (v == null || v === '' ? undefined : +v);
 const parseXml = s => new DOMParser().parseFromString(s, 'application/xml');
+/* any-namespace lookups, for DrawingML, VML and charts */
+const lk = (el, n) => (el ? [...el.children].find(c => c.localName === n) || null : null);
+const lks = (el, n) => (el ? [...el.children].filter(c => c.localName === n) : []);
+const ld = (el, n) => (el ? el.getElementsByTagNameNS('*', n)[0] || null : null);
+const emu = v => (+v || 0) / 9525; // EMU → CSS px
+const rid = el => el && (el.getAttributeNS(R, 'id') || el.getAttribute('r:id') || el.getAttributeNS(R, 'embed') || el.getAttribute('r:embed'));
 
+function mergeTabs(a = [], b = []) {
+  const m = new Map(a.map(t => [t.pos, t]));
+  for (const t of b) { if (t.val === 'clear') m.delete(t.pos); else m.set(t.pos, t); }
+  return [...m.values()].sort((x, y) => x.pos - y.pos);
+}
 /* Merge two property bags; keys that are undefined in `b` keep `a`'s value */
 function merge(a, b) {
+  a = a || {}; b = b || {};
   const o = { ...a };
   for (const k in b) if (b[k] !== undefined) o[k] = b[k];
   if (b.first !== undefined) delete o.hang;
   if (b.hang !== undefined) delete o.first;
+  if (b.tabs) o.tabs = mergeTabs(a.tabs, b.tabs);
+  if (b.borders) o.borders = { ...(a.borders || {}), ...b.borders };
+  if (b.mar) o.mar = { ...(a.mar || {}), ...b.mar };
+  delete o.__k;
   return o;
 }
 
@@ -58,20 +74,30 @@ function parsePPr(pPr) {
   const sp = kid(pPr, 'spacing');
   if (sp) {
     o.spB = num(at(sp, 'before')); o.spA = num(at(sp, 'after'));
+    const bl = num(at(sp, 'beforeLines')), al = num(at(sp, 'afterLines'));
+    if (bl !== undefined) o.spB = bl * 2.4; // 1/100 of a 12pt line
+    if (al !== undefined) o.spA = al * 2.4;
+    if (onAttr(at(sp, 'beforeAutospacing'))) o.spB = 280;
+    if (onAttr(at(sp, 'afterAutospacing'))) o.spA = 280;
     o.line = num(at(sp, 'line')); if (o.line !== undefined) o.lineRule = at(sp, 'lineRule') || 'auto';
   }
+  const cs = kid(pPr, 'contextualSpacing'); if (cs) o.ctxSp = onOff(cs);
+  const sg = kid(pPr, 'snapToGrid'); if (sg) o.snap = onOff(sg);
+  const tabs = kid(pPr, 'tabs');
+  if (tabs) o.tabs = kids(tabs, 'tab').map(t => ({ val: at(t, 'val') || 'left', pos: +at(t, 'pos') || 0, leader: at(t, 'leader') }));
   const ol = kid(pPr, 'outlineLvl'); if (ol) o.outline = +at(ol, 'val');
   const np = kid(pPr, 'numPr');
   if (np) { const id = kid(np, 'numId'), lv = kid(np, 'ilvl'); if (id) o.numId = at(id, 'val'); if (lv) o.ilvl = +at(lv, 'val'); }
   const pb = kid(pPr, 'pageBreakBefore'); if (pb) o.pbb = onOff(pb);
   const shd = kid(pPr, 'shd'); if (shd) { const f = at(shd, 'fill'); if (f && f !== 'auto') o.fill = f; }
+  const bd = kid(pPr, 'pBdr'); if (bd) o.borders = parseBorders(bd);
   return o;
 }
 
 function parseRPr(rPr) {
   const o = {};
   if (!rPr) return o;
-  for (const n of ['b', 'bCs', 'i', 'iCs', 'strike', 'dstrike', 'vanish', 'caps', 'smallCaps']) {
+  for (const n of ['b', 'bCs', 'i', 'iCs', 'strike', 'dstrike', 'vanish', 'caps', 'smallCaps', 'cs', 'rtl']) {
     const e = kid(rPr, n); if (e) o[n] = onOff(e);
   }
   const u = kid(rPr, 'u'); if (u) o.u = (at(u, 'val') || 'single') !== 'none';
@@ -81,21 +107,56 @@ function parseRPr(rPr) {
   const col = kid(rPr, 'color'); if (col) { const v = at(col, 'val'); if (v && v !== 'auto') o.color = v; }
   const hl = kid(rPr, 'highlight'); if (hl) o.hl = at(hl, 'val');
   const shd = kid(rPr, 'shd'); if (shd) { const f = at(shd, 'fill'); if (f && f !== 'auto') o.shd = f; }
+  const spc = kid(rPr, 'spacing'); if (spc) o.csp = +at(spc, 'val') || 0;
+  const wsc = kid(rPr, 'w'); if (wsc) o.wsc = +at(wsc, 'val') || 100;
   const rf = kid(rPr, 'rFonts');
   if (rf) {
     const a = at(rf, 'ascii') || at(rf, 'hAnsi'), c = at(rf, 'cs');
     if (a) o.fA = a; if (c) o.fC = c;
     const aT = at(rf, 'asciiTheme') || at(rf, 'hAnsiTheme'), cT = at(rf, 'cstheme');
     if (aT && !a) o.fAT = aT; if (cT && !c) o.fCT = cT;
+    const h = at(rf, 'hint'); if (h) o.hint = h;
   }
   const rs = kid(rPr, 'rStyle'); if (rs) o.rStyle = at(rs, 'val');
   return o;
 }
 
-/* ── styles, numbering, theme fonts ─────────────────────────────────────── */
+/* Borders: { top, left, bottom, right, insideH, insideV } of { val, sz, color } */
+function parseBorders(el) {
+  if (!el) return null;
+  const o = {};
+  for (const c of el.children) {
+    if (c.namespaceURI !== W) continue;
+    const n = { start: 'left', end: 'right' }[c.localName] || c.localName;
+    o[n] = { val: at(c, 'val') || 'single', sz: +(at(c, 'sz') || 4), color: at(c, 'color') };
+  }
+  return o;
+}
+function parseMar(el) {
+  if (!el) return null;
+  const o = {};
+  for (const c of el.children) {
+    if (c.namespaceURI !== W) continue;
+    const n = { start: 'left', end: 'right' }[c.localName] || c.localName;
+    const w = +at(c, 'w');
+    if (!isNaN(w) && (at(c, 'type') || 'dxa') === 'dxa') o[n] = w;
+  }
+  return o;
+}
+function parseTblPr(el) {
+  if (!el) return {};
+  const tw = kid(el, 'tblW');
+  return {
+    style: at(kid(el, 'tblStyle'), 'val') || undefined, borders: parseBorders(kid(el, 'tblBorders')) || undefined,
+    mar: parseMar(kid(el, 'tblCellMar')) || undefined, ind: num(at(kid(el, 'tblInd'), 'w')), jc: at(kid(el, 'jc'), 'val') || undefined,
+    tw: tw ? { type: at(tw, 'type'), w: at(tw, 'w') } : undefined,
+  };
+}
+
+/* ── styles, numbering, theme ───────────────────────────────────────────── */
 
 function loadStyles(xml) {
-  const S = { byId: {}, defP: {}, defR: {}, normal: null, memo: {} };
+  const S = { byId: {}, defP: {}, defR: {}, normal: null, tableNormal: null, memo: {} };
   if (!xml) return S;
   const d = parseXml(xml);
   const dd = d.getElementsByTagNameNS(W, 'docDefaults')[0];
@@ -110,18 +171,20 @@ function loadStyles(xml) {
     const s = {
       type: at(st, 'type'), name: (at(kid(st, 'name'), 'val') || id || '').toLowerCase(),
       based: at(kid(st, 'basedOn'), 'val'), pPr: parsePPr(kid(st, 'pPr')), rPr: parseRPr(kid(st, 'rPr')),
+      tbl: parseTblPr(kid(st, 'tblPr')),
     };
     S.byId[id] = s;
     if (at(st, 'default') === '1' && s.type === 'paragraph') S.normal = id;
+    if (at(st, 'default') === '1' && s.type === 'table') S.tableNormal = id;
   }
   return S;
 }
 function styleChain(S, id, depth = 0) {
-  if (!id || !S.byId[id] || depth > 20) return { pPr: {}, rPr: {} };
+  if (!id || !S.byId[id] || depth > 20) return { pPr: {}, rPr: {}, tbl: {} };
   if (S.memo[id]) return S.memo[id];
   const st = S.byId[id];
   const base = styleChain(S, st.based, depth + 1);
-  return (S.memo[id] = { pPr: merge(base.pPr, st.pPr), rPr: merge(base.rPr, st.rPr) });
+  return (S.memo[id] = { pPr: merge(base.pPr, st.pPr), rPr: merge(base.rPr, st.rPr), tbl: merge(base.tbl, st.tbl) });
 }
 
 function loadNumbering(xml) {
@@ -152,7 +215,7 @@ function roman(n) {
   const t = [[1000, 'M'], [900, 'CM'], [500, 'D'], [400, 'CD'], [100, 'C'], [90, 'XC'], [50, 'L'], [40, 'XL'], [10, 'X'], [9, 'IX'], [5, 'V'], [4, 'IV'], [1, 'I']];
   let s = ''; for (const [v, r] of t) while (n >= v) { s += r; n -= v; } return s;
 }
-function fmtNum(n, fmt) {
+export function fmtNum(n, fmt) {
   switch (fmt) {
     case 'decimalZero': return n < 10 ? '0' + n : String(n);
     case 'upperRoman': return roman(n);
@@ -161,12 +224,13 @@ function fmtNum(n, fmt) {
     case 'lowerLetter': return String.fromCharCode(97 + (n - 1) % 26).repeat(Math.floor((n - 1) / 26) + 1);
     case 'thaiLetters': return THAI_LETTERS[(n - 1) % THAI_LETTERS.length];
     case 'thaiNumbers': case 'thaiCounting': return String(n).replace(/\d/g, d => String.fromCharCode(0x0E50 + +d));
+    case 'numberInDash': return '- ' + n + ' -';
     case 'none': return '';
     default: return String(n);
   }
 }
 /* Bullets are usually Symbol/Wingdings glyphs in the private-use area */
-const BULLET = { 0xB7: '•', 0xA7: '▪', 0xD8: '➢', 0xFC: '✓', 0x76: '❖', 0x6E: '■', 0x71: '❑', 0x6C: '●', 0x9F: '•', 0xA8: '◆' };
+const BULLET = { 0xB7: '•', 0xA7: '▪', 0xD8: '➢', 0xFC: '✓', 0x76: '❖', 0x6E: '■', 0x71: '❑', 0x6C: '●', 0x9F: '•', 0xA8: '◆', 0xE0: '→', 0xE8: '➔', 0x6F: '□', 0xFE: '☑' };
 function bullet(t) {
   if (!t) return '•';
   const c = t.charCodeAt(0);
@@ -190,8 +254,9 @@ function numLabel(N, cnt, numId, ilvl) {
   return { text, lv };
 }
 
+const OFFICE_COLORS = { dk1: '000000', lt1: 'FFFFFF', dk2: '44546A', lt2: 'E7E6E6', accent1: '4472C4', accent2: 'ED7D31', accent3: 'A5A5A5', accent4: 'FFC000', accent5: '5B9BD5', accent6: '70AD47', hlink: '0563C1', folHlink: '954F72' };
 function loadTheme(xml) {
-  const T = { minor: {}, major: {} };
+  const T = { minor: {}, major: {}, colors: { ...OFFICE_COLORS } };
   if (!xml) return T;
   const d = parseXml(xml);
   for (const k of ['minor', 'major']) {
@@ -203,7 +268,142 @@ function loadTheme(xml) {
     const cs = f.getElementsByTagNameNS(A, 'cs')[0];
     if (!T[k].thai && cs && cs.getAttribute('typeface')) T[k].thai = cs.getAttribute('typeface');
   }
+  const cs = d.getElementsByTagNameNS(A, 'clrScheme')[0];
+  if (cs) for (const c of cs.children) {
+    const s = lk(c, 'srgbClr'), y = lk(c, 'sysClr');
+    const v = (s && s.getAttribute('val')) || (y && (y.getAttribute('lastClr') || (y.getAttribute('val') === 'window' ? 'FFFFFF' : '000000')));
+    if (v) T.colors[c.localName] = v;
+  }
   return T;
+}
+
+/* DrawingML colour (a solidFill, a style ref, a gradient stop …) → "#rrggbb" */
+const PRESET = { black: '000000', white: 'FFFFFF', red: 'FF0000', green: '008000', blue: '0000FF', yellow: 'FFFF00', gray: '808080', grey: '808080' };
+function hsl(r, g, b) {
+  r /= 255; g /= 255; b /= 255;
+  const mx = Math.max(r, g, b), mn = Math.min(r, g, b), l = (mx + mn) / 2;
+  if (mx === mn) return [0, 0, l];
+  const d = mx - mn, s = l > 0.5 ? d / (2 - mx - mn) : d / (mx + mn);
+  const h = mx === r ? (g - b) / d + (g < b ? 6 : 0) : mx === g ? (b - r) / d + 2 : (r - g) / d + 4;
+  return [h / 6, s, l];
+}
+function rgb(h, s, l) {
+  if (!s) return [l, l, l].map(v => Math.round(v * 255));
+  const q = l < 0.5 ? l * (1 + s) : l + s - l * s, p = 2 * l - q;
+  const f = t => { t = (t + 1) % 1; return t < 1 / 6 ? p + (q - p) * 6 * t : t < 1 / 2 ? q : t < 2 / 3 ? p + (q - p) * (2 / 3 - t) * 6 : p; };
+  return [f(h + 1 / 3), f(h), f(h - 1 / 3)].map(v => Math.round(v * 255));
+}
+function dmlColor(el, theme) {
+  if (!el) return null;
+  const c = [...el.children].find(x => /^(srgbClr|schemeClr|sysClr|prstClr|scrgbClr)$/.test(x.localName));
+  if (!c) return null;
+  const v = c.getAttribute('val');
+  let hex;
+  if (c.localName === 'srgbClr') hex = v;
+  else if (c.localName === 'sysClr') hex = c.getAttribute('lastClr') || (v === 'window' ? 'FFFFFF' : '000000');
+  else if (c.localName === 'prstClr') hex = PRESET[v] || '000000';
+  else if (c.localName === 'schemeClr') hex = theme.colors[{ bg1: 'lt1', tx1: 'dk1', bg2: 'lt2', tx2: 'dk2' }[v] || v] || '000000';
+  else return null;
+  if (!/^[0-9a-f]{6}$/i.test(hex || '')) return null;
+  let [r, g, b] = [0, 2, 4].map(i => parseInt(hex.slice(i, i + 2), 16));
+  for (const m of c.children) {
+    const k = +m.getAttribute('val') / 100000;
+    if (m.localName === 'lumMod' || m.localName === 'lumOff') {
+      const [h, s, l] = hsl(r, g, b);
+      [r, g, b] = rgb(h, s, Math.min(1, Math.max(0, m.localName === 'lumMod' ? l * k : l + k)));
+    } else if (m.localName === 'shade') [r, g, b] = [r, g, b].map(x => Math.round(x * k));
+    else if (m.localName === 'tint') [r, g, b] = [r, g, b].map(x => Math.round(x + (255 - x) * (1 - k)));
+  }
+  return '#' + [r, g, b].map(x => x.toString(16).padStart(2, '0')).join('');
+}
+
+/* Chart part → { title, plots:[{ type, dir, grouping, series }], axes, legend } */
+function parseChart(d, theme) {
+  const chart = ld(d, 'chart');
+  const txt = el => (el ? [...el.getElementsByTagNameNS(A, 't')].map(t => t.textContent).join('') : '');
+  const val = (el, n) => { const e = lk(el, n); return e ? e.getAttribute('val') : null; };
+  const col = el => dmlColor(el, theme);
+  const ptsFrom = (c, n) => {
+    const a = new Array(Math.min(n || 0, 5000)).fill('');
+    for (const p of lks(c, 'pt')) { const i = +p.getAttribute('idx'); const v = lk(p, 'v'); if (i < 5000) a[i] = v ? v.textContent : ''; }
+    return a;
+  };
+  const pts = el => {
+    if (!el) return [];
+    const ml = ld(el, 'multiLvlStrCache');
+    if (ml) return ptsFrom(lk(ml, 'lvl'), +val(ml, 'ptCount'));
+    const c = ld(el, 'strCache') || ld(el, 'numCache') || ld(el, 'strLit') || ld(el, 'numLit');
+    if (!c) { const v = ld(el, 'v'); return v ? [v.textContent] : []; }
+    return ptsFrom(c, +val(c, 'ptCount'));
+  };
+  const fmtOf = el => { const c = el && (ld(el, 'numCache') || ld(el, 'numLit')); const f = c && lk(c, 'formatCode'); return f ? f.textContent : null; };
+  const plots = [];
+  const pa = lk(chart, 'plotArea');
+  let k = 0;
+  for (const p of pa ? pa.children : []) {
+    const m = /^(bar|bar3D|line|line3D|pie|pie3D|doughnut|area|area3D|scatter|radar|ofPie|bubble)Chart$/.exec(p.localName);
+    if (!m) continue;
+    const type = { bar3D: 'bar', line3D: 'line', pie3D: 'pie', area3D: 'area', ofPie: 'pie', bubble: 'scatter' }[m[1]] || m[1];
+    const dl0 = lk(p, 'dLbls');
+    const series = lks(p, 'ser').map(s => {
+      const sp = lk(s, 'spPr');
+      const ln = lk(sp, 'ln');
+      const sdl = lk(s, 'dLbls') || dl0;
+      const mk = lk(s, 'marker');
+      const vEl = lk(s, 'val') || lk(s, 'yVal');
+      return {
+        name: pts(lk(s, 'tx'))[0] || '', cats: pts(lk(s, 'cat') || lk(s, 'xVal')),
+        vals: pts(vEl).map(v => (v === '' || v == null ? null : +v)), fmt: fmtOf(vEl),
+        fill: col(lk(sp, 'solidFill')), line: col(lk(ln, 'solidFill')), noLine: !!lk(ln, 'noFill'), noFill: !!lk(sp, 'noFill'),
+        lineW: ln && ln.getAttribute('w') ? emu(ln.getAttribute('w')) : null,
+        marker: mk ? val(mk, 'symbol') : null, mfill: col(lk(lk(mk, 'spPr'), 'solidFill')),
+        idx: +(val(s, 'idx') ?? k), pts: lks(s, 'dPt').map(dp => ({ i: +val(dp, 'idx'), fill: col(lk(lk(dp, 'spPr'), 'solidFill')) })),
+        showVal: sdl ? val(sdl, 'showVal') === '1' : false, showPct: sdl ? val(sdl, 'showPercent') === '1' : false,
+        showCat: sdl ? val(sdl, 'showCatName') === '1' : false,
+      };
+    });
+    k += series.length;
+    plots.push({
+      type, dir: val(p, 'barDir') || 'col', grouping: val(p, 'grouping') || 'clustered', series,
+      hole: type === 'doughnut' ? +(val(p, 'holeSize') || 50) : 0, vary: val(p, 'varyColors') === '1',
+      gap: +(val(p, 'gapWidth') ?? 150), overlap: +(val(p, 'overlap') ?? 0), scatter: val(p, 'scatterStyle'),
+      axIds: lks(p, 'axId').map(a => a.getAttribute('val')),
+    });
+  }
+  const axes = pa ? [...pa.children].filter(c => /Ax$/.test(c.localName)).map(a => {
+    const sc = lk(a, 'scaling');
+    const nf = lk(a, 'numFmt');
+    return {
+      id: val(a, 'axId'), kind: a.localName, pos: val(a, 'axPos'), del: val(a, 'delete') === '1', title: txt(lk(a, 'title')),
+      min: num(val(sc, 'min')), max: num(val(sc, 'max')), grid: !!lk(a, 'majorGridlines'), fmt: nf ? nf.getAttribute('formatCode') : null,
+      rev: val(sc, 'orientation') === 'maxMin', unit: num(val(a, 'majorUnit')),
+    };
+  }) : [];
+  const t = lk(chart, 'title');
+  let title = t ? txt(t) : '';
+  if (t && !title) { const s = plots.flatMap(p => p.series); if (s.length === 1) title = s[0].name; }
+  if (val(chart, 'autoTitleDeleted') === '1' && !t) title = '';
+  const lg = lk(chart, 'legend');
+  return { title, plots, axes, legend: lg ? (val(lg, 'legendPos') || 'r') : null, colors: theme.colors };
+}
+
+/* DrawingML text (SmartArt shapes, chart-like boxes) → [{ align, runs:[{ t, sz, b, i, color }] }] */
+function dmlText(txBody, theme) {
+  if (!txBody) return null;
+  const out = [];
+  for (const p of lks(txBody, 'p')) {
+    const pPr = lk(p, 'pPr');
+    const runs = [];
+    for (const r of p.children) {
+      if (r.localName !== 'r' && r.localName !== 'fld') continue;
+      const rp = lk(r, 'rPr');
+      const t = lk(r, 't');
+      runs.push({ t: t ? t.textContent : '', sz: rp && rp.getAttribute('sz') ? +rp.getAttribute('sz') / 100 : null,
+        b: rp && rp.getAttribute('b') === '1', i: rp && rp.getAttribute('i') === '1', color: dmlColor(lk(rp, 'solidFill'), theme) });
+    }
+    out.push({ align: pPr ? pPr.getAttribute('algn') : null, runs });
+  }
+  return out;
 }
 
 const IMG_TYPES = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', bmp: 'image/bmp', webp: 'image/webp', svg: 'image/svg+xml' };
@@ -227,17 +427,35 @@ export function extractDocx(buf) {
   const S = loadStyles(read('word/styles.xml'));
   const N = loadNumbering(read('word/numbering.xml'));
   const theme = loadTheme(read('word/theme/theme1.xml'));
-  const rels = {};
-  const rx = read('word/_rels/document.xml.rels');
-  if (rx) for (const r of parseXml(rx).getElementsByTagName('Relationship')) rels[r.getAttribute('Id')] = r.getAttribute('Target');
+  const color = el => dmlColor(el, theme);
+
+  /* Relationships of a part ("word/document.xml" → word/_rels/document.xml.rels) */
+  const relsOf = path => {
+    const dir = path.replace(/[^/]+$/, ''), base = path.slice(dir.length);
+    const x = read(dir + '_rels/' + base + '.rels');
+    const m = {};
+    if (x) for (const r of parseXml(x).getElementsByTagName('Relationship')) m[r.getAttribute('Id')] = { target: r.getAttribute('Target'), mode: r.getAttribute('TargetMode'), dir };
+    return m;
+  };
+  let rels = relsOf('word/document.xml');
+  const partPath = id => {
+    const r = rels[id];
+    if (!r || r.mode === 'External' || !r.target) return null;
+    let path = r.target.startsWith('/') ? r.target.slice(1) : r.dir + r.target;
+    while (/[^/]+\/\.\.\//.test(path)) path = path.replace(/[^/]+\/\.\.\//, '');
+    return path;
+  };
+
+  const sx = read('word/settings.xml');
+  const sd = sx ? parseXml(sx) : null;
+  const defTab = (sd && +at(ld(sd, 'defaultTabStop'), 'val')) || 720;
+  const evenOdd = !!(sd && ld(sd, 'evenAndOddHeaders') && onOff(ld(sd, 'evenAndOddHeaders')));
 
   const urls = [];
   const media = new Map();
-  function image(rid) {
-    const target = rels[rid];
-    if (!target) return null;
-    let path = target.startsWith('/') ? target.slice(1) : 'word/' + target;
-    while (/[^/]+\/\.\.\//.test(path)) path = path.replace(/[^/]+\/\.\.\//, '');
+  function image(id) {
+    const path = partPath(id);
+    if (!path) return null;
     if (media.has(path)) return media.get(path);
     const ext = (path.split('.').pop() || '').toLowerCase();
     const data = bin(path);
@@ -254,56 +472,95 @@ export function extractDocx(buf) {
   const body = d.getElementsByTagNameNS(W, 'body')[0];
   if (!body) throw new Error('notdocx');
 
-  /* Page size from the last section */
-  let pg = { w: 11906, h: 16838, l: 1440, r: 1440, t: 1440, b: 1440 };
-  const sect = kids(body, 'sectPr').pop();
-  if (sect) {
-    const sz = kid(sect, 'pgSz'), mar = kid(sect, 'pgMar');
-    if (sz) pg = { ...pg, w: +at(sz, 'w') || pg.w, h: +at(sz, 'h') || pg.h };
-    if (mar) pg = { ...pg, l: num(at(mar, 'left')) ?? pg.l, r: num(at(mar, 'right')) ?? pg.r, t: num(at(mar, 'top')) ?? pg.t, b: num(at(mar, 'bottom')) ?? pg.b };
-  }
-
   /* Word records where each page started the last time it laid the file out
      (<w:lastRenderedPageBreak/>); that gives real page numbers. */
   const hasLR = xml.includes('lastRenderedPageBreak');
-  const ctx = { page: 1, heading: '', cnt: {}, paras: [] };
+  const ctx = { page: 1, heading: '', cnt: {}, paras: [], fld: [], sec: 0, hard: false, pre: '', inHf: false };
   const blocks = [];
   const normalR = merge(S.defR, styleChain(S, S.normal).rPr);
 
-  function walk(container, out, inTable) {
+  /* Sections: page size and margins, headers/footers, page numbering */
+  const secs = [];
+  const hfCache = new Map();
+  function headerPart(ref) {
+    const id = rid(ref);
+    if (hfCache.has(id)) return hfCache.get(id);
+    const path = partPath(id);
+    const x = path && read(path);
+    const out = [];
+    hfCache.set(id, out);
+    if (!x) return out;
+    const save = { paras: ctx.paras, heading: ctx.heading, cnt: ctx.cnt, fld: ctx.fld, pre: ctx.pre, inHf: ctx.inHf, rels };
+    Object.assign(ctx, { paras: [], cnt: {}, fld: [], pre: 'h' + hfCache.size + '-', inHf: true });
+    rels = relsOf(path);
+    try { walk(parseXml(x).documentElement, out, false); } finally {
+      rels = save.rels;
+      Object.assign(ctx, { paras: save.paras, heading: save.heading, cnt: save.cnt, fld: save.fld, pre: save.pre, inHf: save.inHf });
+    }
+    return out;
+  }
+  function parseSect(el) {
+    const s = { pg: { w: 11906, h: 16838, l: 1440, r: 1440, t: 1440, b: 1440, hd: 720, ft: 720 }, hdr: {}, ftr: {}, titlePg: false, numStart: null, numFmt: null, grid: null, type: 'nextPage', cols: 1 };
+    if (!el) return s;
+    const sz = kid(el, 'pgSz'), mar = kid(el, 'pgMar');
+    if (sz) { s.pg.w = +at(sz, 'w') || s.pg.w; s.pg.h = +at(sz, 'h') || s.pg.h; }
+    if (mar) {
+      for (const [k, a] of [['t', 'top'], ['b', 'bottom'], ['l', 'left'], ['r', 'right'], ['hd', 'header'], ['ft', 'footer']]) {
+        const v = num(at(mar, a)); if (v !== undefined) s.pg[k] = Math.abs(v);
+      }
+      s.pg.l += num(at(mar, 'gutter')) || 0;
+    }
+    for (const h of kids(el, 'headerReference')) s.hdr[at(h, 'type') || 'default'] = headerPart(h);
+    for (const h of kids(el, 'footerReference')) s.ftr[at(h, 'type') || 'default'] = headerPart(h);
+    const tp = kid(el, 'titlePg'); s.titlePg = !!tp && onOff(tp);
+    const pn = kid(el, 'pgNumType'); if (pn) { s.numStart = num(at(pn, 'start')) ?? null; s.numFmt = at(pn, 'fmt'); }
+    const dg = kid(el, 'docGrid'); if (dg) s.grid = { type: at(dg, 'type') || 'default', pitch: +at(dg, 'linePitch') || 0 };
+    const ty = kid(el, 'type'); if (ty) s.type = at(ty, 'val');
+    const cl = kid(el, 'cols'); if (cl) s.cols = +at(cl, 'num') || 1;
+    return s;
+  }
+
+  function walk(container, out, inTable, ts) {
     for (const el of container.children) {
       if (el.namespaceURI !== W) continue;
       const ln = el.localName;
-      if (ln === 'p') para(el, out, inTable);
+      if (ln === 'p') para(el, out, inTable, ts);
       else if (ln === 'tbl') table(el, out);
-      else if (ln === 'sdt') { const c = kid(el, 'sdtContent'); if (c) walk(c, out, inTable); }
-      else if (ln === 'customXml' || ln === 'smartTag') walk(el, out, inTable);
+      else if (ln === 'sdt') { const c = kid(el, 'sdtContent'); if (c) walk(c, out, inTable, ts); }
+      else if (ln === 'customXml' || ln === 'smartTag') walk(el, out, inTable, ts);
     }
   }
 
-  function para(el, out, inTable) {
+  function para(el, out, inTable, ts) {
     const pPrEl = kid(el, 'pPr');
     const direct = parsePPr(pPrEl);
     const sid = at(kid(pPrEl, 'pStyle'), 'val') || S.normal;
     const st = styleChain(S, sid);
-    let pp = merge(S.defP, st.pPr);
+    /* Word puts a table style's paragraph settings above Normal but below
+       any other paragraph style */
+    const norm = sid === S.normal;
+    let pp = ts ? (norm ? merge(merge(S.defP, st.pPr), ts.pPr) : merge(merge(S.defP, ts.pPr), st.pPr)) : merge(S.defP, st.pPr);
+    const baseR = ts ? (norm ? merge(merge(S.defR, st.rPr), ts.rPr) : merge(merge(S.defR, ts.rPr), st.rPr)) : merge(S.defR, st.rPr);
+    const markR = merge(baseR, parseRPr(kid(pPrEl, 'rPr')));
+    delete markR.vanish;
     const numId = direct.numId ?? st.pPr.numId;
     const ilvl = direct.ilvl ?? st.pPr.ilvl ?? 0;
-    const baseR = merge(S.defR, st.rPr);
     let label = null, labelR = null, suff = 'tab';
     if (numId && numId !== '0') {
       const L = numLabel(N, ctx.cnt, numId, ilvl);
-      if (L) { label = L.text; pp = merge(pp, L.lv.pPr); labelR = merge(baseR, L.lv.rPr); suff = L.lv.suff; }
+      if (L) { label = L.text; pp = merge(pp, L.lv.pPr); labelR = merge(markR, L.lv.rPr); suff = L.lv.suff; }
     }
     pp = merge(pp, direct);
     const sname = (S.byId[sid] || {}).name || '';
     const toc = /^toc|table of figures|สารบัญ/.test(sname);
     const isHeading = !toc && (/^heading|หัวเรื่อง|^title$/.test(sname) || (pp.outline != null && pp.outline < 9));
-    if (pp.pbb && !hasLR) ctx.page++;
-    const P = { text: '', runs: [], pp, label, labelR, suff, inTable, toc, isHeading, page: ctx.page, breaks: [], idx: ctx.paras.length };
+    if (pp.pbb && !ctx.inHf) { ctx.hard = true; if (!hasLR) ctx.page++; }
+    const P = {
+      text: '', runs: [], pp, label, labelR, suff, inTable, toc, isHeading, page: ctx.page, breaks: [],
+      idx: ctx.pre ? ctx.pre + ctx.paras.length : ctx.paras.length, sid, sec: ctx.sec, markR,
+    };
     ctx.paras.push(P);
     out.push({ t: 'p', p: P });
-    const boxes = [];
     let lastKey = null;
 
     const add = (str, rp) => {
@@ -315,56 +572,231 @@ export function extractDocx(buf) {
       if (last && !last.img && lastKey === key) last.e = P.text.length;
       else { P.runs.push({ s, e: P.text.length, rp }); lastKey = key; }
     };
-    const pageBreak = () => {
-      ctx.page++;
-      if (!P.text && !P.runs.length) P.page = ctx.page; else P.breaks.push(P.text.length);
+    /* PAGE / NUMPAGES field results are redrawn per page */
+    const fieldRp = rp => {
+      const f = ctx.fld[ctx.fld.length - 1];
+      if (!f || !f.res) return rp;
+      const m = /^\s*(PAGE|NUMPAGES|SECTIONPAGES)\b/i.exec(f.code);
+      if (!m) return rp;
+      const o = { ...rp, fld: m[1].toUpperCase() };
+      delete o.__k;
+      return o;
     };
-    const pushImg = img => { P.runs.push({ s: P.text.length, e: P.text.length, img }); lastKey = null; };
-    const textbox = txbx => { const bx = { t: 'tbx', blocks: [] }; walk(txbx, bx.blocks, inTable); boxes.push(bx); };
+    const pageBreak = () => {
+      if (ctx.inHf) return;
+      ctx.page++;
+      if (!P.text && !P.runs.length) { P.page = ctx.page; P.topSoft = !ctx.hard; } else P.breaks.push(P.text.length);
+      ctx.hard = false;
+    };
+    const pushObj = obj => { if (obj) { P.runs.push({ s: P.text.length, e: P.text.length, img: obj }); lastKey = null; } };
 
+    /* ── drawings: pictures, shapes, text boxes, groups, charts ── */
+    const textBlocks = txbx => { const bs = []; walk(txbx, bs, inTable); return bs; };
+    const anchorOf = an => {
+      const pos = n => {
+        const e = lk(an, n); if (!e) return { rel: 'column', off: 0, align: null };
+        const off = lk(e, 'posOffset'), al = lk(e, 'align');
+        return { rel: e.getAttribute('relativeFrom') || 'column', off: off ? emu(off.textContent) : 0, align: al ? al.textContent : null };
+      };
+      let wrap = 'none';
+      for (const c of an.children) if (/^wrap/.test(c.localName)) wrap = c.localName.slice(4).toLowerCase();
+      const h = pos('positionH'), v = pos('positionV');
+      if (an.getAttribute('simplePos') === '1') { const sp = lk(an, 'simplePos'); h.rel = v.rel = 'page'; h.off = emu(sp.getAttribute('x')); v.off = emu(sp.getAttribute('y')); h.align = v.align = null; }
+      return { h, v, wrap, behind: an.getAttribute('behindDoc') === '1',
+        dist: { l: emu(an.getAttribute('distL')), r: emu(an.getAttribute('distR')), t: emu(an.getAttribute('distT')), b: emu(an.getAttribute('distB')) } };
+    };
+    const shapeFill = (spPr, style) => {
+      if (!spPr) return null;
+      if (lk(spPr, 'noFill')) return null;
+      if (lk(spPr, 'solidFill')) return color(lk(spPr, 'solidFill'));
+      if (lk(spPr, 'gradFill')) return color(ld(lk(spPr, 'gradFill'), 'gs'));
+      if (lk(spPr, 'blipFill') || lk(spPr, 'pattFill')) return null;
+      const fr = style && lk(style, 'fillRef');
+      return fr && +fr.getAttribute('idx') > 0 ? color(fr) : null;
+    };
+    const shapeLine = (spPr, style) => {
+      const ln = lk(spPr, 'ln');
+      if (ln && lk(ln, 'noFill')) return null;
+      let c = ln && lk(ln, 'solidFill') ? color(lk(ln, 'solidFill')) : null;
+      if (!c) { const lr = style && lk(style, 'lnRef'); if (lr && +lr.getAttribute('idx') > 0) c = color(lr); }
+      if (!c) return null;
+      return { color: c, w: ln && ln.getAttribute('w') ? Math.max(0.5, emu(ln.getAttribute('w'))) : 1, dash: ln ? (lk(ln, 'prstDash') || {}).getAttribute?.('val') : null,
+        head: ln && lk(ln, 'headEnd') ? lk(ln, 'headEnd').getAttribute('type') : null, tail: ln && lk(ln, 'tailEnd') ? lk(ln, 'tailEnd').getAttribute('type') : null };
+    };
+    const xfrmOf = spPr => {
+      const x = lk(spPr, 'xfrm');
+      return x ? { rot: (+x.getAttribute('rot') || 0) / 60000, flipH: x.getAttribute('flipH') === '1', flipV: x.getAttribute('flipV') === '1' } : {};
+    };
+    const picObj = (el, w, h) => {
+      const blip = ld(el, 'blip');
+      const im = blip ? image(rid(blip)) : null;
+      const sr = ld(el, 'srcRect');
+      const crop = sr ? ['l', 't', 'r', 'b'].map(k => (+sr.getAttribute(k) || 0) / 100000) : null;
+      return { t: 'img', url: im && im.url, kind: im ? im.kind : '', w, h, crop: crop && crop.some(Boolean) ? crop : null, ...xfrmOf(lk(el, 'spPr')) };
+    };
+    const wspObj = (el, w, h) => {
+      const spPr = lk(el, 'spPr');
+      const geom = ld(spPr, 'prstGeom');
+      const style = lk(el, 'style');
+      const txbx = ld(el, 'txbxContent');
+      const bp = lk(el, 'bodyPr');
+      const ins = k => (bp && bp.getAttribute(k + 'Ins') != null ? emu(bp.getAttribute(k + 'Ins')) : (k === 'l' || k === 'r' ? 9.6 : 4.8));
+      return {
+        t: 'shape', prst: geom ? geom.getAttribute('prst') : 'rect', fill: shapeFill(spPr, style), line: shapeLine(spPr, style),
+        blocks: txbx ? textBlocks(txbx) : null, dml: dmlText(lk(el, 'txBody'), theme),
+        ins: { l: ins('l'), t: ins('t'), r: ins('r'), b: ins('b') }, va: bp && bp.getAttribute('anchor'), vert: bp && bp.getAttribute('vert'),
+        w, h, ...xfrmOf(spPr),
+      };
+    };
+    const grpObj = (el, w, h, chx) => {
+      const xf = chx || lk(lk(el, 'grpSpPr'), 'xfrm');
+      const chOff = lk(xf, 'chOff'), chExt = lk(xf, 'chExt');
+      const x0 = chOff ? emu(chOff.getAttribute('x')) : 0, y0 = chOff ? emu(chOff.getAttribute('y')) : 0;
+      const cw = chExt ? emu(chExt.getAttribute('cx')) : w, chh = chExt ? emu(chExt.getAttribute('cy')) : h;
+      const kx = w / (cw || 1), ky = h / (chh || 1);
+      const out = [];
+      for (const c of el.children) {
+        const n = c.localName;
+        if (!/^(wsp|pic|grpSp|graphicFrame|cxnSp|sp)$/.test(n)) continue;
+        const cxf = n === 'grpSp' ? lk(lk(c, 'grpSpPr'), 'xfrm') : n === 'graphicFrame' ? lk(c, 'xfrm') : lk(lk(c, 'spPr'), 'xfrm');
+        const off = lk(cxf, 'off'), ext = lk(cxf, 'ext');
+        if (!off || !ext) continue;
+        const cwpx = emu(ext.getAttribute('cx')) * kx, chpx = emu(ext.getAttribute('cy')) * ky;
+        const obj = shapeObj(c, cwpx, chpx);
+        if (obj) out.push({ x: (emu(off.getAttribute('x')) - x0) * kx, y: (emu(off.getAttribute('y')) - y0) * ky, w: cwpx, h: chpx, obj });
+      }
+      return { t: 'grp', w, h, kids: out };
+    };
+    const chartObj = (el, w, h) => {
+      const path = partPath(rid(el));
+      const x = path && read(path);
+      if (!x) return { t: 'ph', kind: 'chart', w, h };
+      try { return { t: 'chart', w, h, chart: parseChart(parseXml(x), theme) }; } catch (e) { return { t: 'ph', kind: 'chart', w, h }; }
+    };
+    /* SmartArt: Word saves a drawn copy of the diagram (diagrams/drawingN.xml) */
+    const smartArt = (el, w, h) => {
+      try {
+        const dm = partPath(el.getAttributeNS(R, 'dm') || el.getAttribute('r:dm'));
+        const dx = dm && read(dm);
+        const ext = dx && ld(parseXml(dx), 'dataModelExt');
+        const dp = ext && partPath(ext.getAttribute('relId'));
+        const drawing = dp && read(dp);
+        if (!drawing) return { t: 'ph', kind: 'diagram', w, h };
+        const tree = ld(parseXml(drawing), 'spTree');
+        const out = [];
+        for (const sp of lks(tree, 'sp')) {
+          const xf = lk(lk(sp, 'spPr'), 'xfrm');
+          const off = lk(xf, 'off'), e = lk(xf, 'ext');
+          if (!off || !e) continue;
+          const o = wspObj(sp, emu(e.getAttribute('cx')), emu(e.getAttribute('cy')));
+          out.push({ x: emu(off.getAttribute('x')), y: emu(off.getAttribute('y')), w: o.w, h: o.h, obj: o });
+        }
+        return { t: 'grp', w, h, kids: out };
+      } catch (e) { return { t: 'ph', kind: 'diagram', w, h }; }
+    };
+    function shapeObj(el, w, h) {
+      if (!el) return null;
+      switch (el.localName) {
+        case 'pic': return picObj(el, w, h);
+        case 'wsp': case 'sp': case 'cxnSp': return wspObj(el, w, h);
+        case 'wgp': case 'grpSp': return grpObj(el, w, h);
+        case 'chart': return chartObj(el, w, h);
+        case 'relIds': return smartArt(el, w, h);
+        case 'graphicFrame': { const gd = ld(el, 'graphicData'); return shapeObj(gd && gd.firstElementChild, w, h); }
+        default: return { t: 'ph', kind: el.localName, w, h };
+      }
+    }
     const drawing = dr => {
-      const ext = dr.getElementsByTagNameNS(WP, 'extent')[0];
-      const w = ext ? +ext.getAttribute('cx') / 9525 : 0, h = ext ? +ext.getAttribute('cy') / 9525 : 0;
-      const tb = dr.getElementsByTagNameNS(W, 'txbxContent')[0];
-      if (tb) { textbox(tb); return; }
-      const blip = dr.getElementsByTagNameNS(A, 'blip')[0];
-      const gd = dr.getElementsByTagNameNS(A, 'graphicData')[0];
-      const uri = gd ? gd.getAttribute('uri') || '' : '';
-      if (blip) {
-        const im = image(blip.getAttributeNS(R, 'embed') || blip.getAttribute('r:embed'));
-        pushImg({ url: im && im.url, kind: im ? im.kind : '', w, h });
-      } else if (/chart/i.test(uri)) pushImg({ url: null, kind: 'chart', w, h });
-      else if (/diagram/i.test(uri)) pushImg({ url: null, kind: 'diagram', w, h });
+      const wrapEl = lk(dr, 'inline') || lk(dr, 'anchor');
+      if (!wrapEl) return;
+      const ext = lk(wrapEl, 'extent');
+      const w = ext ? emu(ext.getAttribute('cx')) : 0, h = ext ? emu(ext.getAttribute('cy')) : 0;
+      const gd = ld(wrapEl, 'graphicData');
+      const obj = shapeObj(gd && gd.firstElementChild, w, h);
+      if (!obj) return;
+      if (wrapEl.localName === 'anchor') obj.anchor = anchorOf(wrapEl);
+      pushObj(obj);
+    };
+
+    /* VML (older files, OLE objects): v:shape / v:rect / v:group … */
+    const vStyle = s => { const o = {}; for (const kv of (s || '').split(';')) { const i = kv.indexOf(':'); if (i > 0) o[kv.slice(0, i).trim().toLowerCase()] = kv.slice(i + 1).trim(); } return o; };
+    const vLen = v => { const m = /^(-?[\d.]+)\s*(pt|px|in|cm|mm)?$/.exec(v || ''); if (!m) return 0; return +m[1] * ({ pt: 4 / 3, px: 1, in: 96, cm: 96 / 2.54, mm: 96 / 25.4 }[m[2] || 'px']); };
+    const vColor = v => { const c = (v || '').split(/\s/)[0]; return /^#?[0-9a-f]{3,6}$/i.test(c) ? (c[0] === '#' ? c : '#' + c) : (/^[a-z]+$/i.test(c) ? c : null); };
+    const vmlObj = (sh, W0, H0) => {
+      const st = vStyle(sh.getAttribute('style'));
+      const w = W0 ?? vLen(st.width), h = H0 ?? vLen(st.height);
+      if (sh.localName === 'group') {
+        const cs = (sh.getAttribute('coordsize') || '1000,1000').split(',').map(Number);
+        const co = (sh.getAttribute('coordorigin') || '0,0').split(',').map(Number);
+        const kx = w / (cs[0] || 1), ky = h / (cs[1] || 1);
+        const out = [];
+        for (const c of sh.children) {
+          if (!/^(shape|rect|roundrect|oval|line|image|group|textbox)$/.test(c.localName)) continue;
+          const s2 = vStyle(c.getAttribute('style'));
+          const cw = (parseFloat(s2.width) || 0) * kx, chh = (parseFloat(s2.height) || 0) * ky;
+          const o = vmlObj(c, cw, chh);
+          if (o) out.push({ x: ((parseFloat(s2.left) || 0) - (co[0] || 0)) * kx, y: ((parseFloat(s2.top) || 0) - (co[1] || 0)) * ky, w: cw, h: chh, obj: o });
+        }
+        return { t: 'grp', w, h, kids: out };
+      }
+      const im = lk(sh, 'imagedata');
+      if (im) { const i = image(rid(im)); return { t: 'img', url: i && i.url, kind: i ? i.kind : '', w, h }; }
+      const tb = ld(sh, 'txbxContent');
+      const filled = sh.getAttribute('filled'), stroked = sh.getAttribute('stroked');
+      const fill = filled === 'f' || filled === 'false' ? null : (vColor(sh.getAttribute('fillcolor')) || (tb || filled ? '#ffffff' : null));
+      const line = stroked === 'f' || stroked === 'false' ? null : { color: vColor(sh.getAttribute('strokecolor')) || '#000', w: vLen(sh.getAttribute('strokeweight')) || 1 };
+      const prst = { oval: 'ellipse', roundrect: 'roundRect', line: 'line' }[sh.localName] || 'rect';
+      if (!tb && !fill && !line) return null;
+      return { t: 'shape', prst, fill, line, blocks: tb ? textBlocks(tb) : null, ins: { l: 9.6, t: 4.8, r: 9.6, b: 4.8 }, w, h };
     };
     const pict = pc => {
-      const tb = pc.getElementsByTagNameNS(W, 'txbxContent')[0];
-      if (tb) { textbox(tb); return; }
-      const idata = pc.getElementsByTagNameNS(V, 'imagedata')[0];
-      if (!idata) return;
-      const shape = idata.parentNode;
-      const style = (shape && shape.getAttribute && shape.getAttribute('style')) || '';
-      const len = k => { const m = style.match(new RegExp(k + ':\\s*([\\d.]+)(pt|px|in)?')); if (!m) return 0; return +m[1] * (m[2] === 'in' ? 96 : m[2] === 'px' ? 1 : 4 / 3); };
-      const im = image(idata.getAttributeNS(R, 'id') || idata.getAttribute('r:id'));
-      pushImg({ url: im && im.url, kind: im ? im.kind : '', w: len('width'), h: len('height') });
+      const sh = [...pc.children].find(c => /^(shape|rect|roundrect|oval|line|image|group)$/.test(c.localName));
+      if (!sh) return;
+      const obj = vmlObj(sh);
+      if (!obj) return;
+      const st = vStyle(sh.getAttribute('style'));
+      if (st.position === 'absolute') {
+        const wr = ld(sh, 'wrap');
+        const hr = { page: 'page', margin: 'margin', text: 'column', char: 'character' }[st['mso-position-horizontal-relative']] || 'column';
+        const vr = { page: 'page', margin: 'margin', text: 'paragraph', line: 'line' }[st['mso-position-vertical-relative']] || 'paragraph';
+        const al = v => (v && v !== 'absolute' ? v : null);
+        obj.anchor = {
+          h: { rel: hr, off: vLen(st['margin-left']) + vLen(st.left), align: al(st['mso-position-horizontal']) },
+          v: { rel: vr, off: vLen(st['margin-top']) + vLen(st.top), align: al(st['mso-position-vertical']) },
+          wrap: wr ? ({ topAndBottom: 'topandbottom' }[wr.getAttribute('type')] || wr.getAttribute('type') || 'square') : 'none',
+          behind: (+st['z-index'] || 0) < 0, dist: { l: 9, r: 9, t: 0, b: 0 },
+        };
+      }
+      pushObj(obj);
     };
+
     const run = r => {
-      const d = parseRPr(kid(r, 'rPr'));
+      const dd = parseRPr(kid(r, 'rPr'));
       let rp = baseR;
-      if (d.rStyle) rp = merge(rp, styleChain(S, d.rStyle).rPr);
-      rp = merge(rp, d);
+      if (dd.rStyle) rp = merge(rp, styleChain(S, dd.rStyle).rPr);
+      rp = merge(rp, dd);
       delete rp.rStyle;
       if (rp.vanish) return; // hidden text
       for (const c of r.children) {
         if (c.namespaceURI === W) {
           switch (c.localName) {
-            case 't': add(c.textContent, rp); break;
+            case 't': add(c.textContent, fieldRp(rp)); break;
             case 'tab': case 'ptab': add('\t', rp); break;
-            case 'br': if (at(c, 'type') === 'page') { if (!hasLR) pageBreak(); } else add('\n', rp); break;
+            case 'br': if (at(c, 'type') === 'page') { ctx.hard = true; if (!hasLR) pageBreak(); } else if (at(c, 'type') !== 'column') add('\n', rp); break;
             case 'cr': add('\n', rp); break;
             case 'noBreakHyphen': add('-', rp); break;
+            case 'sym': { const ch = parseInt(at(c, 'char') || '', 16); if (ch) add(bullet(String.fromCharCode(ch < 0xF000 ? 0xF000 + ch : ch)), rp); break; }
             case 'lastRenderedPageBreak': if (hasLR) pageBreak(); break;
+            case 'fldChar': {
+              const ty = at(c, 'fldCharType');
+              if (ty === 'begin') ctx.fld.push({ code: '', res: false });
+              else if (ty === 'separate') { const f = ctx.fld[ctx.fld.length - 1]; if (f) f.res = true; }
+              else if (ty === 'end') ctx.fld.pop();
+              break;
+            }
+            case 'instrText': { const f = ctx.fld[ctx.fld.length - 1]; if (f && !f.res) f.code += c.textContent; break; }
             case 'drawing': drawing(c); break;
-            case 'pict': pict(c); break;
+            case 'pict': case 'object': pict(c); break;
           }
         } else if (c.localName === 'AlternateContent') {
           /* modern content in Choice; Fallback repeats it for old Word */
@@ -375,10 +807,14 @@ export function extractDocx(buf) {
     };
     const inl = container => {
       for (const c of container.children) {
-        if (c.namespaceURI !== W) continue;
+        if (c.namespaceURI !== W) {
+          if (c.localName === 'AlternateContent') { const ch = [...c.children].find(x => x.localName === 'Choice'); if (ch) inl(ch); }
+          continue;
+        }
         switch (c.localName) {
           case 'r': run(c); break;
-          case 'hyperlink': case 'ins': case 'smartTag': case 'fldSimple': case 'customXml': case 'moveTo': inl(c); break;
+          case 'hyperlink': case 'ins': case 'smartTag': case 'customXml': case 'moveTo': inl(c); break;
+          case 'fldSimple': ctx.fld.push({ code: at(c, 'instr') || '', res: true }); inl(c); ctx.fld.pop(); break;
           case 'sdt': { const sc = kid(c, 'sdtContent'); if (sc) inl(sc); break; }
         }
       }
@@ -387,27 +823,36 @@ export function extractDocx(buf) {
 
     if (isHeading && !inTable && P.text.trim()) ctx.heading = P.text.replace(/\s+/g, ' ').trim().slice(0, 80);
     P.heading = isHeading ? '' : ctx.heading;
-    for (const b of boxes) out.push(b);
+    /* a section ends with this paragraph */
+    const sp = kid(pPrEl, 'sectPr');
+    if (sp && !ctx.inHf) {
+      const s = parseSect(sp);
+      secs.push(s);
+      ctx.sec++;
+      if (s.type !== 'continuous') ctx.hard = true;
+    }
   }
 
   function table(tblEl, out) {
+    const tp = parseTblPr(kid(tblEl, 'tblPr'));
+    const ts = styleChain(S, tp.style || S.tableNormal);
+    const props = merge(ts.tbl, tp);
     const grid = kids(kid(tblEl, 'tblGrid'), 'gridCol').map(g => +at(g, 'w') || 0);
-    const tblPr = kid(tblEl, 'tblPr');
-    const tw = kid(tblPr, 'tblW');
     let width = null;
-    if (tw) {
-      const ty = at(tw, 'type'), v = at(tw, 'w') || '';
+    if (props.tw) {
+      const ty = props.tw.type, v = props.tw.w || '';
       if (ty === 'pct') width = /%$/.test(v) ? parseFloat(v) + '%' : (+v / 50) + '%';
       else if (ty === 'dxa' && +v) width = +v / 15;
     }
-    const bd = kid(tblPr, 'tblBorders');
-    const noBorder = !!bd && [...bd.children].length > 0 && [...bd.children].every(b => /^(none|nil)$/.test(at(b, 'val') || ''));
-    const jc = at(kid(tblPr, 'jc'), 'val');
-    const T = { t: 'tbl', grid, rows: [], width, noBorder, jc };
+    const T = { t: 'tbl', grid, rows: [], width, borders: props.borders || {}, mar: { left: 108, right: 108, top: 0, bottom: 0, ...(props.mar || {}) }, jc: props.jc, ind: props.ind || 0 };
+    const pts = { pPr: ts.pPr, rPr: ts.rPr };
     const owner = [];
     for (const tr of kids(tblEl, 'tr')) {
       const row = [];
       const trPr = kid(tr, 'trPr');
+      const trh = kid(trPr, 'trHeight');
+      if (trh) { row.h = +at(trh, 'val') || 0; row.hRule = at(trh, 'hRule') || 'atLeast'; }
+      const th = kid(trPr, 'tblHeader'); if (th && onOff(th)) row.hdr = true;
       let col = +(at(kid(trPr, 'gridBefore'), 'val') || 0);
       for (const tc of tr.children) {
         if (tc.localName !== 'tc' || tc.namespaceURI !== W) continue;
@@ -417,13 +862,19 @@ export function extractDocx(buf) {
         const vmv = vm ? (at(vm, 'val') || 'continue') : null;
         if (vmv === 'continue' && owner[col]) {
           owner[col].rowspan++;
-          walk(tc, owner[col].blocks, true);
+          const bd = parseBorders(kid(tcPr, 'tcBorders'));
+          if (bd && bd.bottom) owner[col].borders = { ...(owner[col].borders || {}), bottom: bd.bottom };
+          walk(tc, owner[col].blocks, true, pts);
           col += span;
           continue;
         }
         const f = at(kid(tcPr, 'shd'), 'fill');
-        const cell = { span, rowspan: 1, blocks: [], fill: f && f !== 'auto' ? f : null, va: at(kid(tcPr, 'vAlign'), 'val') };
-        walk(tc, cell.blocks, true);
+        const cell = {
+          span, rowspan: 1, col, blocks: [], fill: f && f !== 'auto' ? f : null, va: at(kid(tcPr, 'vAlign'), 'val'),
+          borders: parseBorders(kid(tcPr, 'tcBorders')), mar: parseMar(kid(tcPr, 'tcMar')), dir: at(kid(tcPr, 'textDirection'), 'val'),
+          noWrap: !!kid(tcPr, 'noWrap'),
+        };
+        walk(tc, cell.blocks, true, pts);
         for (let k = col; k < col + span; k++) owner[k] = vmv === 'restart' ? cell : null;
         row.push(cell);
         col += span;
@@ -434,13 +885,61 @@ export function extractDocx(buf) {
   }
 
   walk(body, blocks, false);
+  secs.push(parseSect(kids(body, 'sectPr').pop()));
+  /* a section without its own header/footer uses the previous section's */
+  for (let i = 1; i < secs.length; i++) {
+    for (const k of ['default', 'first', 'even']) {
+      if (secs[i].hdr[k] === undefined) secs[i].hdr[k] = secs[i - 1].hdr[k];
+      if (secs[i].ftr[k] === undefined) secs[i].ftr[k] = secs[i - 1].ftr[k];
+    }
+  }
 
   const paras = ctx.paras;
   let n = 0;
-  for (const p of paras) if (p.text.trim()) p.no = ++n;
+  for (const p of paras) if (p.text.trim() && !p.inTable) p.no = ++n; // table cells are located by table/row
+
+  /* Tables as grids of paragraph indices, for the repeated-data checks.
+     A nested table is listed on its own, not as part of its cell. */
+  const tables = [];
+  const cellParas = bs => {
+    const a = [];
+    for (const b of bs) {
+      if (b.t === 'p') a.push(b.p.idx);
+      else if (b.t === 'tbx') a.push(...cellParas(b.blocks));
+      else if (b.t === 'tbl') addTable(b);
+    }
+    return a;
+  };
+  const addTable = T => {
+    const entry = { no: tables.length, rows: [], cap: '' };
+    tables.push(entry);
+    entry.rows = T.rows.map(r => r.map(c => ({ col: c.col, span: c.span, paras: cellParas(c.blocks) })));
+    entry.rows.forEach((r, ri) => r.forEach(c => c.paras.forEach(i => { paras[i].tbl = entry.no; paras[i].row = ri + 1; })));
+  };
+  const scan = bs => { for (const b of bs) { if (b.t === 'tbl') addTable(b); else if (b.t === 'tbx') scan(b.blocks); } };
+  scan(blocks);
+  /* name each table by its caption: just above it, or else just below */
+  const CAP = /^\s*((?:ตาราง(?:ที่)?|Table)\s*[0-9๐-๙]+(?:\s?[.\-–]\s?[0-9๐-๙]+)*)/i;
+  for (const T of tables) {
+    const ids = T.rows.flatMap(r => r.flatMap(c => c.paras));
+    if (!ids.length) continue;
+    const near = (from, step, n) => {
+      for (let i = from; i >= 0 && i < paras.length && n > 0; i += step) {
+        const q = paras[i];
+        if (!q.text.trim()) continue;
+        if (q.tbl != null) return '';
+        const m = q.text.match(CAP);
+        if (m) return m[1].replace(/\s+/g, ' ');
+        n--;
+      }
+      return '';
+    };
+    T.cap = near(Math.min(...ids) - 1, -1, 2) || near(Math.max(...ids) + 1, 1, 1);
+  }
+
   return {
-    kind: 'docx', paras, blocks, notes: [], urls, hasPages: hasLR || ctx.page > 1, pages: ctx.page,
-    pg, theme, normalR,
+    kind: 'docx', paras, blocks, tables, notes: [], urls, hasPages: hasLR || ctx.page > 1, hasLR, pages: ctx.page,
+    pg: secs[secs.length - 1].pg, secs, defTab, evenOdd, theme, normalR,
   };
 }
 
@@ -458,7 +957,7 @@ const PUA = {
 };
 export function fixThai(s) {
   return s
-    .replace(/[-]/g, c => String.fromCharCode(PUA[c.charCodeAt(0)] || c.charCodeAt(0)))
+    .replace(/[\uF700-\uF71A]/g, c => String.fromCharCode(PUA[c.charCodeAt(0)] || c.charCodeAt(0)))
     .replace(/ํ([่-๋]?)า/g, '$1ำ')            // ํ + า → ำ
     .replace(/([่-์])([ัิ-ื็])/g, '$2$1') // tone before vowel → vowel first
     .normalize('NFC');
@@ -485,7 +984,7 @@ function pageLines(items) {
     } else if (x - cur.end > size * 0.2 && cur.text && !/\s$/.test(cur.text) && !/^\s/.test(it.str)) {
       cur.text += ' ';
     }
-    let s = fixThai(it.str).replace(/[  ]{2,}/g, ' ');
+    let s = fixThai(it.str).replace(/[ \u00A0]{2,}/g, ' ');
     if (!cur.text || /\s$/.test(cur.text)) s = s.replace(/^\s+/, '');
     if (s) {
       const start = cur.text.length;

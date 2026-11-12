@@ -5,8 +5,10 @@
  *        Para = { text, page?, heading?, isHeading?, inTable?, toc?, hf? }
  *          hf   = repeated page header/footer (PDF) — not checked
  *          toc  = table-of-contents line — only character/spelling checks
+ *        doc.tables (Word only) = [{ rows: [[{ col, span, paras:[index] }]] }]
  * Output [Issue] = { id, cat, sev, para, ranges:[[start,end]], found,
- *                    suggest, msg, key, ref? }  (offsets into para.text)
+ *                    suggest, msg, key, ref?, also?:[[para,start,end]] }
+ *          (offsets into para.text; `also` = more places to highlight)
  *
  * Thai has no spaces between words, so words come from the browser's own
  * dictionary segmenter (Intl.Segmenter 'th').
@@ -16,7 +18,7 @@ const SEG = (typeof Intl !== 'undefined' && Intl.Segmenter)
   ? new Intl.Segmenter('th', { granularity: 'word' }) : null;
 
 /* Display order of the categories */
-export const CATS = ['spell', 'char', 'dupword', 'dupphrase', 'number', 'consist', 'overuse', 'space', 'pair'];
+export const CATS = ['spell', 'char', 'dupword', 'dupphrase', 'tabledup', 'number', 'consist', 'overuse', 'space', 'pair'];
 export const SEV_ORDER = { err: 0, warn: 1, info: 2 };
 
 const THAI = /[฀-๿]/;
@@ -168,7 +170,11 @@ export function runChecks(doc, opts = {}) {
     const tk = toks[pi];
     for (let k = 0; k + 1 < tk.length; k++) {
       const a = tk[k];
-      if (NUMERIC.test(a.w) || (a.w.length === 1 && !THAI.test(a.w))) continue;
+      const num = NUMERIC.test(a.w);
+      /* a repeated number ("25.3 25.3") counts too — except in PDFs, where a
+         table row reads as one line of neighbouring cells */
+      if (num && (isPdf || !/[0-9๐-๙]/.test(a.w) || (a.w.length < 2 && !/[.,]/.test(a.w)))) continue;
+      if (!num && a.w.length === 1 && !THAI.test(a.w)) continue;
       let j = k;
       /* "ปลา ปลาทู" segments as ปลา|ปลา|ทู — after a space, the repeat must
          be a whole word, not the start of a longer one */
@@ -181,7 +187,7 @@ export function runChecks(doc, opts = {}) {
       if (j === k) continue;
       const span = t.slice(a.s, tk[j].e);
       add({ cat: 'dupword', sev: 'warn', para: pi, ranges: [[a.s, tk[j].e]], found: span, suggest: a.w,
-        msg: span.includes('\n') ? 'line' : '', key: 'dupword:' + lc(a.w) });
+        msg: span.includes('\n') ? 'line' : num ? 'num' : '', key: 'dupword:' + (num ? '#' : lc(a.w)) });
       k = j;
     }
 
@@ -270,8 +276,13 @@ export function runChecks(doc, opts = {}) {
     let first = new Map(); // n-gram -> [para, tokenIndex] of its first occurrence
     const cover = new Map(); // para -> Map(tokenIndex -> [earlier para, earlier tokenIndex])
     paras.forEach((p, pi) => {
-      if (p.hf || p.toc || p.inTable || dupParaSkip.has(pi)) return;
+      if (p.hf || p.toc || dupParaSkip.has(pi)) return;
+      /* table cells repeat each other by design — only within one cell */
+      if (p.inTable) { const keep = first; first = new Map(); scan(pi); first = keep; return; }
       if (scope !== 'doc') first = new Map();
+      scan(pi);
+    });
+    function scan(pi) {
       const ws = toks[pi].map(x => lc(x.w));
       for (let k = 0; k + N <= ws.length; k++) {
         const g = ws.slice(k, k + N).join('\u0001');
@@ -282,7 +293,7 @@ export function runChecks(doc, opts = {}) {
         const c = cover.get(pi);
         for (let j = k; j < k + N; j++) if (!c.has(j)) c.set(j, [f[0], f[1] + (j - k)]);
       }
-    });
+    }
     for (const [pi, c] of cover) {
       const tk = toks[pi];
       const idx = [...c.keys()].sort((a, b) => a - b);
@@ -385,6 +396,8 @@ export function runChecks(doc, opts = {}) {
     });
   }
 
+  tableChecks(doc, paras, add);
+
   /* ── Consistency across the whole report ── */
   const body = paras.map((p, pi) => [p, pi]).filter(([p]) => !p.hf && !p.toc);
 
@@ -469,4 +482,132 @@ export function runChecks(doc, opts = {}) {
 
   issues.sort((a, b) => a.para - b.para || a.ranges[0][0] - b.ranges[0][0] || SEV_ORDER[a.sev] - SEV_ORDER[b.sev]);
   return issues;
+}
+
+/* ── Repeated data in tables ──
+   Copy a row (or a column, or a whole table) for the next station and
+   forget to change the values: the numbers then match exactly. Labels may
+   differ; the numbers are what is compared. */
+
+const NUMCELL = /^[<>≤≥~±+\-()0-9๐-๙.,%\s]+$/;
+const isNumCell = s => /[0-9๐-๙]/.test(s) && NUMCELL.test(s);
+const numsOf = s => (thaiDigits(s).match(/\d[\d,]*(?:\.\d+)?/g) || []).map(x => x.replace(/,/g, ''));
+const yearish = v => /^\d{4}$/.test(v) && ((+v >= 1900 && +v <= 2100) || (+v >= 2400 && +v <= 2700));
+/* worth comparing: 2+ numbers, not all the same, not all years, and at
+   least one that is not a tiny whole number (0, 1, 2 …) */
+function telling(cells) {
+  const vals = cells.flatMap(numsOf);
+  if (vals.length < 2 || new Set(vals).size < 2) return false;
+  if (vals.every(yearish)) return false;
+  return vals.some(v => v.includes('.') ? +v > 0 : +v >= 10);
+}
+const squash = s => s.replace(/\s+/g, ' ').trim();
+const short = s => (s.length > 30 ? s.slice(0, 28) + '…' : s);
+
+function tableChecks(doc, paras, add) {
+  const whole = i => [i, 0, paras[i].text.length];
+  if (doc.kind === 'pdf') return pdfRows(paras, add);
+  if (!doc.tables) return;
+  const tableSeen = new Map();
+  doc.tables.forEach((T, ti) => {
+    const grid = T.rows.map(r => r.map(c => {
+      const ps = c.paras.filter(i => paras[i].text.trim());
+      return { col: c.col, span: c.span, ps, text: squash(ps.map(i => paras[i].text).join(' ')) };
+    }));
+    const anchor = cs => {
+      const ps = cs.flatMap(c => c.ps);
+      return { para: ps[0], ranges: [[0, paras[ps[0]].text.length]], also: ps.slice(1).map(whole) };
+    };
+
+    /* whole table: every number the same as an earlier table */
+    {
+      const nums = grid.flatMap((r, ri) => r.filter(c => isNumCell(c.text)).map(c => ({ ri, c })));
+      if (nums.length >= 6 && telling(nums.map(x => x.c.text))) {
+        const k = nums.map(x => x.ri + ':' + x.c.col + ':' + x.c.text).join('\u0001');
+        const prev = tableSeen.get(k);
+        if (prev) {
+          add({ cat: 'tabledup', sev: 'warn', ...anchor(nums.map(x => x.c)), found: nums.slice(0, 8).map(x => x.c.text).join(' | ') + (nums.length > 8 ? ' …' : ''), suggest: '',
+            msg: 'tableSame', ref: prev, key: 'tabledup:t:' + ti });
+          return; // its rows/columns would only repeat the same finding
+        } else tableSeen.set(k, nums[0].c.ps[0]);
+      }
+    }
+
+    /* rows: the numbers from the first number cell onwards */
+    const rowSeen = new Map();
+    grid.forEach((r, ri) => {
+      const f = r.findIndex(c => isNumCell(c.text));
+      if (f < 0) return;
+      const data = r.slice(f);
+      if (data.filter(c => isNumCell(c.text)).length < 2 || !telling(data.map(c => c.text))) return;
+      const k = data.map(c => c.col + ':' + c.text).join('\u0001');
+      const label = squash(r.slice(0, f).map(c => c.text).join(' '));
+      const prev = rowSeen.get(k);
+      if (!prev) { rowSeen.set(k, { ri, label, para: data.find(c => c.ps.length).ps[0] }); return; }
+      const cells = data.filter(c => c.ps.length);
+      add({ cat: 'tabledup', sev: 'warn', ...anchor(cells), found: data.map(c => c.text).join(' | '), suggest: '',
+        msg: label === prev.label ? 'rowSame' : 'rowData', other: short(prev.label), ref: prev.para,
+        key: 'tabledup:r:' + ti + ':' + ri });
+    });
+
+    /* columns: single-width cells lined up by grid column */
+    const cols = new Map();
+    grid.forEach((r, ri) => r.forEach(c => {
+      if (c.span !== 1 || c.col == null) return;
+      if (!cols.has(c.col)) cols.set(c.col, new Map());
+      cols.get(c.col).set(ri, c);
+    }));
+    const head = col => {
+      for (const c of [...col.values()]) { if (isNumCell(c.text)) break; if (c.text) return c.text; }
+      return '';
+    };
+    const keys = [...cols.keys()].sort((a, b) => a - b);
+    const flagged = new Set();
+    for (let x = 0; x < keys.length; x++) for (let y = x + 1; y < keys.length; y++) {
+      if (flagged.has(keys[y])) continue;
+      const A = cols.get(keys[x]), B = cols.get(keys[y]);
+      let same = [], bad = false;
+      for (const ri of new Set([...A.keys(), ...B.keys()])) {
+        const a = A.get(ri), b = B.get(ri);
+        const an = a && isNumCell(a.text), bn = b && isNumCell(b.text);
+        if (!an && !bn) continue;
+        if (an && bn && a.text === b.text) same.push(b); else { bad = true; break; }
+      }
+      if (bad || same.length < 3 || !telling(same.map(c => c.text))) continue;
+      flagged.add(keys[y]);
+      const cells = same.filter(c => c.ps.length);
+      add({ cat: 'tabledup', sev: 'warn', ...anchor(cells), found: same.map(c => c.text).join(' | '), suggest: '',
+        msg: 'colData', label: short(head(B)), other: short(head(A)), ref: null,
+        key: 'tabledup:c:' + ti + ':' + keys[y] });
+    }
+  });
+}
+
+/* PDFs have no table structure: compare lines that end in 3+ numbers,
+   on the same or the next page. */
+function pdfRows(paras, add) {
+  const seen = new Map();
+  paras.forEach((p, pi) => {
+    if (p.hf || p.toc) return;
+    let off = 0;
+    for (const line of p.text.split('\n')) {
+      const s = off;
+      off += line.length + 1;
+      const toks = [...line.matchAll(/\S+/g)];
+      const f = toks.findIndex(m => isNumCell(m[0]));
+      if (f < 0) continue;
+      const data = toks.slice(f);
+      if (data.length < 3 || !data.every(m => isNumCell(m[0]) || /^(ND|N\/A|-|–)$/i.test(m[0]))) continue;
+      if (data.filter(m => isNumCell(m[0])).length < 3 || !telling(data.map(m => m[0]))) continue;
+      const k = data.map(m => m[0]).join(' ');
+      const label = squash(line.slice(0, data[0].index));
+      const prev = seen.get(k);
+      const range = [s + data[0].index, s + line.length];
+      if (prev && p.page - prev.page <= 1) {
+        add({ cat: 'tabledup', sev: 'warn', para: pi, ranges: [range], found: k, suggest: '',
+          msg: label === prev.label ? 'rowSame' : 'rowData', other: short(prev.label), ref: prev.para,
+          key: 'tabledup:r:' + pi + ':' + s });
+      } else seen.set(k, { page: p.page, label, para: pi });
+    }
+  });
 }
