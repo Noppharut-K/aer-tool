@@ -17,6 +17,36 @@ window.RPT = RPT;
 
 const LIST_CAP = 1500;
 
+/* Thai dictionary (public/dict, PyThaiNLP word list, CC0): fetched once,
+   then cached by the browser. Words the user marks as correct are kept in
+   this browser and count as known in every report. */
+const BASE = (import.meta.env && import.meta.env.BASE_URL) || '/';
+let DICT = null, dictLoading = null;
+const PRE = new Set(); // every beginning of a word, so cutting can stop early
+function loadDict() {
+  if (DICT) return Promise.resolve(DICT);
+  if (!dictLoading) {
+    dictLoading = fetch(BASE + 'dict/th-words.txt').then(r => (r.ok ? r.text() : ''))
+      .then(t => {
+        DICT = new Set(t.split('\n').map(w => w.trim()).filter(Boolean));
+        for (const w of DICT) for (let k = 1; k <= w.length; k++) PRE.add(w.slice(0, k));
+        return DICT;
+      })
+      .catch(() => (DICT = new Set()));
+  }
+  return dictLoading;
+}
+function readWords() { try { return new Set(JSON.parse(localStorage.getItem('aer-rc-words') || '[]')); } catch (e) { return new Set(); } }
+const USER = readWords();
+function saveWords() { try { localStorage.setItem('aer-rc-words', JSON.stringify([...USER])); } catch (e) { /* private mode */ } }
+const userPre = () => { const s = new Set(); for (const w of USER) for (let k = 1; k <= w.length; k++) s.add(w.slice(0, k)); return s; };
+const dictView = () => {
+  if (!DICT || !DICT.size) return null;
+  const up = userPre();
+  return { size: DICT.size, has: w => DICT.has(w) || USER.has(w), pre: w => PRE.has(w) || up.has(w) };
+};
+const check = doc => runChecks(doc, { scope: RPT.scope, dict: dictView() });
+
 const TX = {
   th: {
     title: 'Report Check', sub: 'ตรวจรายงาน · คำซ้ำ · คำผิด · เลขตาราง/รูป',
@@ -31,7 +61,8 @@ const TX = {
     reading: 'กำลังอ่านไฟล์…', readingPdf: 'กำลังอ่าน PDF หน้า', checking: 'กำลังตรวจ…',
     zoomIn: 'ขยาย', zoomOut: 'ย่อ', zoomFit: 'พอดีความกว้าง',
     searchPh: 'ค้นหาในรายการและในเนื้อรายงาน (Enter = ไปจุดถัดไป)',
-    catAll: 'เลือกทั้งหมด', catNone: 'ล้าง', noCat: 'ยังไม่ได้เลือกหมวด — กดหมวดที่ต้องการดูด้านบน หรือ "เลือกทั้งหมด"', sevLbl: 'ระดับ', sevAll: 'ทั้งหมด', noMatch: 'ไม่พบรายการที่ตรงกับคำค้น',
+    catAll: 'เลือกทั้งหมด', catNone: 'ล้าง',
+    addWord: 'เพิ่มเป็นคำที่ถูก', myWords: n => `คำที่คุณเพิ่มไว้ ${n} คำ`, clearWords: 'ล้าง', clearWordsQ: n => `ลบคำที่เพิ่มไว้ทั้ง ${n} คำ?`, noCat: 'ยังไม่ได้เลือกหมวด — กดหมวดที่ต้องการดูด้านบน หรือ "เลือกทั้งหมด"', sevLbl: 'ระดับ', sevAll: 'ทั้งหมด', noMatch: 'ไม่พบรายการที่ตรงกับคำค้น',
     found: (m, n) => `พบ ${m} จาก ${n} รายการที่แสดงอยู่`,
     hiddenMatch: n => `แต่พบ ${n} รายการในหมวดหรือระดับที่ปิดไว้`, showAll: 'แสดงทุกหมวด',
     inDoc: n => `ในเนื้อรายงาน ${n} แห่ง`, docMatch: n => `แต่พบคำนี้ในเนื้อรายงาน ${n} แห่ง (ไฮไลต์สีเหลือง) — กด ‹ › ด้านบนรายงาน หรือ Enter เพื่อไปทีละแห่ง`,
@@ -48,7 +79,7 @@ const TX = {
     fix: 'แก้เป็น',
     sev: { err: 'ควรแก้', warn: 'ควรตรวจ', info: 'ข้อสังเกต' },
     cat: {
-      prep: 'ตรวจก่อนส่ง', spell: 'คำที่มักสะกดผิด', char: 'อักขระผิดปกติ', dupword: 'คำ/ตัวเลขซ้ำติดกัน', dupphrase: 'ข้อความซ้ำ', tabledup: 'ข้อมูลซ้ำในตาราง', toc: 'สารบัญ', abbr: 'คำย่อ', sci: 'ชื่อวิทยาศาสตร์',
+      prep: 'ตรวจก่อนส่ง', spell: 'คำที่มักสะกดผิด', dict: 'ไม่มีในพจนานุกรม', datamatch: 'ตัวเลขไม่ตรงตาราง', char: 'อักขระผิดปกติ', dupword: 'คำ/ตัวเลขซ้ำติดกัน', dupphrase: 'ข้อความซ้ำ', tabledup: 'ข้อมูลซ้ำในตาราง', toc: 'สารบัญ', abbr: 'คำย่อ', sci: 'ชื่อวิทยาศาสตร์',
       number: 'เลขตาราง/รูป', consist: 'เขียนไม่เหมือนกัน', overuse: 'คำเดิมถี่', space: 'เว้นวรรค', pair: 'วงเล็บ/คำพูด',
     },
     catDesc: {
@@ -57,12 +88,14 @@ const TX = {
       abbr: 'คำย่อที่ใช้ก่อนนิยาม นิยามซ้ำหรือคนละความหมาย เขียนหลายแบบ (DO / D.O.) และชื่อเต็มที่เขียนซ้ำหลังนิยามแล้ว — Export Excel มีตารางคำย่อให้ด้วย',
       sci: 'ชื่อวิทยาศาสตร์ (สกุล ชนิด) ที่ไม่เป็นตัวเอียง เช่น Chaetoceros curvisetus, Nitzschia sp. (เฉพาะไฟล์ Word)',
       spell: 'คำที่พบบ่อยว่าสะกดผิด เช่น อนุญาติ, ปรากฎ, แพลงตอน, คลอโรฟิล',
+      dict: 'คำภาษาไทยที่ไม่มีในพจนานุกรม (รายการคำ PyThaiNLP กว่า 6 หมื่นคำ + ศัพท์งานสิ่งแวดล้อม) อาจเป็นคำผิด หรือชื่อเฉพาะ/ศัพท์เทคนิค — กด "เพิ่มเป็นคำที่ถูก" แล้วจะไม่ชี้อีก',
+      datamatch: 'ช่วง/ค่าเฉลี่ย/ค่าสูงสุด/ต่ำสุดที่เขียนในเนื้อความ เทียบกับตัวเลขในตาราง เช่น "pH อยู่ในช่วง 7.8 ถึง 8.2" (เฉพาะไฟล์ Word)',
       char: 'ตัวอักษรที่ดูเหมือนถูกแต่ค้นหาไม่เจอ เช่น เ+เ แทน แ, \u0E4D+า แทน ำ, อักขระล่องหน, oC',
       dupword: 'คำหรือตัวเลขเดียวกันติดกัน เช่น "การการ", "the the", "25.3 25.3" (รวมในช่องตาราง)',
       dupphrase: 'ข้อความ 8 คำขึ้นไปที่ซ้ำในย่อหน้าเดียวกัน (หรือในช่องตารางเดียวกัน) หรือเลือกให้ตรวจทั้งเล่ม (ย่อหน้าซ้ำ / ข้อความ 12 คำขึ้นไป)',
       tabledup: 'แถวหรือคอลัมน์ที่ตัวเลขตรงกันทุกช่อง (มักเกิดจากคัดลอกแถวแล้วลืมแก้ค่า) และตารางที่ตัวเลขซ้ำกับตารางอื่นทั้งตาราง — PDF ตรวจได้เฉพาะแถว',
       number: 'เลขตาราง/รูปข้าม ซ้ำ สลับลำดับ อ้างถึงตารางที่ไม่มี และลิงก์อ้างอิงใน Word ที่เสีย',
-      consist: 'หน่วยหรือคำเดียวกันเขียนหลายแบบ เช่น mg/L กับ mg/l, ไนเตรท กับ ไนเตรต, ๆ เว้นวรรคไม่เหมือนกัน',
+      consist: 'หน่วยหรือคำเดียวกันเขียนหลายแบบ เช่น mg/L กับ mg/l, ไนเตรท กับ ไนเตรต, ๆ เว้นวรรคไม่เหมือนกัน, พ.ศ./ค.ศ. ปนกัน, รหัสสถานี ST1 กับ ST-1, ทศนิยมในคอลัมน์ไม่เท่ากัน',
       overuse: 'คำเดิมใช้ 3 ครั้งขึ้นไปในช่วงสั้น ๆ',
       space: 'เว้นวรรคซ้อน และวรรคหน้าจุลภาคหรือในวงเล็บ (Word และข้อความที่วาง)',
       pair: 'วงเล็บหรือเครื่องหมายคำพูดเปิดแล้วไม่ปิด',
@@ -98,6 +131,14 @@ const TX = {
       abbrForm: i => `คำย่อเขียนต่างจากที่นิยาม (${i.abbr})`,
       sci: 'ชื่อวิทยาศาสตร์ควรเป็นตัวเอียง',
       sciRank: 'sp. / spp. / cf. ไม่ต้องเป็นตัวเอียง (เอียงเฉพาะชื่อสกุลและชนิด)',
+      claim: i => ({ range: 'ช่วงที่เขียน', mean: 'ค่าเฉลี่ยที่เขียน', max: 'ค่าสูงสุดที่เขียน', min: 'ค่าต่ำสุดที่เขียน' }[i.kind]) +
+        ` ไม่ตรงกับ${i.table || 'ตารางลำดับที่ ' + i.tno} (${i.label}) ซึ่งได้ ${i.actual}` + (i.n > 1 ? ` — เขียนแบบนี้ ${i.n} แห่ง` : '') + (i.sev === 'info' ? ' — อาจหมายถึงบางสถานีหรือบางฤดู ตรวจอีกครั้ง' : ''),
+      yearBE: 'ปีนี้เป็น ค.ศ. แต่เขียนว่า พ.ศ.', yearCE: 'ปีนี้เป็น พ.ศ. แต่เขียนว่า ค.ศ.',
+      yearMix: c => `ใช้ปี ค.ศ. ปนกับ พ.ศ. (พ.ศ. ${c[0]} ครั้ง / ค.ศ. ${c[1]} ครั้ง) — ไม่นับในวงเล็บอ้างอิงและเอกสารอ้างอิง`,
+      codeForm: i => `รหัสเดียวกันเขียนสองแบบ: ${i.forms[0]} (${i.forms[1]} ครั้ง) กับ ${i.forms[2]} (${i.forms[3]} ครั้ง)`,
+      stationForm: i => `เขียน "สถานี 1" ปนกับ "สถานีที่ 1" — ส่วนใหญ่ใช้ "${i.usual}" (${i.counts[0]} / ${i.counts[1]} ครั้ง)`,
+      decimals: i => `ทศนิยมไม่เท่ากับค่าอื่นใน "${i.label}" (ส่วนใหญ่ ${i.dec} ตำแหน่ง) ${i.n} ช่อง`,
+      dict: i => 'ไม่มีในพจนานุกรม — ตรวจว่าสะกดถูกไหม' + (i.n > 1 ? ` (พบ ${i.n} ครั้ง ไฮไลต์ทุกจุด)` : ''),
       rowSame: () => 'ทั้งแถวซ้ำกับแถวก่อนหน้าในตารางเดียวกัน',
       rowData: i => `ตัวเลขทั้งแถวตรงกับแถว${i.other ? ' "' + i.other + '"' : 'ก่อนหน้า'} ทุกช่อง — อาจคัดลอกแล้วลืมแก้ค่า`,
       colData: i => `ตัวเลขในคอลัมน์${i.label ? ' "' + i.label + '"' : 'นี้'} ตรงกับคอลัมน์${i.other ? ' "' + i.other + '"' : 'ก่อนหน้า'} ทุกแถว — อาจคัดลอกแล้วลืมแก้ค่า`,
@@ -142,7 +183,8 @@ const TX = {
     reading: 'Reading file…', readingPdf: 'Reading PDF page', checking: 'Checking…',
     zoomIn: 'Zoom in', zoomOut: 'Zoom out', zoomFit: 'Fit to width',
     searchPh: 'Search the list and the report text (Enter = next match)',
-    catAll: 'Select all', catNone: 'Clear', noCat: 'No category selected — pick one above, or "Select all"', sevLbl: 'Level', sevAll: 'All', noMatch: 'No findings match the search',
+    catAll: 'Select all', catNone: 'Clear',
+    addWord: 'Mark as correct', myWords: n => `${n} word(s) you added`, clearWords: 'Clear', clearWordsQ: n => `Remove all ${n} added word(s)?`, noCat: 'No category selected — pick one above, or "Select all"', sevLbl: 'Level', sevAll: 'All', noMatch: 'No findings match the search',
     found: (m, n) => `${m} of ${n} shown findings`,
     hiddenMatch: n => `${n} more match in hidden categories or levels`, showAll: 'Show all categories',
     inDoc: n => `${n} in the report`, docMatch: n => `Found ${n} times in the report text (yellow) — use ‹ › above the report or Enter to step through`,
@@ -159,7 +201,7 @@ const TX = {
     fix: 'Change to',
     sev: { err: 'Fix', warn: 'Check', info: 'Note' },
     cat: {
-      prep: 'Before sending', spell: 'Common misspellings', char: 'Odd characters', dupword: 'Repeated words/numbers', dupphrase: 'Repeated passages', tabledup: 'Repeated table data', toc: 'Contents', abbr: 'Abbreviations', sci: 'Scientific names',
+      prep: 'Before sending', spell: 'Common misspellings', dict: 'Not in dictionary', datamatch: 'Text vs table', char: 'Odd characters', dupword: 'Repeated words/numbers', dupphrase: 'Repeated passages', tabledup: 'Repeated table data', toc: 'Contents', abbr: 'Abbreviations', sci: 'Scientific names',
       number: 'Table/figure numbers', consist: 'Inconsistent forms', overuse: 'Overused words', space: 'Spacing', pair: 'Brackets/quotes',
     },
     catDesc: {
@@ -168,12 +210,14 @@ const TX = {
       abbr: 'Abbreviations used before they are defined, defined twice or with two meanings, written two ways (DO / D.O.), and full names repeated after the definition — Export Excel includes a table of abbreviations',
       sci: 'Scientific names (genus, species) not in italics, e.g. Chaetoceros curvisetus, Nitzschia sp. (Word files only)',
       spell: 'Thai words often misspelled, e.g. อนุญาติ, ปรากฎ, แพลงตอน, คลอโรฟิล',
+      dict: 'Thai words not in the dictionary (PyThaiNLP word list, 60,000+ words, plus environmental terms): a misspelling, or a name/technical term — "Mark as correct" stops it being flagged',
+      datamatch: 'Ranges, means, maxima and minima written in the text compared with the numbers in the table, e.g. "pH อยู่ในช่วง 7.8 ถึง 8.2" (Word files)',
       char: 'Characters that look right but break search: เ+เ for แ, \u0E4D+า for ำ, invisible characters, oC',
       dupword: 'The same word or number twice in a row, e.g. "การการ", "the the", "25.3 25.3" (table cells too)',
       dupphrase: 'Passages of 8+ words repeated within one paragraph (or one table cell) — or, if chosen, anywhere in the report (whole paragraphs / 12+ words)',
       tabledup: 'Rows or columns whose numbers match another exactly (a row copied and not updated), and tables whose numbers repeat another table — PDFs: rows only',
       number: 'Skipped, duplicated or out-of-order table/figure numbers, references to missing ones, broken Word cross-references',
-      consist: 'Units or terms written more than one way: mg/L vs mg/l, ไนเตรท vs ไนเตรต, ๆ spacing',
+      consist: 'Units or terms written more than one way: mg/L vs mg/l, ไนเตรท vs ไนเตรต, ๆ spacing, Buddhist/Christian years mixed, station codes ST1 vs ST-1, decimal places in a column',
       overuse: 'The same word 3+ times within a short span',
       space: 'Double spaces, spaces before commas or inside brackets (Word and pasted text)',
       pair: 'Brackets or quotes opened but not closed',
@@ -209,6 +253,14 @@ const TX = {
       abbrForm: i => `Abbreviation written differently from its definition (${i.abbr})`,
       sci: 'Scientific names should be in italics',
       sciRank: 'sp. / spp. / cf. stay upright (only genus and species are italic)',
+      claim: i => ({ range: 'The range', mean: 'The mean', max: 'The maximum', min: 'The minimum' }[i.kind]) +
+        ` written here does not match ${i.table || 'table #' + i.tno} (${i.label}), which gives ${i.actual}` + (i.n > 1 ? ` — written so in ${i.n} places` : '') + (i.sev === 'info' ? ' — it may mean some stations or seasons; check' : ''),
+      yearBE: 'A Christian-era year labelled พ.ศ.', yearCE: 'A Buddhist-era year labelled ค.ศ.',
+      yearMix: c => `Christian-era years mixed with Buddhist-era years (BE ${c[0]} / CE ${c[1]}) — citations and the reference list are not counted`,
+      codeForm: i => `The same code written two ways: ${i.forms[0]} (${i.forms[1]}×) and ${i.forms[2]} (${i.forms[3]}×)`,
+      stationForm: i => `"สถานี 1" and "สถานีที่ 1" both used — mostly "${i.usual}" (${i.counts[0]} / ${i.counts[1]})`,
+      decimals: i => `${i.n} cell(s) with different decimal places from the rest of "${i.label}" (mostly ${i.dec})`,
+      dict: i => 'Not in the dictionary — check the spelling' + (i.n > 1 ? ` (${i.n} times, all marked)` : ''),
       rowSame: () => 'The whole row repeats an earlier row of this table',
       rowData: i => `Every number matches row${i.other ? ' "' + i.other + '"' : ' above'} — copied and not updated?`,
       colData: i => `Every number in column${i.label ? ' "' + i.label + '"' : ''} matches column${i.other ? ' "' + i.other + '"' : ' before it'} — copied and not updated?`,
@@ -284,7 +336,8 @@ function renderStart() {
     '<button class="btn btn-primary" id="rc-text-go">' + esc(t.pasteBtn) + '</button></details>' +
     '<div class="rc-opt-row">' + scopeHtml() + '</div>' +
     '<h3 class="rc-h3">' + esc(t.checks) + '</h3><div class="rc-checks">' +
-    CATS.map(c => '<div class="rc-check"><b>' + esc(t.cat[c]) + '</b><span>' + esc(t.catDesc[c]) + '</span></div>').join('') +
+    CATS.map(c => '<div class="rc-check"><b>' + esc(t.cat[c]) + '</b><span>' + esc(t.catDesc[c]) + '</span>' +
+      (c === 'dict' && USER.size ? '<span class="rc-words">' + esc(t.myWords(USER.size)) + ' <button data-act="clearWords">' + esc(t.clearWords) + '</button></span>' : '') + '</div>').join('') +
     '</div></div>';
 
   const drop = document.getElementById('rc-drop');
@@ -301,10 +354,12 @@ function renderStart() {
     if (f) openFile(f);
   });
   document.querySelector('#rc-body .rc-opt-row').addEventListener('click', onScope);
+  const cw = body.querySelector('[data-act="clearWords"]');
+  if (cw) cw.addEventListener('click', () => { if (window.confirm(tx().clearWordsQ(USER.size))) { USER.clear(); saveWords(); renderStart(); } });
   document.getElementById('rc-text-go').addEventListener('click', () => {
     const s = document.getElementById('rc-text').value;
     if (!s.trim()) return;
-    load(extractText(s), tx().pastedName);
+    loadDict().then(() => load(extractText(s), tx().pastedName));
   });
 }
 
@@ -343,9 +398,10 @@ async function openFile(file) {
     } else {
       doc = extractDocx(buf);
       progress(t.checking, 0.6);
-      await ensureFonts(); // lines are measured, so the report fonts must be ready
+      await Promise.all([ensureFonts(), loadDict()]); // lines are measured, so the report fonts must be ready
     }
     if (!doc.paras.length && !(doc.notes || []).includes('scanned')) throw new Error('empty');
+    await loadDict();
     progress(t.checking, 0.95);
     await nextFrame();
     load(doc, file.name);
@@ -369,7 +425,7 @@ function onScope(e) {
   if (!b || b.dataset.scope === RPT.scope) return;
   RPT.scope = b.dataset.scope;
   try { localStorage.setItem('aer-rc-scope', RPT.scope); } catch (err) { /* private mode */ }
-  if (RPT.doc) { RPT.issues = runChecks(RPT.doc, { scope: RPT.scope }); RPT.sel = null; refresh(); }
+  if (RPT.doc) { RPT.issues = check(RPT.doc); RPT.sel = null; refresh(); }
   else { const row = document.querySelector('#rc-body .rc-opt-row'); if (row) row.innerHTML = scopeHtml(); }
 }
 
@@ -390,7 +446,7 @@ function load(doc, name) {
   unload();
   RPT.doc = doc;
   RPT.name = name;
-  RPT.issues = runChecks(doc, { scope: RPT.scope });
+  RPT.issues = check(doc);
   RPT.ignored = new Set();
   RPT.ignoredKeys = new Set();
   RPT.off = new Set();
@@ -406,7 +462,7 @@ function load(doc, name) {
 /* ── Results ────────────────────────────────────────────────────────────── */
 
 const sig = i => i.cat + '|' + i.para + '|' + i.ranges[0][0] + '|' + (i.msg || '');
-const live = () => RPT.issues.filter(i => !RPT.ignored.has(sig(i)) && !RPT.ignoredKeys.has(i.key));
+const live = () => RPT.issues.filter(i => !RPT.ignored.has(sig(i)) && !RPT.ignoredKeys.has(i.key) && !(i.cat === 'dict' && (USER.has(i.word) || USER.has(i.core))));
 const shown = () => live().filter(i => !RPT.off.has(i.cat) && (RPT.sev === 'all' || i.sev === RPT.sev));
 
 /* Page of a text offset: PDFs know it; Word files know it when Word saved
@@ -447,6 +503,10 @@ function message(i) {
   if (i.cat === 'spell') return m.spell;
   if (i.cat === 'overuse') return m.overuse(i.count);
   if (i.cat === 'tabledup') return m[i.msg](i) + (i.ref != null ? ' (' + refText(i) + ')' : '');
+  if (i.cat === 'datamatch' || i.cat === 'dict' || /^(yearBE|yearCE|codeForm|stationForm|decimals)$/.test(i.msg || '')) {
+    const f = m[i.msg];
+    return typeof f === 'function' ? f(i) : f || '';
+  }
   if (i.cat === 'prep' || i.cat === 'toc' || i.cat === 'abbr' || i.cat === 'sci') {
     const f = m[i.msg];
     const base = typeof f === 'function' ? f(i) : f || '';
@@ -683,6 +743,7 @@ function renderList() {
       '<div class="rc-msg">' + fix + esc(message(i)) + '</div>' +
       '<div class="rc-btns"><button data-act="copy">' + esc(t.copy) + '</button><button data-act="ignore">' + esc(t.ignore) + '</button>' +
       (keyCount.get(i.key) > 1 ? '<button data-act="ignoreAll">' + esc(t.ignoreAll) + ' (' + keyCount.get(i.key) + ')</button>' : '') +
+      (i.cat === 'dict' ? '<button data-act="addWord">' + esc(t.addWord) + '</button>' : '') +
       '</div></div>');
   });
   if (list.length > LIST_CAP) h.push('<div class="rc-more">' + esc(t.more(list.length)) + '</div>');
@@ -700,6 +761,14 @@ function onListClick(e) {
     e.stopPropagation();
     if (act.dataset.act === 'ignore') { RPT.ignored.add(sig(iss)); if (RPT.sel === id) RPT.sel = null; refresh(); }
     else if (act.dataset.act === 'ignoreAll') { RPT.ignoredKeys.add(iss.key); refresh(); }
+    else if (act.dataset.act === 'addWord') {
+      /* the word as shown, and its unknown part, so it is known in any sentence */
+      USER.add(iss.word);
+      if (iss.core && iss.core.length >= 2) USER.add(iss.core);
+      saveWords();
+      if (RPT.sel === id) RPT.sel = null;
+      refresh();
+    }
     else if (act.dataset.act === 'copy') {
       const q = searchText(iss);
       (navigator.clipboard ? navigator.clipboard.writeText(q) : Promise.reject()).then(() => {

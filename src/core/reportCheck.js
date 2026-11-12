@@ -18,7 +18,7 @@ const SEG = (typeof Intl !== 'undefined' && Intl.Segmenter)
   ? new Intl.Segmenter('th', { granularity: 'word' }) : null;
 
 /* Display order of the categories */
-export const CATS = ['prep', 'spell', 'char', 'dupword', 'dupphrase', 'tabledup', 'number', 'toc', 'abbr', 'sci', 'consist', 'overuse', 'space', 'pair'];
+export const CATS = ['prep', 'spell', 'dict', 'char', 'dupword', 'dupphrase', 'tabledup', 'datamatch', 'number', 'toc', 'abbr', 'sci', 'consist', 'overuse', 'space', 'pair'];
 export const SEV_ORDER = { err: 0, warn: 1, info: 2 };
 
 const THAI = /[\u0E00-\u0E7F]/;
@@ -401,6 +401,9 @@ export function runChecks(doc, opts = {}) {
   tocChecks(doc, paras, add);
   abbrChecks(doc, paras, add);
   sciChecks(doc, paras, add);
+  claimChecks(doc, paras, add);
+  moreConsistency(doc, paras, add);
+  dictChecks(doc, paras, add, opts.dict);
 
   /* ── Consistency across the whole report ── */
   const body = paras.map((p, pi) => [p, pi]).filter(([p]) => !p.hf && !p.toc);
@@ -897,4 +900,325 @@ function sciChecks(doc, paras, add) {
       if (!allItalic(p, s, e)) add({ cat: 'sci', sev: 'warn', para: pi, ranges: [[s, e]], found: m[0], suggest: '', msg: 'sci', key: 'sci:' + m[1] + '.' });
     }
   });
+}
+
+/* ── Numbers in the text against the tables (Word files) ──
+   "ค่าความเป็นกรดด่าง (pH) อยู่ในช่วง 7.8 ถึง 8.2" is compared with the pH
+   values of the table the paragraph refers to (or the nearest one under the
+   same heading). Each table gives series by column (header row on top) and
+   by row (name in the first cell). */
+const numVal = s => { const m = /^[<>≤≥~]?\s*([0-9๐-๙]+(?:[.,][0-9๐-๙]+)?)\s*$/.exec(s.trim()); return m && !/^[<>≤≥]/.test(s.trim()) ? parseFloat(thaiDigits(m[1]).replace(',', '.')) : null; };
+const decOf = s => { const m = /[.,]([0-9๐-๙]+)/.exec(s); return m ? m[1].length : 0; };
+const paramKey = s => s.replace(/\([^)]*\)|\[[^\]]*\]/g, ' ').replace(/[\s:]+/g, '').toLowerCase();
+const parenAbbr = s => { const m = /\(([A-Za-z][A-Za-z0-9\-]{0,9})\)/.exec(s); return m ? m[1].toLowerCase() : null; };
+function tableSeries(doc, paras) {
+  const out = [];
+  if (!doc.tables) return out;
+  doc.tables.forEach((T, ti) => {
+    const grid = T.rows.map(r => r.map(c => {
+      const ps = c.paras.filter(i => paras[i].text.trim());
+      return { col: c.col, span: c.span, ps, text: ps.map(i => paras[i].text).join(' ').replace(/\s+/g, ' ').trim() };
+    }));
+    const isNum = c => numVal(c.text) != null;
+    let h = 0;
+    while (h < grid.length) {
+      const r = grid[h], n = r.filter(isNum).length;
+      if (r.length && n / r.length >= 0.3) break;
+      h++;
+    }
+    if (h === grid.length) return;
+    const first = T.rows.map(r => r[0]).find(Boolean);
+    const anchor = first && first.paras[0];
+    const push = (label, cells) => {
+      const vals = cells.filter(isNum).map(c => ({ v: numVal(c.text), dec: decOf(c.text), c }));
+      if (vals.length < 2 || !label) return;
+      if (/^\s*(?:[A-Z]{1,4}[\s\-_.]?[0-9]+|สถานี|จุด|ฤดู|เดือน|ปี|ครั้งที่|ไตรมาส|[0-9๐-๙])/i.test(label)) return; // a station or a time, not a parameter
+      const keys = [paramKey(label)];
+      const ab = parenAbbr(label);
+      if (ab) keys.push(ab);
+      out.push({ ti, label, keys: keys.filter(Boolean), vals, anchor, dir: cells.dir });
+    };
+    /* columns */
+    const cols = new Set(grid.slice(h).flatMap(r => r.filter(c => c.span === 1).map(c => c.col)));
+    for (const col of cols) {
+      const label = grid.slice(0, h).map(r => r.find(c => c.col <= col && col < c.col + c.span)).filter(Boolean).map(c => c.text).join(' ');
+      const cells = grid.slice(h).map(r => r.find(c => c.col === col && c.span === 1)).filter(Boolean);
+      cells.dir = 'col';
+      push(label, cells);
+    }
+    /* rows */
+    for (const r of grid.slice(h)) {
+      if (!r.length || isNum(r[0])) continue;
+      const cells = r.slice(1);
+      cells.dir = 'row';
+      push(r[0].text, cells);
+    }
+  });
+  return out;
+}
+const NUM = '([0-9๐-๙]+(?:\\.[0-9๐-๙]+)?)';
+const CLAIMS = [
+  ['range', new RegExp('(?:อยู่)?(?:ในช่วง|ระหว่าง|ตั้งแต่)\\s*(?:ค่า)?\\s*' + NUM + '\\s*(?:ถึง|-|–|และ)\\s*' + NUM, 'g')],
+  ['range', new RegExp('มีค่า\\s*' + NUM + '\\s*[-–]\\s*' + NUM, 'g')],
+  ['mean', new RegExp('เฉลี่ย\\s*(?:เท่ากับ|อยู่ที่|ประมาณ|คือ)?\\s*' + NUM, 'g')],
+  ['max', new RegExp('สูงสุด\\s*(?:เท่ากับ|อยู่ที่|คือ)?\\s*' + NUM, 'g')],
+  ['min', new RegExp('ต่ำสุด\\s*(?:เท่ากับ|อยู่ที่|คือ)?\\s*' + NUM, 'g')],
+];
+const roundTo = (v, d) => Math.round(v * 10 ** d) / 10 ** d;
+function claimChecks(doc, paras, add) {
+  if (doc.kind !== 'docx' || !doc.tables || !doc.tables.length) return;
+  const series = tableSeries(doc, paras);
+  if (!series.length) return;
+  /* names a parameter goes by: table labels, plus abbreviation ↔ full name */
+  const alias = new Map(); // normalized name in text -> key
+  for (const s of series) for (const k of s.keys) alias.set(k, k);
+  const { defs } = scanAbbr(doc);
+  for (const [a, ds] of defs) {
+    const k = a.toLowerCase();
+    if (!alias.has(k)) continue;
+    for (const d of ds) if (d.full) alias.set(paramKey(d.full), k);
+  }
+  const names = [...alias.keys()].filter(n => n.length >= 2).sort((x, y) => y.length - x.length);
+  const capIdx = new Map();
+  doc.tables.forEach((T, ti) => { if (T.cap) capIdx.set(normT(T.cap), ti); });
+  const seenClaim = new Map();
+  const tablePara = ti => { const T = doc.tables[ti]; const c = T.rows.map(r => r[0]).find(Boolean); return c ? c.paras[0] : null; };
+  paras.forEach((p, pi) => {
+    if (p.hf || p.toc || p.inTable) return;
+    const t = p.text;
+    const low = t.toLowerCase();
+    /* tables named in this paragraph */
+    const named = [];
+    for (const m of t.matchAll(/(ตาราง(?:ที่)?|Table)\s*([0-9๐-๙]+(?:\s?[.\-–]\s?[0-9๐-๙]+)*)/gi)) {
+      for (const [cap, ti] of capIdx) if (normT(cap).endsWith(normT(m[2]))) named.push(ti);
+    }
+    for (const [kind, re] of CLAIMS) {
+      re.lastIndex = 0;
+      for (const m of t.matchAll(re)) {
+        /* the parameter: the nearest name before the number, same clause */
+        const from = Math.max(0, m.index - 90);
+        const win = low.slice(from, m.index + 1);
+        let key = null, at = -1;
+        for (const n of names) {
+          const latin = /^[a-z0-9\-]+$/.test(n);
+          const re2 = latin ? new RegExp('(?<![a-z0-9])' + escRe(n) + '(?![a-z0-9])', 'g') : new RegExp(escRe(n), 'g');
+          for (const x of win.matchAll(re2)) if (x.index > at) { at = x.index; key = alias.get(n); }
+        }
+        if (!key) continue;
+        let cands = series.filter(s => s.keys.includes(key));
+        let explicit = false;
+        if (named.length) { const c = cands.filter(s => named.includes(s.ti)); if (c.length) { cands = c; explicit = true; } }
+        if (!explicit) {
+          /* the nearest table under the same heading */
+          const near = cands.map(s => ({ s, d: Math.abs((tablePara(s.ti) ?? 1e9) - pi) }))
+            .filter(x => { const tp = tablePara(x.s.ti); return tp != null && (paras[tp].heading || '') === (p.heading || ''); });
+          if (!near.length) continue;
+          const best = Math.min(...near.map(x => x.d));
+          cands = near.filter(x => x.d === best).map(x => x.s);
+        }
+        const ti = cands[0].ti;
+        const sets = [cands.flatMap(s => s.vals), ...cands.map(s => s.vals)];
+        const nums = m.slice(1).map(x => parseFloat(thaiDigits(x)));
+        const decs = m.slice(1).map(x => decOf(x));
+        const stat = vs => { const v = vs.map(x => x.v); return { min: Math.min(...v), max: Math.max(...v), mean: v.reduce((a, b) => a + b, 0) / v.length }; };
+        let ok = false, out = false, st = stat(sets[0]);
+        for (const vs of sets) {
+          const s = stat(vs);
+          if (kind === 'range') {
+            const [a, b] = nums[0] <= nums[1] ? [nums[0], nums[1]] : [nums[1], nums[0]];
+            const da = decs[nums[0] <= nums[1] ? 0 : 1], db = decs[nums[0] <= nums[1] ? 1 : 0];
+            if (roundTo(s.min, da) === a && roundTo(s.max, db) === b) { ok = true; break; }
+          } else {
+            const want = kind === 'mean' ? s.mean : s[kind];
+            if (Math.abs(roundTo(want, decs[0]) - nums[0]) <= 10 ** -decs[0] * (kind === 'mean' ? 1 : 0) + 1e-9) { ok = true; break; }
+          }
+        }
+        if (ok) continue;
+        if (kind === 'range') {
+          const [a, b] = nums[0] <= nums[1] ? nums : [nums[1], nums[0]];
+          out = a < roundTo(st.min, decs[0]) || b > roundTo(st.max, decs[1]);
+        } else out = true;
+        const T = doc.tables[ti];
+        const s0 = m.index + m[0].search(/[0-9๐-๙]/);
+        const found = t.slice(s0, m.index + m[0].length);
+        const gk = ti + '|' + kind + '|' + key + '|' + found;
+        const here = [pi, s0, m.index + m[0].length];
+        if (seenClaim.has(gk)) { const g = seenClaim.get(gk); (g.also || (g.also = [])).push(here); g.n++; continue; }
+        const d = Math.max(...decs);
+        seenClaim.set(gk, add({ cat: 'datamatch', sev: out && explicit ? 'warn' : 'info', para: pi, ranges: [[here[1], here[2]]], found,
+          suggest: '', msg: 'claim', kind, label: cands[0].label.slice(0, 40), table: T.cap || null, tno: ti + 1, n: 1,
+          actual: kind === 'range' ? st.min.toFixed(d) + '–' + st.max.toFixed(d) : (kind === 'mean' ? st.mean : st[kind]).toFixed(d),
+          ref: tablePara(ti), key: 'datamatch:' + gk }));
+      }
+    }
+  });
+}
+
+/* ── Consistency: years, station codes, decimal places ── */
+function moreConsistency(doc, paras, add) {
+  /* reference lists use Christian years on purpose: skip them */
+  let inRefs = false;
+  const refPara = paras.map(p => {
+    if (p.isHeading || (!p.inTable && p.text.length < 60)) {
+      if (/^\s*(?:เอกสารอ้างอิง|บรรณานุกรม|รายการอ้างอิง|references?|bibliography)\s*$/i.test(p.text)) inRefs = true;
+      else if (p.isHeading) inRefs = false;
+    }
+    return inRefs;
+  });
+  /* years: "พ.ศ. 2024" / "ค.ศ. 2567" are wrong; plain years of both eras mixed */
+  const be = [], ce = [];
+  paras.forEach((p, pi) => {
+    if (p.hf || p.toc || refPara[pi]) return;
+    const t = p.text;
+    for (const m of t.matchAll(/(พ\.\s?ศ\.|ค\.\s?ศ\.)\s*([0-9๐-๙]{4})/g)) {
+      const y = +thaiDigits(m[2]);
+      const isBE = m[1].startsWith('พ');
+      if ((isBE && y >= 1900 && y <= 2100) || (!isBE && y >= 2400 && y <= 2700)) {
+        const s = m.index, e = m.index + m[0].length;
+        add({ cat: 'consist', sev: 'warn', para: pi, ranges: [[s, e]], found: m[0], suggest: isBE ? 'พ.ศ. ' + (y + 543) : 'ค.ศ. ' + (y - 543),
+          msg: isBE ? 'yearBE' : 'yearCE', key: 'consist:yearlabel' });
+      }
+    }
+    if (p.inTable) return;
+    for (const m of t.matchAll(/(?<![0-9๐-๙.,/])([0-9๐-๙]{4})(?![0-9๐-๙])/g)) {
+      const y = +thaiDigits(m[1]);
+      const before = t.slice(Math.max(0, m.index - 40), m.index);
+      if (/ค\.\s?ศ\.\s*$|พ\.\s?ศ\.\s*$/.test(before)) continue; // labelled: checked above
+      if (/[A-Za-z][^()]*,?\s*$/.test(before) && /\(/.test(before)) continue; // (Smith, 2019)
+      if (/et al|[A-Za-z]{3,}\.?\s*$/.test(before)) continue;
+      if (y >= 2400 && y <= 2700) be.push([pi, m.index, m.index + 4]);
+      else if (y >= 1950 && y <= 2100) ce.push([pi, m.index, m.index + 4]);
+    }
+  });
+  if (be.length >= 3 && ce.length && ce.length < be.length) {
+    const by = new Map();
+    for (const [pi, s, e] of ce) { if (!by.has(pi)) by.set(pi, []); by.get(pi).push([s, e]); }
+    for (const [pi, ranges] of by) add({ cat: 'consist', sev: 'info', para: pi, ranges, found: paras[pi].text.slice(ranges[0][0], ranges[0][1]), suggest: '',
+      msg: 'yearMix', counts: [be.length, ce.length], key: 'consist:yearmix' });
+  }
+  /* station / sample codes written two ways: ST1 / ST-1 / ST 1 */
+  const fam = new Map();
+  const SKIPC = /^(?:CO|NO|PO|SO|NH|H|O|N|C|P|S|K|ISO|COVID|TOC|BOD|COD|EC|SS|TSS|DO|PH|UTM|WGS|GPS|NTU|PSU|PPT|MG|ML|KM|CM|MM|Q|Y|R)$/i;
+  paras.forEach((p, pi) => {
+    if (p.hf || p.toc || refPara[pi]) return;
+    for (const m of p.text.matchAll(/(?<![A-Za-z0-9.\-])([A-Z]{1,4})([\s\-_.]?)([0-9]{1,3})(?![0-9A-Za-z]|\.[0-9])/g)) {
+      if (SKIPC.test(m[1])) continue;
+      const sep = m[2] === '_' ? '_' : m[2] === '.' ? '.' : m[2] === '-' ? '-' : m[2] ? ' ' : '';
+      if (!fam.has(m[1])) fam.set(m[1], new Map());
+      const f = fam.get(m[1]);
+      if (!f.has(sep)) f.set(sep, []);
+      f.get(sep).push([pi, m.index, m.index + m[0].length]);
+    }
+  });
+  const sepName = s => ({ '': 'ติดกัน', ' ': 'เว้นวรรค', '-': 'ขีด', '.': 'จุด', '_': 'ขีดล่าง' }[s]);
+  for (const [pre, f] of fam) {
+    if (f.size < 2) continue;
+    const all = [...f.values()].reduce((a, x) => a + x.length, 0);
+    if (all < 3) continue;
+    const forms = [...f.keys()].sort((a, b) => f.get(b).length - f.get(a).length);
+    const major = forms[0];
+    const ex = x => pre + (x === ' ' ? ' ' : x) + '1';
+    for (const form of forms.slice(1)) {
+      const at = f.get(form);
+      add({ cat: 'consist', sev: 'info', para: at[0][0], ranges: [[at[0][1], at[0][2]]], also: at.slice(1), found: paras[at[0][0]].text.slice(at[0][1], at[0][2]),
+        suggest: '', msg: 'codeForm', forms: [ex(major), f.get(major).length, ex(form), at.length], sepA: sepName(major), sepB: sepName(form), key: 'consist:code:' + pre + form });
+    }
+  }
+  /* "สถานี 1" and "สถานีที่ 1" both used */
+  {
+    const a = [], b = [];
+    paras.forEach((p, pi) => {
+      if (p.hf || p.toc) return;
+      for (const m of p.text.matchAll(/สถานี(ที่)?\s*([0-9๐-๙]{1,3})(?![0-9๐-๙])/g)) (m[1] ? b : a).push([pi, m.index, m.index + m[0].length]);
+    });
+    if (a.length && b.length && a.length + b.length >= 4) {
+      const [minor, major] = a.length < b.length ? [a, b] : [b, a];
+      add({ cat: 'consist', sev: 'info', para: minor[0][0], ranges: [[minor[0][1], minor[0][2]]], also: minor.slice(1), found: paras[minor[0][0]].text.slice(minor[0][1], minor[0][2]),
+        suggest: '', msg: 'stationForm', counts: [major.length, minor.length], usual: major === b ? 'สถานีที่ 1' : 'สถานี 1', key: 'consist:station' });
+    }
+  }
+  /* decimal places that differ within a table column or row */
+  if (doc.kind !== 'docx') return;
+  const done = new Set();
+  const series = tableSeries(doc, paras).sort((x, y) => (x.dir === 'col' ? 0 : 1) - (y.dir === 'col' ? 0 : 1));
+  for (const s of series) {
+    const vals = s.vals.filter(v => !done.has(v.c));
+    if (vals.length < 4) continue;
+    const cnt = {};
+    vals.forEach(v => { cnt[v.dec] = (cnt[v.dec] || 0) + 1; });
+    const d = +Object.keys(cnt).sort((a, b) => cnt[b] - cnt[a])[0];
+    if (cnt[d] / vals.length < 0.7 || (d === 0 && cnt[d] === vals.length)) continue;
+    const odd = vals.filter(v => v.dec !== d && v.c.ps.length);
+    if (!odd.length || odd.length === vals.length) continue;
+    odd.forEach(v => done.add(v.c));
+    const at = odd.map(v => [v.c.ps[0], 0, paras[v.c.ps[0]].text.length]);
+    add({ cat: 'consist', sev: 'info', para: at[0][0], ranges: [[0, at[0][2]]], also: at.slice(1), found: odd.map(v => v.c.text).slice(0, 6).join(', '),
+      suggest: '', msg: 'decimals', dec: d, label: s.label.slice(0, 40), n: odd.length, key: 'consist:dec:' + s.ti + ':' + s.label });
+  }
+}
+
+/* ── Words not in the dictionary ──
+   The Thai word list (PyThaiNLP, CC0) plus the user's own added words.
+   Each run of Thai letters is cut into dictionary words, leaving as few
+   letters over as possible (like PyThaiNLP's maximal matching); the letters
+   left over are the suspect. Shown with the words either side, so the whole
+   misspelt word is visible. One finding per word, every place marked. */
+const GRAPH = typeof Intl !== 'undefined' && Intl.Segmenter ? new Intl.Segmenter('th', { granularity: 'grapheme' }) : null;
+function cutWords(run, dict) {
+  const n = run.length;
+  const next = new Array(n + 1);
+  if (GRAPH) { for (const g of GRAPH.segment(run)) next[g.index] = g.index + g.segment.length; }
+  for (let i = 0; i < n; i++) if (next[i] == null) next[i] = i + 1;
+  const edge = new Uint8Array(n + 1);
+  for (let i = 0; i < n; i = next[i]) edge[next[i]] = 1;
+  const cost = new Array(n + 1).fill(Infinity), words = new Array(n + 1).fill(Infinity), back = new Array(n + 1);
+  cost[0] = 0; words[0] = 0;
+  for (let i = 0; i < n; i++) {
+    if (cost[i] === Infinity) continue;
+    const better = (j, c, w, k) => { if (c < cost[j] || (c === cost[j] && w < words[j])) { cost[j] = c; words[j] = w; back[j] = [i, k]; } };
+    for (let j = i + 1; j <= Math.min(n, i + 24); j++) {
+      if (!edge[j]) continue; // words end between letter clusters
+      const w = run.slice(i, j);
+      if (dict.pre && !dict.pre(w)) break; // no word starts like this
+      if (dict.has(w)) better(j, cost[i], words[i] + 1, true);
+    }
+    const j = next[i];
+    if (j <= n) better(j, cost[i] + (j - i), words[i] + 1, false);
+  }
+  const out = [];
+  for (let j = n; j > 0;) { const [i, k] = back[j]; out.push({ s: i, e: j, known: k }); j = i; }
+  return out.reverse();
+}
+function dictChecks(doc, paras, add, dict) {
+  if (!dict || !dict.size) return;
+  const found = new Map();
+  paras.forEach((p, pi) => {
+    if (p.hf || p.toc) return;
+    const t = p.text;
+    for (const m of t.matchAll(/[ก-ฺเ-ๅ็-๎]{2,}/g)) {
+      /* Thai abbreviations with dots: คพ. สผ. กทม. */
+      if (m[0].length <= 6 && t[m.index + m[0].length] === '.') continue;
+      const cut = cutWords(m[0], dict);
+      /* join neighbouring unknown pieces */
+      const parts = [];
+      for (const c of cut) {
+        const last = parts[parts.length - 1];
+        if (!c.known && last && !last.known) last.e = c.e; else parts.push({ ...c });
+      }
+      parts.forEach((c, k) => {
+        if (c.known) return;
+        const prev = parts[k - 1], nxt = parts[k + 1];
+        let s0 = prev ? prev.s : c.s, e0 = nxt ? nxt.e : c.e;
+        if (e0 - s0 > 20) { s0 = prev && c.s - prev.s <= 8 ? prev.s : c.s; e0 = c.e; }
+        const w = m[0].slice(s0, e0);
+        if (w.length < 2) return;
+        if (!found.has(w)) found.set(w, { at: [], core: m[0].slice(c.s, c.e) });
+        found.get(w).at.push([pi, m.index + s0, m.index + e0]);
+      });
+    }
+  });
+  for (const [w, { at, core }] of found) {
+    add({ cat: 'dict', sev: 'info', para: at[0][0], ranges: [[at[0][1], at[0][2]]], also: at.slice(1), found: w, suggest: '', msg: 'dict', n: at.length, word: w, core,
+      key: 'dict:' + w });
+  }
 }
