@@ -193,6 +193,25 @@ export function runChecks(doc, opts = {}) {
       k = j;
     }
 
+    /* Two to four words typed twice in a row ("ผลการตรวจผลการตรวจ"); a run
+       of copies is one finding */
+    for (let n = 2; n <= 4; n++) {
+      const same = (x, y) => { for (let j = 0; j < n; j++) if (lc(tk[x + j].w) !== lc(tk[y + j].w)) return false; return true; };
+      const tight = (x, y) => /^[ \u00A0]*$/.test(t.slice(tk[x].e, tk[y].s));
+      for (let k = 0; k + 2 * n <= tk.length; k++) {
+        if (!same(k, k + n) || !tight(k + n - 1, k + n)) continue;
+        if (tk.slice(k, k + n).every(x => NUMERIC.test(x.w) || x.w.length < 2)) continue;
+        let j = k + n;
+        while (j + 2 * n <= tk.length && same(k, j + n) && tight(j + n - 1, j + n)) j += n;
+        const a = tk[k].s, b = tk[j + n - 1].e;
+        if (!issues.some(x => x.para === pi && x.cat === 'dupword' && x.ranges[0][0] < b && a < x.ranges[0][1])) {
+          add({ cat: 'dupword', sev: 'warn', para: pi, ranges: [[a, b]], found: t.slice(a, b), suggest: t.slice(a, tk[k + n - 1].e),
+            msg: 'multi', key: 'dupword:multi:' + tk.slice(k, k + n).map(x => lc(x.w)).join('|') });
+        }
+        k = j + n - 1;
+      }
+    }
+
     /* The end of a word repeated as the next word ("ประสิทธิภาพภาพ"): the
        word cutter sees two different words, so look at the letters. A
        repeat inside one dictionary word ("นานาชาติ") is fine. */
@@ -436,7 +455,7 @@ export function runChecks(doc, opts = {}) {
   sciChecks(doc, paras, add);
   claimChecks(doc, paras, add);
   moreConsistency(doc, paras, add);
-  dictChecks(doc, paras, add, opts.dict);
+  dictChecks(doc, paras, add, opts.dict, issues);
 
   /* ── Consistency across the whole report ── */
   const body = paras.map((p, pi) => [p, pi]).filter(([p]) => !p.hf && !p.toc);
@@ -1269,9 +1288,16 @@ function cutWords(run, dict) {
   for (let j = n; j > 0;) { const [i, k] = back[j]; out.push({ s: i, e: j, known: k }); j = i; }
   return out.reverse();
 }
-function dictChecks(doc, paras, add, dict) {
+function dictChecks(doc, paras, add, dict, issues = []) {
   if (!dict || !dict.size) return;
   const found = new Map();
+  /* a misspelling already named with its fix (or a wrong character) is not repeated here */
+  const taken = new Map();
+  for (const x of issues) if (x.cat === 'spell' || x.cat === 'char' || x.cat === 'dupword') {
+    if (!taken.has(x.para)) taken.set(x.para, []);
+    taken.get(x.para).push(...x.ranges);
+  }
+  const isTaken = (pi, a, b) => (taken.get(pi) || []).some(([x, y]) => x < b && a < y);
   paras.forEach((p, pi) => {
     if (p.hf || p.toc) return;
     const t = p.text;
@@ -1291,7 +1317,7 @@ function dictChecks(doc, paras, add, dict) {
         let s0 = prev ? prev.s : c.s, e0 = nxt ? nxt.e : c.e;
         if (e0 - s0 > 20) { s0 = prev && c.s - prev.s <= 8 ? prev.s : c.s; e0 = c.e; }
         const w = m[0].slice(s0, e0);
-        if (w.length < 2) return;
+        if (w.length < 2 || isTaken(pi, m.index + c.s, m.index + c.e)) return;
         if (!found.has(w)) found.set(w, { at: [], core: m[0].slice(c.s, c.e) });
         found.get(w).at.push([pi, m.index + s0, m.index + e0]);
       });

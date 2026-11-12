@@ -111,6 +111,7 @@ const TX = {
       field: 'ลิงก์อ้างอิงใน Word เสีย — ใน Word กด Ctrl+A แล้ว F9 เพื่ออัปเดต หรือสร้างการอ้างอิงใหม่',
       line: 'คร่อมบรรทัด — ตรวจในไฟล์จริงว่าซ้ำหรือไม่',
       part: 'ท้ายคำซ้ำกับคำถัดไป — อาจพิมพ์ซ้ำ',
+      multi: 'ชุดคำเดียวกันซ้ำติดกัน — อาจพิมพ์ซ้ำ',
       double: 'เว้นวรรคซ้อน',
       punct: 'มีวรรคหน้าเครื่องหมายหรือในวงเล็บ',
       open: 'เปิดแล้วไม่พบตัวปิดในย่อหน้าเดียวกัน',
@@ -235,6 +236,7 @@ const TX = {
       field: 'Broken Word cross-reference — in Word press Ctrl+A then F9 to update, or insert the reference again',
       line: 'Across a line break — check in the file',
       part: 'The end of a word is repeated as the next word — typed twice?',
+      multi: 'The same words twice in a row — typed twice?',
       double: 'Double space',
       punct: 'Space before punctuation or inside brackets',
       open: 'Opened but not closed in this paragraph',
@@ -583,7 +585,7 @@ function renderResult() {
     '<div class="rc-actions"><button class="btn" id="rc-restore" hidden></button><button class="btn" id="rc-new">' + esc(t.newFile) + '</button>' +
     '<button class="btn btn-primary" id="rc-export">' + esc(t.export) + '</button></div></div>' +
     (d.notes || []).map(n => '<div class="rc-note' + (n === 'pdfspace' ? '' : ' warn') + '">' + esc(t.note[n]) + '</div>').join('') +
-    (RPT.prevSkips ? '<div class="rc-note">' + esc(t.prevSkips(RPT.prevSkips)) + '</div>' : '') +
+    (RPT.prevSkips ? '<div class="rc-note" id="rc-prevskips">' + esc(t.prevSkips(RPT.prevSkips)) + '</div>' : '') +
     '<div class="rc-main" id="rc-main" style="--rc-lw:' + RPT.listW + 'px">' +
     '<div class="rc-side">' +
     '<div class="rc-tools" id="rc-tools">' +
@@ -610,7 +612,11 @@ function renderResult() {
   document.getElementById('rc-new').addEventListener('click', () => { unload(); renderStart(); });
   document.getElementById('rc-export').addEventListener('click', exportXlsx);
   document.getElementById('rc-restore').addEventListener('click', () => {
-    RPT.ignored.clear(); RPT.ignoredKeys.clear(); saveSkips(); refresh();
+    RPT.ignored.clear(); RPT.ignoredKeys.clear(); saveSkips();
+    RPT.prevSkips = 0;
+    const note = document.getElementById('rc-prevskips');
+    if (note) note.remove();
+    refresh();
   });
   document.getElementById('rc-tools').addEventListener('click', e => {
     if (e.target.closest('[data-scope]')) return onScope(e);
