@@ -70,6 +70,7 @@ const TX = {
     prevPage: 'หน้าก่อน', nextPage: 'หน้าถัดไป', goPage: 'ไปที่หน้า',
     brkLbl: 'ตัดบรรทัดแบบ', brkHint: 'Word บน Mac ตัดบรรทัดภาษาไทยที่ช่องว่างเท่านั้น ส่วน Word บน Windows ตัดระหว่างคำ — เลือกให้ตรงกับเครื่องที่เปิดดูไฟล์ (โปรแกรมเดาจากไฟล์ให้แล้ว)',
     newFile: 'เปิดไฟล์อื่น', export: 'Export Excel', restore: 'คืนรายการที่ข้าม',
+    prevSkips: n => `ข้ามไว้จากการตรวจไฟล์ชื่อนี้ครั้งก่อน ${n} รายการ — กด "คืนรายการที่ข้าม" ถ้าต้องการดูอีกครั้ง`,
     pages: 'หน้า', paras: 'ย่อหน้า', pastedName: 'ข้อความที่วาง',
     total: 'จุดที่พบ', none: 'ไม่พบจุดที่ต้องตรวจในหมวดที่เลือก',
     clean: 'ไม่พบจุดที่น่าจะผิด',
@@ -109,6 +110,7 @@ const TX = {
       deg: 'ใช้ตัว o หรือ º แทนเครื่องหมายองศา',
       field: 'ลิงก์อ้างอิงใน Word เสีย — ใน Word กด Ctrl+A แล้ว F9 เพื่ออัปเดต หรือสร้างการอ้างอิงใหม่',
       line: 'คร่อมบรรทัด — ตรวจในไฟล์จริงว่าซ้ำหรือไม่',
+      part: 'ท้ายคำซ้ำกับคำถัดไป — อาจพิมพ์ซ้ำ',
       double: 'เว้นวรรคซ้อน',
       punct: 'มีวรรคหน้าเครื่องหมายหรือในวงเล็บ',
       open: 'เปิดแล้วไม่พบตัวปิดในย่อหน้าเดียวกัน',
@@ -192,6 +194,7 @@ const TX = {
     prevPage: 'Previous page', nextPage: 'Next page', goPage: 'Go to page',
     brkLbl: 'Line breaks', brkHint: 'Word for Mac breaks Thai lines only at spaces; Word for Windows breaks between words — pick the one you view the file in (guessed from the file)',
     newFile: 'Open another file', export: 'Export Excel', restore: 'Restore skipped',
+    prevSkips: n => `${n} finding(s) skipped last time this file name was checked — "Restore skipped" shows them again`,
     pages: 'pages', paras: 'paragraphs', pastedName: 'Pasted text',
     total: 'Found', none: 'Nothing to check in the selected categories',
     clean: 'Nothing that looks wrong was found',
@@ -231,6 +234,7 @@ const TX = {
       deg: 'Letter o or º used instead of the degree sign',
       field: 'Broken Word cross-reference — in Word press Ctrl+A then F9 to update, or insert the reference again',
       line: 'Across a line break — check in the file',
+      part: 'The end of a word is repeated as the next word — typed twice?',
       double: 'Double space',
       punct: 'Space before punctuation or inside brackets',
       open: 'Opened but not closed in this paragraph',
@@ -447,8 +451,8 @@ function load(doc, name) {
   RPT.doc = doc;
   RPT.name = name;
   RPT.issues = check(doc);
-  RPT.ignored = new Set();
-  RPT.ignoredKeys = new Set();
+  loadSkips(name);
+  RPT.prevSkips = RPT.issues.filter(i => RPT.ignored.has(sig(i)) || RPT.ignoredKeys.has(i.key)).length;
   RPT.off = new Set();
   RPT.sel = null;
   RPT.sev = 'all';
@@ -461,7 +465,30 @@ function load(doc, name) {
 
 /* ── Results ────────────────────────────────────────────────────────────── */
 
-const sig = i => i.cat + '|' + i.para + '|' + i.ranges[0][0] + '|' + (i.msg || '');
+/* A skipped finding is remembered by its words, not its position, so it
+   stays skipped when the report is checked again after edits elsewhere */
+const sig = i => {
+  if (i._sig) return i._sig;
+  const t = (RPT.doc.paras[i.para] || {}).text || '';
+  const [s, e] = i.ranges[0];
+  return (i._sig = i.cat + '|' + (i.msg || '') + '|' + t.slice(Math.max(0, s - 20), Math.min(t.length, e + 20)).replace(/\s+/g, ' '));
+};
+/* skips are kept per file name in this browser (the 40 most recent files) */
+const SKIP_KEY = 'aer-rc-skips';
+function readSkips() { try { return JSON.parse(localStorage.getItem(SKIP_KEY) || '{}'); } catch (e) { return {}; } }
+function loadSkips(name) {
+  const e = readSkips()[name];
+  RPT.ignored = new Set(e ? e.s : []);
+  RPT.ignoredKeys = new Set(e ? e.k : []);
+}
+function saveSkips() {
+  if (!RPT.name) return;
+  const all = readSkips();
+  if (RPT.ignored.size || RPT.ignoredKeys.size) all[RPT.name] = { t: Date.now(), s: [...RPT.ignored], k: [...RPT.ignoredKeys] };
+  else delete all[RPT.name];
+  const keep = Object.entries(all).sort((a, b) => b[1].t - a[1].t).slice(0, 40);
+  try { localStorage.setItem(SKIP_KEY, JSON.stringify(Object.fromEntries(keep))); } catch (e) { /* full or private mode */ }
+}
 const live = () => RPT.issues.filter(i => !RPT.ignored.has(sig(i)) && !RPT.ignoredKeys.has(i.key) && !(i.cat === 'dict' && (USER.has(i.word) || USER.has(i.core))));
 const shown = () => live().filter(i => !RPT.off.has(i.cat) && (RPT.sev === 'all' || i.sev === RPT.sev));
 
@@ -556,6 +583,7 @@ function renderResult() {
     '<div class="rc-actions"><button class="btn" id="rc-restore" hidden></button><button class="btn" id="rc-new">' + esc(t.newFile) + '</button>' +
     '<button class="btn btn-primary" id="rc-export">' + esc(t.export) + '</button></div></div>' +
     (d.notes || []).map(n => '<div class="rc-note' + (n === 'pdfspace' ? '' : ' warn') + '">' + esc(t.note[n]) + '</div>').join('') +
+    (RPT.prevSkips ? '<div class="rc-note">' + esc(t.prevSkips(RPT.prevSkips)) + '</div>' : '') +
     '<div class="rc-main" id="rc-main" style="--rc-lw:' + RPT.listW + 'px">' +
     '<div class="rc-side">' +
     '<div class="rc-tools" id="rc-tools">' +
@@ -582,7 +610,7 @@ function renderResult() {
   document.getElementById('rc-new').addEventListener('click', () => { unload(); renderStart(); });
   document.getElementById('rc-export').addEventListener('click', exportXlsx);
   document.getElementById('rc-restore').addEventListener('click', () => {
-    RPT.ignored.clear(); RPT.ignoredKeys.clear(); refresh();
+    RPT.ignored.clear(); RPT.ignoredKeys.clear(); saveSkips(); refresh();
   });
   document.getElementById('rc-tools').addEventListener('click', e => {
     if (e.target.closest('[data-scope]')) return onScope(e);
@@ -668,7 +696,7 @@ function refresh() {
   renderList();
   renderCount();
   renderDoc();
-  const n = RPT.issues.length - live().length;
+  const n = RPT.issues.filter(i => RPT.ignored.has(sig(i)) || RPT.ignoredKeys.has(i.key)).length;
   const r = document.getElementById('rc-restore');
   if (r) { r.hidden = !n; r.textContent = tx().restore + ' (' + n + ')'; }
 }
@@ -759,8 +787,8 @@ function onListClick(e) {
   const act = e.target.closest('[data-act]');
   if (act) {
     e.stopPropagation();
-    if (act.dataset.act === 'ignore') { RPT.ignored.add(sig(iss)); if (RPT.sel === id) RPT.sel = null; refresh(); }
-    else if (act.dataset.act === 'ignoreAll') { RPT.ignoredKeys.add(iss.key); refresh(); }
+    if (act.dataset.act === 'ignore') { RPT.ignored.add(sig(iss)); saveSkips(); if (RPT.sel === id) RPT.sel = null; refresh(); }
+    else if (act.dataset.act === 'ignoreAll') { RPT.ignoredKeys.add(iss.key); saveSkips(); refresh(); }
     else if (act.dataset.act === 'addWord') {
       /* the word as shown, and its unknown part, so it is known in any sentence */
       USER.add(iss.word);

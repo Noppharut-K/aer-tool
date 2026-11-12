@@ -95,6 +95,8 @@ const NUM_PAT = '([0-9๐-๙]+(?:\\s?[.\\-–]\\s?[0-9๐-๙]+)*)';
 const CAP_RE = new RegExp('^\\s*' + CAP_LABEL + '\\s*' + NUM_PAT, 'i');
 const REF_RE = new RegExp('(ตารางที่|รูปที่|ภาพที่|แผนภาพที่|Table|Figure|Fig\\.)\\s*' + NUM_PAT, 'gi');
 const CONT_RE = /^\s*[(（]?\s*(ต่อ|continued|cont\.?)/i;
+/* a table/figure caption paragraph */
+const isCaption = p => CAP_RE.test(p.text.split('\n')[0]);
 
 function capKind(label) {
   const l = label.toLowerCase();
@@ -191,6 +193,31 @@ export function runChecks(doc, opts = {}) {
       k = j;
     }
 
+    /* The end of a word repeated as the next word ("ประสิทธิภาพภาพ"): the
+       word cutter sees two different words, so look at the letters. A
+       repeat inside one dictionary word ("นานาชาติ") is fine. */
+    if (opts.dict && opts.dict.size) {
+      const marked = issues.filter(x => x.para === pi && x.cat === 'dupword').map(x => x.ranges[0]);
+      for (const m of t.matchAll(/[ก-ฺเ-ๅ็-๎]{5,}/g)) {
+        const run = m[0];
+        const cut = cutWords(run, opts.dict);
+        const starts = new Set(cut.map(c => c.s));
+        const ends = new Set(cut.map(c => c.e));
+        for (const c of cut) {
+          const k = c.s;
+          if (k === 0) continue;
+          for (let L = Math.min(10, k, run.length - k); L >= 3; L--) {
+            if (run.slice(k - L, k) !== run.slice(k, k + L) || !ends.has(k + L) || starts.has(k - L)) continue;
+            const a = m.index + k - L, b = m.index + k + L;
+            if (marked.some(([x, y]) => x < b && a < y)) break;
+            add({ cat: 'dupword', sev: 'warn', para: pi, ranges: [[a, b]], found: t.slice(a, b), suggest: run.slice(k, k + L),
+              msg: 'part', key: 'dupword:part:' + run.slice(k, k + L) });
+            break;
+          }
+        }
+      }
+    }
+
     if (p.toc) return;
 
     /* Spacing — PDF spacing is reconstructed from glyph positions, so only
@@ -260,12 +287,12 @@ export function runChecks(doc, opts = {}) {
   if (scope === 'doc') {
     const seen = new Map();
     paras.forEach((p, pi) => {
-      if (p.hf || p.toc || p.inTable) return;
+      if (p.hf || p.toc || p.inTable || isCaption(p)) return;
       const k = p.text.replace(/\s+/g, ' ').trim();
       if (k.length < 40) return;
       if (seen.has(k)) {
         add({ cat: 'dupphrase', sev: 'warn', para: pi, ranges: [[0, p.text.length]], found: '', suggest: '',
-          msg: 'para', ref: seen.get(k), key: 'dupphrase:p:' + pi });
+          msg: 'para', ref: seen.get(k), key: 'dupphrase:p:' + normT(k).slice(0, 200) });
         dupParaSkip.add(pi); dupParaSkip.add(seen.get(k));
       } else seen.set(k, pi);
     });
@@ -276,7 +303,7 @@ export function runChecks(doc, opts = {}) {
     let first = new Map(); // n-gram -> [para, tokenIndex] of its first occurrence
     const cover = new Map(); // para -> Map(tokenIndex -> [earlier para, earlier tokenIndex])
     paras.forEach((p, pi) => {
-      if (p.hf || p.toc || dupParaSkip.has(pi)) return;
+      if (p.hf || p.toc || dupParaSkip.has(pi) || isCaption(p)) return;
       /* table cells repeat each other by design — only within one cell */
       if (p.inTable) { const keep = first; first = new Map(); scan(pi); first = keep; return; }
       if (scope !== 'doc') first = new Map();
@@ -310,7 +337,9 @@ export function runChecks(doc, opts = {}) {
             ranges.push([tk[rk].s, tk[Math.min(rEnd, tk.length - 1)].e]);
           }
           add({ cat: 'dupphrase', sev: rp === pi ? 'warn' : 'info', para: pi, ranges, found: '', suggest: '',
-            msg: rp === pi ? 'phraseSame' : 'phrase', ref: rp === pi ? null : rp, key: 'dupphrase:' + pi + ':' + a.s });
+            msg: rp === pi ? 'phraseSame' : 'phrase', ref: rp === pi ? null : rp,
+            /* by the repeated words, so "skip all like this" skips that text everywhere */
+            key: 'dupphrase:t:' + normT(paras[pi].text.slice(a.s, b.e)).slice(0, 200) });
         }
         s = i;
       }
@@ -333,7 +362,7 @@ export function runChecks(doc, opts = {}) {
         const st = m.index + m[0].indexOf(m[1]);
         capAt.add(pi + ':' + st);
         caps.push({ pi, s: st, e: m[0].length, label: m[1], kind: capKind(m[1]), lang: capLang(m[1]),
-          num: capNum(m[2]), cont: CONT_RE.test(after) });
+          num: capNum(m[2]), cont: CONT_RE.test(after), title: normT(after.replace(CONT_RE, '').replace(/\(?\s*(ต่อ|continued|cont\.?)\s*\)?\s*$/i, '')) });
       }
     });
 
@@ -347,8 +376,12 @@ export function runChecks(doc, opts = {}) {
     }
     for (const list of groups.values()) {
       const seen = new Map();
+      const titles = new Map();
       let prev = null;
       for (const c of list) {
+        /* the same number with the same title: the table carries on over
+           the page and its caption is repeated on purpose */
+        if (titles.has(c.num.key) && titles.get(c.num.key) === c.title) continue;
         const last = c.num.parts[c.num.parts.length - 1];
         const label = p => paras[c.pi].text.slice(c.s, c.e);
         const base = { cat: 'number', para: c.pi, ranges: [[c.s, c.e]], found: label(), suggest: '', kind: KIND_TH[c.kind] };
@@ -361,7 +394,7 @@ export function runChecks(doc, opts = {}) {
         } else if (prev != null && last < prev) {
           add({ ...base, sev: 'warn', msg: 'caporder', prevNum: prev, key: 'number:caporder:' + c.pi + ':' + c.s });
         }
-        if (!seen.has(c.num.key)) seen.set(c.num.key, c.pi);
+        if (!seen.has(c.num.key)) { seen.set(c.num.key, c.pi); titles.set(c.num.key, c.title); }
         prev = Math.max(prev ?? 0, last);
       }
     }
