@@ -37,7 +37,16 @@ try {
      light/dark switch; hidden when printing (Aqueon prints Field log / COC
      documents). Aqueon's own beforeunload guard still warns about unsaved
      work when the link is clicked. */
-  const style = `<style id="aer-backbar-style">
+  /* AER palette — Aqueon styles everything (charts included) through these
+     tokens, so redefining them recolours the whole app without touching its
+     source. Values come from AER's src/style.css (:root / body.dark). Placed
+     after Aqueon's own <style>, so the same selectors win by source order. */
+  const theme = `<style id="aer-theme">
+:root,:root[data-theme='dark']{--bg:#2b2d35;--panel:#31343d;--panel-2:#3c3f48;--border:#404450;--text:#ffffff;--muted:#a0a4b2;--faint:#757a8a;--pill-bg:#25272e;--pill-active-bg:#3dd68c;--pill-active-text:#0d2218;--red:#ef4444;--blue:#5b8dee;--green:#3dd68c;--amber:#fbbf24;--purple:#a78bfa}
+:root[data-theme='light']{--bg:#f4f5f7;--panel:#ffffff;--panel-2:#f8f9fb;--border:#e2e4ea;--text:#1a1d27;--muted:#6b7080;--faint:#9aa0b4;--pill-bg:#eaecf0;--pill-active-bg:#0d7a52;--pill-active-text:#ffffff;--red:#c41a1a;--blue:#1a4fd6;--green:#0d7a52;--amber:#b35c00;--purple:#7c3aed}
+:root:not([data-theme='light']) .chip[aria-pressed='true'],:root:not([data-theme='light']) .toast{color:#0d2218}
+</style>`;
+  const style = theme + `<style id="aer-backbar-style">
 #aer-backbar{display:flex;align-items:center;gap:12px;padding:7px 28px;background:var(--panel);border-bottom:1px solid var(--border);font-size:12.5px;color:var(--muted);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Sukhumvit Set','Thonburi',sans-serif}
 #aer-backbar a{display:inline-flex;align-items:center;gap:6px;color:var(--text);text-decoration:none;font-weight:600;padding:3px 10px 3px 6px;border-radius:999px}
 #aer-backbar a:hover{background:var(--panel-2)}

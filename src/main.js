@@ -8,6 +8,7 @@ import { wireEvents, loadDemoInto } from './ui/events.js';
 import { renderDashboard } from './ui/renders.js';
 import { downloadTemplate, doExport } from './ui/actions.js';
 import { buildBioPage } from './ui/buildBioPage.js';
+import { buildReportPage, refreshReportPage } from './ui/buildReportPage.js';
 
 /** Fills in Standards/REF-Baseline/Custom Comparisons so every display
     condition (multi-tier exceedance, REF/Baseline % diffs, significance
@@ -54,6 +55,7 @@ function openPage(t) {
   if (!el) return;
   if (!el.dataset.built) {
     if (t === 'bio') buildBioPage(el);
+    else if (t === 'rpt') buildReportPage(el);
     else buildAndWire(t, el);
     el.dataset.built = '1';
   }
@@ -76,7 +78,8 @@ document.querySelectorAll('.tc[data-tab]').forEach(card => {
 function aerHasLoadedData() {
   const sea = getState('sea'), sed = getState('sed');
   const bio = Object.values(window.BIO || {}).some(m => m && m.raw && m.raw.length);
-  return !!((sea && sea.raw.length) || (sed && sed.raw.length) || bio);
+  const rpt = !!(window.RPT && window.RPT.doc);
+  return !!((sea && sea.raw.length) || (sed && sed.raw.length) || bio || rpt);
 }
 document.getElementById('tc-aqueon')?.addEventListener('click', e => {
   if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
@@ -102,6 +105,7 @@ function buildHome() {
     sea: { name: 'Seawater', subTH: 'Water quality · Standards · Trends', subEN: 'Water quality · Standards · Trends' },
     sed: { name: 'Sediment', subTH: 'Sediment quality · Standards · Trends', subEN: 'Sediment quality · Standards · Trends' },
     bio: { name: 'Biology', subTH: 'Benthos · Phyto · Zoo · Fish Larvae · Larvae', subEN: 'Benthos · Phyto · Zoo · Fish Larvae · Larvae' },
+    rpt: { name: 'Report Check', subTH: 'ตรวจรายงาน · คำซ้ำ<br>คำผิด · เลขตาราง/รูป', subEN: 'Proofread reports<br>Repeats · Spelling · Numbering' },
   };
   document.querySelectorAll('.tc[data-tab]').forEach(card => {
     const cfg = cards[card.dataset.tab]; if (!cfg) return;
@@ -122,6 +126,7 @@ document.querySelectorAll('.lang-btn').forEach(btn => {
     document.querySelectorAll('.apage[data-built]').forEach(el => {
       const t = el.id.replace('page-', '');
       if (t === 'bio') return; // Bio doesn't need rebuild
+      if (t === 'rpt') { refreshReportPage(); return; }
       const state = getState(t);
       el.innerHTML = '';
       delete el.dataset.built;
