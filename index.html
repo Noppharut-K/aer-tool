@@ -7,8 +7,8 @@
 <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@600;700;800&family=IBM+Plex+Sans:wght@400;500;600&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-  <script type="module" crossorigin src="/aer-tool/assets/index-CFG3i4jz.js"></script>
-  <link rel="stylesheet" crossorigin href="/aer-tool/assets/index-BDbrwPGL.css">
+  <script type="module" crossorigin src="/aer-tool/assets/index-D6VLKIzq.js"></script>
+  <link rel="stylesheet" crossorigin href="/aer-tool/assets/index-CdABdUso.css">
 </head>
 <body>
 
@@ -94,6 +94,11 @@
         <div class="tc-name">Biology</div>
         <div class="tc-sub">Benthos · Phytoplankton<br>Zooplankton · Fish Larvae · Larvae</div>
       </div>
+      <div class="tc tc-rpt" data-tab="rpt">
+        <div class="tc-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 3H7a2 2 0 00-2 2v14a2 2 0 002 2h10a2 2 0 002-2V8z"/><polyline points="14 3 14 8 19 8"/><path d="M9 14.5l2 2 4-4.5"/></svg></div>
+        <div class="tc-name">Report Check</div>
+        <div class="tc-sub">ตรวจรายงาน · คำซ้ำ<br>คำผิด · เลขตาราง/รูป</div>
+      </div>
       <!-- Aqueon: separate app bundled at aqueon/ (scripts/build-aqueon.mjs) -->
       <a class="tc tc-aq" id="tc-aqueon" href="aqueon/index.html">
         <div class="tc-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V3h6v1"/><path d="M12 9.5c-1.6 2-2.4 3.3-2.4 4.4a2.4 2.4 0 004.8 0c0-1.1-.8-2.4-2.4-4.4z"/></svg></div>
@@ -108,6 +113,7 @@
 <div id="page-sea"   class="apage"></div>
 <div id="page-sed"   class="apage"></div>
 <div id="page-bio"   class="apage"></div>
+<div id="page-rpt"   class="apage"></div>
 
 <!-- ══ PROGRESS BAR ════════════════════════════════════════════════════════ -->
 <div id="progress-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:2000;display:none;align-items:center;justify-content:center;">
