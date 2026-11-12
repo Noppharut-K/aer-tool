@@ -843,6 +843,11 @@ body.dark .rc-sevf button[aria-pressed="true"],body.dark .rc-sevf button[aria-pr
 .rc-sevf button:focus-visible{outline:2px solid var(--navy);outline-offset:1px;}
 .rc-tools .rc-chips{gap:5px;}
 .rc-tools .rc-chip{font-size:11.5px;padding:3px 9px;}
+.rc-chipctl{display:inline-flex;gap:2px;margin-left:2px;}
+.rc-chipctl button{font-family:var(--font);font-size:11.5px;padding:3px 8px;border:none;background:none;color:var(--navy);cursor:pointer;border-radius:var(--rs);text-decoration:underline;text-underline-offset:2px;}
+.rc-chipctl button:hover{background:var(--navy-l);}
+.rc-chipctl button:disabled{color:var(--text4);text-decoration:none;cursor:default;background:none;}
+.rc-chipctl button:focus-visible{outline:2px solid var(--navy);outline-offset:1px;}
 .rc-opt.compact{gap:6px;font-size:12px;}
 .rc-opt.compact .rc-seg button{font-size:11.5px;padding:3px 9px;}
 .rc-count{font-size:12px;color:var(--text3);padding:6px 12px;border-bottom:1px solid var(--border);}

@@ -30,7 +30,8 @@ const TX = {
     scopeHint: { para: 'ขึ้นย่อหน้าใหม่แล้วไม่นับว่าซ้ำ', doc: 'แจ้งเมื่อข้อความซ้ำที่ใดก็ได้ในเล่ม' },
     reading: 'กำลังอ่านไฟล์…', readingPdf: 'กำลังอ่าน PDF หน้า', checking: 'กำลังตรวจ…',
     zoomIn: 'ขยาย', zoomOut: 'ย่อ', zoomFit: 'พอดีความกว้าง',
-    searchPh: 'ค้นหาในรายการและในเนื้อรายงาน (Enter = ไปจุดถัดไป)', sevLbl: 'ระดับ', sevAll: 'ทั้งหมด', noMatch: 'ไม่พบรายการที่ตรงกับคำค้น',
+    searchPh: 'ค้นหาในรายการและในเนื้อรายงาน (Enter = ไปจุดถัดไป)',
+    catAll: 'เลือกทั้งหมด', catNone: 'ล้าง', noCat: 'ยังไม่ได้เลือกหมวด — กดหมวดที่ต้องการดูด้านบน หรือ "เลือกทั้งหมด"', sevLbl: 'ระดับ', sevAll: 'ทั้งหมด', noMatch: 'ไม่พบรายการที่ตรงกับคำค้น',
     found: (m, n) => `พบ ${m} จาก ${n} รายการที่แสดงอยู่`,
     hiddenMatch: n => `แต่พบ ${n} รายการในหมวดหรือระดับที่ปิดไว้`, showAll: 'แสดงทุกหมวด',
     inDoc: n => `ในเนื้อรายงาน ${n} แห่ง`, docMatch: n => `แต่พบคำนี้ในเนื้อรายงาน ${n} แห่ง (ไฮไลต์สีเหลือง) — กด ‹ › ด้านบนรายงาน หรือ Enter เพื่อไปทีละแห่ง`,
@@ -140,7 +141,8 @@ const TX = {
     scopeHint: { para: 'A new paragraph does not count as a repeat', doc: 'Flag a passage repeated anywhere in the report' },
     reading: 'Reading file…', readingPdf: 'Reading PDF page', checking: 'Checking…',
     zoomIn: 'Zoom in', zoomOut: 'Zoom out', zoomFit: 'Fit to width',
-    searchPh: 'Search the list and the report text (Enter = next match)', sevLbl: 'Level', sevAll: 'All', noMatch: 'No findings match the search',
+    searchPh: 'Search the list and the report text (Enter = next match)',
+    catAll: 'Select all', catNone: 'Clear', noCat: 'No category selected — pick one above, or "Select all"', sevLbl: 'Level', sevAll: 'All', noMatch: 'No findings match the search',
     found: (m, n) => `${m} of ${n} shown findings`,
     hiddenMatch: n => `${n} more match in hidden categories or levels`, showAll: 'Show all categories',
     inDoc: n => `${n} in the report`, docMatch: n => `Found ${n} times in the report text (yellow) — use ‹ › above the report or Enter to step through`,
@@ -524,6 +526,13 @@ function renderResult() {
   });
   document.getElementById('rc-tools').addEventListener('click', e => {
     if (e.target.closest('[data-scope]')) return onScope(e);
+    const cc = e.target.closest('[data-cats]');
+    if (cc) {
+      RPT.off.clear();
+      if (cc.dataset.cats === 'none') live().forEach(i => RPT.off.add(i.cat));
+      refresh();
+      return;
+    }
     const sv = e.target.closest('[data-sev]');
     if (sv) { RPT.sev = sv.dataset.sev; refresh(); return; }
     const b = e.target.closest('[data-cat]');
@@ -617,8 +626,11 @@ function renderSummary() {
     ['err', 'warn', 'info'].map(s => '<button class="sev-' + s + '" data-sev="' + s + '" aria-pressed="' + (RPT.sev === s) + '"' + (sev[s] ? '' : ' disabled') + '><i></i>' +
       esc(t.sev[s]) + ' <b>' + sev[s] + '</b></button>').join('');
   const allCats = [...new Set(all.map(i => i.cat))];
+  const on = allCats.filter(c => !RPT.off.has(c)).length;
   document.getElementById('rc-chips').innerHTML = CATS.filter(c => allCats.includes(c)).map(c =>
-    '<button class="rc-chip" data-cat="' + c + '" aria-pressed="' + !RPT.off.has(c) + '">' + esc(t.cat[c]) + ' <b>' + (by[c] || 0) + '</b></button>').join('');
+    '<button class="rc-chip" data-cat="' + c + '" aria-pressed="' + !RPT.off.has(c) + '">' + esc(t.cat[c]) + ' <b>' + (by[c] || 0) + '</b></button>').join('') +
+    (allCats.length > 1 ? '<span class="rc-chipctl"><button data-cats="all"' + (on === allCats.length ? ' disabled' : '') + '>' + esc(t.catAll) + '</button>' +
+      '<button data-cats="none"' + (on === 0 ? ' disabled' : '') + '>' + esc(t.catNone) + '</button></span>' : '');
   document.getElementById('rc-scope').innerHTML = scopeHtml(true);
 }
 
@@ -651,7 +663,8 @@ function renderList() {
     /* the search only looks at the shown categories/levels: say so when
        hidden ones would match */
     const hidden = RPT.q.trim() ? listed(live()).length : 0;
-    el.innerHTML = '<div class="rc-empty">' + esc(RPT.q.trim() ? t.noMatch : RPT.issues.length ? t.none : t.clean) +
+    const allOff = live().length && live().every(i => RPT.off.has(i.cat));
+    el.innerHTML = '<div class="rc-empty">' + esc(RPT.q.trim() ? t.noMatch : allOff ? t.noCat : RPT.issues.length ? t.none : t.clean) +
       (hidden ? '<div class="rc-hidden">' + esc(t.hiddenMatch(hidden)) + '</div><button class="btn" data-act="showAll">' + esc(t.showAll) + '</button>' : '') +
       (RPT.q.trim() && findCount() ? '<div class="rc-hidden">' + esc(t.docMatch(findCount())) + '</div>' : '') + '</div>';
     return;
