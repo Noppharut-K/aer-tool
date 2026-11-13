@@ -407,7 +407,7 @@ function bioCalculate(mod){
 
     /* Dominant */
     var domVals = stations.map(function(st){return getDomSt(st);}).concat([bioDominant(dmLoc)]);
-    rows2.push({label:'Dominant '+unitLabel, vals:domVals, sec:false, bold:true});
+    rows2.push({label:'Dominant '+unitLabel, vals:domVals, sec:false, bold:true, dom:true});
 
     /* ── Store for export ── */
     BIO[mod].calc[metaKey] = {cols:cols, rows:rows2};
@@ -424,7 +424,8 @@ function bioCalculate(mod){
         tbl += '<tr><td colspan="'+(cols.length+1)+'" style="height:4px;padding:0"></td></tr>';
       } else {
         var cls = row.bold?'style="font-weight:700"':'';
-        tbl += '<tr><td class="row-hd" '+cls+'>'+bioEsc(row.label)+'</td>'+row.vals.map(function(v){return '<td '+cls+'>'+bioEsc(v)+'</td>';}).join('')+'</tr>';
+        var vcls = row.dom?' class="bio-dom"':''; // taxon names: wrap instead of spilling into the next cell
+        tbl += '<tr><td class="row-hd" '+cls+'>'+bioEsc(row.label)+'</td>'+row.vals.map(function(v){return '<td'+vcls+' '+cls+'>'+bioEsc(v)+'</td>';}).join('')+'</tr>';
       }
     });
     tbl += '</tbody></table></div>';
@@ -800,7 +801,8 @@ function bioShowTaxTable(mod, lbl, btn) {
     h += '<tr>'+tbl.cols.map(function(c){
       var v=row[c]!=null?row[c]:'';
       var isNum = String(c).startsWith('n_');
-      return '<td'+(isNum?' style="font-weight:600;color:var(--navy)"':'')+'>'+bioEsc(v)+'</td>';
+      var isDom = String(c).startsWith('dom_');
+      return '<td'+(isDom?' class="bio-dom"':'')+(isNum?' style="font-weight:600;color:var(--navy)"':'')+'>'+bioEsc(v)+'</td>';
     }).join('')+'</tr>';
   });
   h += '</tbody></table></div>';
@@ -1566,7 +1568,7 @@ function bioCalculateByRep(mod) {
       });
       var dmAll={};
       stations.forEach(function(st){if(pivot[st]) Object.keys(pivot[st]).forEach(function(k){var lv2=k.split('|||')[1];dmAll[lv2]=(dmAll[lv2]||0)+pivot[st][k];});});
-      rows2.push({label:'Dominant '+BIO_CFG[mod].unit, vals:domVals.concat([bioDominant(dmAll)]), sec:false, bold:true});
+      rows2.push({label:'Dominant '+BIO_CFG[mod].unit, vals:domVals.concat([bioDominant(dmAll)]), sec:false, bold:true, dom:true});
 
       /* Render table */
       var metaParts = metaKey.split('||');
@@ -1581,7 +1583,8 @@ function bioCalculateByRep(mod) {
           tbl += '<tr><td colspan="'+(cols.length+1)+'" style="height:4px;padding:0"></td></tr>';
         } else {
           var cls = row.bold?'style="font-weight:700"':'';
-          tbl += '<tr><td class="row-hd" '+cls+'>'+bioEsc(row.label)+'</td>'+row.vals.map(function(v){return '<td '+cls+'>'+bioEsc(v)+'</td>';}).join('')+'</tr>';
+          var vcls = row.dom?' class="bio-dom"':'';
+          tbl += '<tr><td class="row-hd" '+cls+'>'+bioEsc(row.label)+'</td>'+row.vals.map(function(v){return '<td'+vcls+' '+cls+'>'+bioEsc(v)+'</td>';}).join('')+'</tr>';
         }
       });
       tbl += '</tbody></table></div>';

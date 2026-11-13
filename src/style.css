@@ -472,6 +472,9 @@ select,input{color:var(--text);}
 .bio-tbl-wrap thead th{text-align:right!important;}
 .bio-tbl-wrap td{text-align:right!important;}
 .bio-tbl-wrap td.row-hd,.bio-tbl-wrap td.sec-hd{text-align:left!important;}
+/* Dominant taxon names: the columns are fixed-width, so long names (or two
+   tied names "A / B") wrap inside their cell instead of running into the next. */
+.bio-tbl-wrap td.bio-dom:not(.row-hd){font-family:inherit;white-space:normal;overflow-wrap:anywhere;line-height:1.35;vertical-align:top;padding-top:5px;padding-bottom:5px;}
 
 /* Light mode text fixes */
 body:not(.dark) .home-brand h1{color:var(--text);}
