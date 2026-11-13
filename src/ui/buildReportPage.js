@@ -558,7 +558,11 @@ function context(i) {
   const text = RPT.doc.paras[i.para].text;
   const [s, e] = i.ranges[0];
   if (e - s > 120) return '<b>' + esc(text.slice(s, s + 110)) + '…</b>';
-  const a = Math.max(0, s - 36), b = Math.min(text.length, e + 36);
+  let a = Math.max(0, s - 36), b = Math.min(text.length, e + 36);
+  // don't cut a Thai cluster: no excerpt starts on a mark (…่างดำ) or drops one
+  const MARK = /[ัำ-ฺ็-๎]/;
+  while (a > 0 && a < s && (MARK.test(text[a]) || /[ะาๅ]/.test(text[a]))) a++;
+  while (b < text.length && MARK.test(text[b])) b++;
   const mid = text.slice(s, e);
   const midHtml = /^\s*$/.test(mid) || mid.length <= 2 && /[\u200B-\u200D\u2060\uFEFF]/.test(mid) ? '<b class="ws">' + showWs(mid || '◌') + '</b>' : '<b>' + esc(mid) + '</b>';
   return (a > 0 ? '…' : '') + esc(text.slice(a, s)).replace(/\n/g, ' ') + midHtml + esc(text.slice(e, b)).replace(/\n/g, ' ') + (b < text.length ? '…' : '');

@@ -1020,7 +1020,8 @@ export function fixThai(s) {
     .normalize('NFC');
 }
 
-const TOC_LINE = /(\.\s?){5,}|…{2,}|_{5,}|\S\s{3,}[0-9๐-๙ivx]{1,4}\s*$/i;
+const THAI_NO_START = /^[ะ-ฺๅ็-๎]/;
+const TOC_LINE =/(\.\s?){5,}|…{2,}|_{5,}|\S\s{3,}[0-9๐-๙ivx]{1,4}\s*$/i;
 const PAGE_NO = /^[\s\-–—]*(?:หน้า\s*)?[0-9๐-๙ivxlc]{1,4}[\s\-–—]*$/i;
 const CAP_START = /^\s*(ตาราง|รูป|ภาพ|แผนภาพ|Table|Figure|Fig\.)\s*(ที่)?\s*[0-9๐-๙]/i;
 
@@ -1038,10 +1039,33 @@ function pageLines(items) {
     if (!cur || cur.eol || Math.abs(y - cur.y) > size * 0.5 || x < cur.x0 - size) {
       cur = { y, size, x0: x, text: '', end: x, segs: [] };
       lines.push(cur);
-    } else if (x - cur.end > size * 0.2 && cur.text && !/\s$/.test(cur.text) && !/^\s/.test(it.str)) {
+    } else if (x - cur.end > size * 0.2 && cur.text && !/\s$/.test(cur.text) && !/^\s/.test(it.str)
+      // A Thai mark or a following vowel (\u0E30 \u0E32 \u0E33 \u0E45) never starts a word:
+      // Quartz PDFs put the upper half of \u0E33 in its own item, which leaves a gap.
+      && !(/[\u0E01-\u0E4E]$/.test(cur.text) && THAI_NO_START.test(fixThai(it.str)))) {
       cur.text += ' ';
     }
     let s = fixThai(it.str).replace(/[ \u00A0]{2,}/g, ' ');
+    /* fixThai works on one item, but Quartz (macOS) PDFs split clusters
+       across items: "\u0E19\u0E4D\u0E49" + "\u0E32", "\u0E14\u0E4D" + "\u0E32". Join them here, keeping the
+       character offsets in `segs` right. pdf.js may also put a zero-width
+       " " item between the halves, which is dropped first. */
+    if (THAI_NO_START.test(s) && /[ก-๎] $/.test(cur.text)) {
+      cur.text = cur.text.slice(0, -1);
+      for (const g of cur.segs) { g.s = Math.min(g.s, cur.text.length); g.e = Math.min(g.e, cur.text.length); }
+    }
+    const nik = cur.text.match(/\u0E4D([\u0E48-\u0E4B]?)$/);
+    if (nik && /^\u0E32/.test(s)) {
+      const at = cur.text.length - nik[0].length;
+      cur.text = cur.text.slice(0, at) + nik[1];
+      for (const g of cur.segs) { if (g.s > at) g.s--; if (g.e > at) g.e--; }
+      s = '\u0E33' + s.slice(1);
+    }
+    const tone = cur.text.match(/[\u0E48-\u0E4C]$/);
+    if (tone && /^[\u0E31\u0E34-\u0E37\u0E47]/.test(s)) {
+      cur.text = cur.text.slice(0, -1) + s[0];
+      s = tone[0] + s.slice(1);
+    }
     if (!cur.text || /\s$/.test(cur.text)) s = s.replace(/^\s+/, '');
     if (s) {
       const start = cur.text.length;
