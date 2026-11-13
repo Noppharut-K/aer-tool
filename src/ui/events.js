@@ -186,6 +186,19 @@ function wireFieldPicker(t) {
   }));
 }
 
+// ── "Template & settings" dropdown in the command bar ────────────────────
+
+function wireCmdMenu(t) {
+  const btn = document.querySelector(`[data-cmdmenu-toggle="${t}"]`);
+  const pop = document.getElementById(`${t}-cmdmenu`);
+  if (!btn || !pop) return;
+  const setOpen = open => { pop.classList.toggle('open', open); btn.setAttribute('aria-expanded', String(open)); };
+  btn.addEventListener('click', e => { e.stopPropagation(); setOpen(!pop.classList.contains('open')); });
+  pop.querySelectorAll('.cmd-menu-item').forEach(item => item.addEventListener('click', () => setOpen(false)));
+  document.addEventListener('click', e => { if (pop.classList.contains('open') && !pop.contains(e.target) && !btn.contains(e.target)) setOpen(false); });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && pop.classList.contains('open')) { setOpen(false); btn.focus(); } });
+}
+
 // ── View nav (Data Overview / Standards) ─────────────────────────────────
 
 function wireViewNav(t) {
@@ -273,6 +286,7 @@ export function wireEvents(t, { loadDemo, downloadTemplate, doExport }) {
     runDQ(t);
   });
   wireFieldPicker(t);
+  wireCmdMenu(t);
   wireViewNav(t);
 
   window.addEventListener('aer-standards-changed', e => {

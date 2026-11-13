@@ -94,8 +94,13 @@ export function renderComparisonUI(t) {
     </div>
 
     <div class="cmp-pills">
-      ${Object.entries(FORMATS).map(([key, f]) => `<button type="button" class="cmp-pill ${key === activeFormat ? 'active' : ''}" data-cmp-fmt="${key}">${isEN ? f.en : f.th}</button>`).join('')}
-      ${customs.map(c => `<button type="button" class="cmp-pill cmp-pill-custom ${c.id === activeFormat ? 'active' : ''}" data-cmp-fmt="${c.id}">${escHtml(c.name)}</button>`).join('')}
+      <div class="cmp-pill-group">
+        <span class="cmp-pill-group-lbl">${isEN ? 'Standard' : 'รูปแบบมาตรฐาน'}</span>
+        ${Object.entries(FORMATS).map(([key, f]) => `<button type="button" class="cmp-pill ${key === activeFormat ? 'active' : ''}" data-cmp-fmt="${key}">${isEN ? f.en : f.th}</button>`).join('')}
+      </div>
+      <div class="cmp-pill-group cmp-pill-group-custom">
+        <span class="cmp-pill-group-lbl">${isEN ? 'Custom' : 'กำหนดเอง'}${customs.length ? ` <span class="cmp-pill-count">${customs.length}</span>` : ''}</span>
+        ${customs.map(c => `<button type="button" class="cmp-pill cmp-pill-custom ${c.id === activeFormat ? 'active' : ''}" data-cmp-fmt="${c.id}">${escHtml(c.name)}</button>`).join('')}
       <button type="button" class="cmp-pill cmp-pill-add" id="${t}-cmp-add-btn" ${atCap ? 'disabled' : ''} title="${atCap ? (isEN ? 'Maximum 10 formats total (3 default + 7 custom)' : 'รองรับสูงสุด 10 รูปแบบการเปรียบเทียบ (รูปแบบมาตรฐาน 3 รายการ และรูปแบบกำหนดเอง 7 รายการ)') : (isEN ? 'Add a custom comparison' : 'เพิ่มการเปรียบเทียบแบบกำหนดเอง')}">+ ${isEN ? 'Add' : 'เพิ่ม'}</button>
       <div class="history-toggle">
         <button type="button" class="btn" id="${t}-cc-hist-toggle">
@@ -103,6 +108,7 @@ export function renderComparisonUI(t) {
           ${isEN ? 'History' : 'ประวัติ'}
         </button>
         <div class="history-popover" id="${t}-cc-hist-popover"></div>
+      </div>
       </div>
     </div>
 

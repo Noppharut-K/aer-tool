@@ -56,13 +56,13 @@ export function renderReportUI(t) {
   const itemGrainLabel = isEN ? GRAIN_LABEL[reportGrain].en.replace('By ', '') : (reportGrain === 'station' ? 'Station' : 'Location');
 
   root.innerHTML = `
-    <div class="cmp-pills">
-      ${Object.entries(GRAIN_LABEL).map(([key, l]) => `<button type="button" class="cmp-pill ${key === reportGrain ? 'active' : ''}" data-report-grain="${key}">${isEN ? l.en : l.th}</button>`).join('')}
-    </div>
-    <div class="cmp-pills">
-      ${Object.entries(VIEW_LABEL).map(([key, l]) => `<button type="button" class="cmp-pill ${key === reportView ? 'active' : ''}" data-report-view="${key}">${isEN ? l.en : l.th}</button>`).join('')}
-    </div>
     <div class="report-toolbar">
+      <div class="seg" role="group" aria-label="${isEN ? 'Group report by' : 'จัดรายงานตาม'}">
+        ${Object.entries(GRAIN_LABEL).map(([key, l]) => `<button type="button" aria-pressed="${key === reportGrain}" data-report-grain="${key}">${isEN ? l.en : l.th}</button>`).join('')}
+      </div>
+      <div class="seg" role="group" aria-label="${isEN ? 'Detail level' : 'ระดับรายละเอียด'}">
+        ${Object.entries(VIEW_LABEL).map(([key, l]) => `<button type="button" aria-pressed="${key === reportView}" data-report-view="${key}">${isEN ? l.en : l.th}</button>`).join('')}
+      </div>
       <div class="search-field report-search-field">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
         <input type="text" id="${t}-report-search" placeholder="${isEN ? 'Search…' : 'ค้นหา…'}">

@@ -111,7 +111,9 @@ tbody tr:nth-child(even){background:rgba(255,255,255,.03);}
 tbody tr:hover{background:var(--blue-l)!important;}
 td{padding:3.5px 14px;color:var(--text2);vertical-align:middle;font-size:13.5px;text-align:center!important;}
 td.em{color:var(--text);font-weight:600;text-align:center;}
-td.num{font-family:var(--mono);font-size:12.5px;color:var(--text);text-align:center!important;}
+td.num{font-family:var(--mono);font-size:12.5px;color:var(--text);text-align:right!important;font-variant-numeric:tabular-nums;}
+thead th.num{text-align:right!important;}
+td.num:has(.badge){text-align:center!important;}
 td.num .badge{margin:0 auto;display:inline-flex;}
 .empty-state{text-align:center;padding:52px 20px;}
 .empty-state p{font-size:14px;color:var(--text3);}
@@ -521,6 +523,18 @@ body:not(.dark) .lang-btn.active{color:#fff;}
 .cmd-map a:hover{text-decoration:underline;}
 .cmd-spacer{flex:1;}
 .command-bar .btn svg{width:14px;height:14px;}
+.command-bar .btn-run{padding:8px 20px;font-size:13.5px;}
+/* Right-hand actions wrap as one unit, so the primary button stays at the
+   far right instead of dropping alone to the start of a new line. */
+.cmd-actions{display:flex;align-items:center;gap:10px;margin-left:auto;}
+.cmd-menu{position:relative;}
+.cmd-menu-pop{display:none;position:absolute;top:calc(100% + 6px);right:0;z-index:20;min-width:240px;background:var(--white);border:1px solid var(--border2);border-radius:var(--rm);box-shadow:var(--sh-l);padding:6px;}
+.cmd-menu-pop.open{display:block;}
+.cmd-menu-item{display:block;width:100%;text-align:left;font-family:var(--font);font-size:13px;color:var(--text);background:none;border:none;border-radius:var(--rs);padding:8px 10px;cursor:pointer;white-space:nowrap;}
+.cmd-menu-item:not(:disabled):hover{background:var(--bg2);}
+.cmd-menu-item:disabled{color:var(--text4,var(--text3));opacity:.55;cursor:not-allowed;}
+.cmd-menu-item:focus-visible{outline:2px solid var(--blue);outline-offset:-2px;}
+.cmd-menu-sep{height:1px;background:var(--border);margin:5px 4px;}
 
 /* ── KPI strip ── */
 .kpi-strip{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:20px;}
@@ -596,6 +610,9 @@ body:not(.dark) .lang-btn.active{color:#fff;}
 .table-card table{width:100%;table-layout:fixed;min-width:720px;}
 .table-card thead th{text-align:center!important;position:sticky;top:0;}
 .table-card td{text-align:center!important;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+/* Numeric columns right-align so decimals line up for comparison. */
+.table-card thead th.num,.table-card td.num{text-align:right!important;}
+.table-card td.num:has(.badge,.chip){text-align:center!important;}
 .table-card .param-cell{font-weight:600;color:var(--text);}
 .table-card tr.row-exceed td:first-child{box-shadow:inset 3px 0 0 var(--red);}
 .row-outlier-tag{display:inline-flex;align-items:center;gap:4px;margin-left:6px;}
@@ -702,8 +719,14 @@ body:not(.dark) .lang-btn.active{color:#fff;}
 
 /* ── Comparison screen ── */
 .cmp-topbar{display:flex;align-items:center;gap:14px;flex-wrap:wrap;background:var(--white);border:1px solid var(--border);border-radius:var(--rm);box-shadow:var(--sh-s);padding:10px 14px;margin-bottom:14px;}
-.cmp-topbar-hint{font-size:12px;color:var(--text3);}
-.cmp-pills{display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap;}
+.cmp-topbar-hint{font-size:12px;color:var(--text3);flex:1 1 320px;min-width:0;line-height:1.5;}
+.cmp-topbar .pill-field label{white-space:nowrap;}
+.cmp-pills{display:flex;gap:10px 18px;margin-bottom:14px;flex-wrap:wrap;align-items:center;}
+.cmp-pill-group{display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
+.cmp-pill-group-custom{padding-left:18px;border-left:1px solid var(--border2);}
+.cmp-pill-group-lbl{font-size:12px;font-weight:600;color:var(--text3);margin-right:2px;white-space:nowrap;display:inline-flex;align-items:center;gap:5px;}
+.cmp-pill-count{font-size:11px;font-weight:700;color:var(--text2);background:var(--bg2);border-radius:999px;padding:1px 7px;}
+.cmp-pill-group .history-toggle .btn{border-radius:999px;padding:7px 14px;box-shadow:none;}
 .cmp-pill{font-family:var(--font);font-size:13px;font-weight:600;color:var(--text2);background:var(--white);border:1px solid var(--border2);border-radius:999px;padding:8px 16px;cursor:pointer;}
 .cmp-pill:hover{border-color:var(--accent);}
 .cmp-pill.active{background:var(--accent);border-color:var(--accent);color:#fff;}
@@ -718,8 +741,13 @@ body:not(.dark) .lang-btn.active{color:#fff;}
 .cmp-item-actions{display:flex;gap:2px;margin-left:auto;}
 
 /* ── Report screen ── */
-.report-toolbar{display:flex;gap:10px;align-items:center;margin-bottom:14px;}
-.report-toolbar .report-search-field{margin-bottom:0;}
+.report-toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px;}
+.report-toolbar .report-search-field{margin-bottom:0;flex:1 1 200px;min-width:160px;}
+.seg{display:inline-flex;border:1px solid var(--border2);border-radius:999px;background:var(--white);padding:3px;gap:2px;box-shadow:var(--sh-s);flex-shrink:0;}
+.seg button{font-family:var(--font);font-size:13px;font-weight:600;color:var(--text2);background:transparent;border:none;border-radius:999px;padding:6px 14px;cursor:pointer;white-space:nowrap;}
+.seg button:hover{color:var(--text);}
+.seg button[aria-pressed="true"]{background:var(--accent);color:#fff;}
+.seg button:focus-visible{outline:2px solid var(--accent);outline-offset:1px;}
 .print-only{display:none;}
 .report-card{background:var(--white);border:1px solid var(--border);border-radius:var(--rm);box-shadow:var(--sh-s);padding:16px 18px;margin-bottom:12px;}
 .report-card-title{font-family:var(--display);font-weight:800;font-size:20px;color:var(--text);}
@@ -998,3 +1026,19 @@ body.dark .rc-seg button[aria-pressed="true"]{color:#0d2218;}
   .rc-doc{padding:10px;}
 }
 @media(prefers-reduced-motion:reduce){.rc-drop{transition:none;}}
+
+/* ── Label casing cleanup ──
+   ALL-CAPS + letter-spacing reads fine for pure English, but these labels
+   sit beside Thai text (or are Thai themselves), where forced caps made
+   English words shout ("THRESHOLD %", "BASELINE") and the tracking spread
+   Thai glyphs apart. Show labels exactly as written instead. The module
+   tag chip (SEAWATER / SEDIMENT) keeps its caps on purpose. */
+label,.sc .lbl,.sh,.rb-loc-title,.rb-col-lbl,.settings-row-hd,.colmap-row-hd,
+.sb-title,.bio-field label,.bio-tbl-wrap td.sec-hd,.bw-stat span,.kpi-card .kpi-label,
+.pill-field label,.field-popover-hd,.colmap-hd,.field-g label,.refmap-role-lbl,
+.report-section-title,.report-table th,.rc-h3,.rc-sheet-lbl{text-transform:none;letter-spacing:normal;}
+/* Sentence-case text needs a touch more size than caps did to stay legible. */
+label,.sc .lbl,.sh,.rb-col-lbl,.settings-row-hd,.colmap-row-hd,.bio-field label,
+.bw-stat span,.kpi-card .kpi-label,.pill-field label,.field-popover-hd,.colmap-hd,
+.field-g label,.refmap-role-lbl,.rc-sheet-lbl{font-size:12px;}
+.pill-field label{white-space:nowrap;}

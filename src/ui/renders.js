@@ -135,11 +135,13 @@ function renderTable(t, tableCard, groups, dims, zThreshold) {
 
   const dimHeaders = dims.map(d => isEN ? FIELD_LABEL[d].en : FIELD_LABEL[d].th);
   const ths = ['Parameter', ...dimHeaders, isEN ? 'Unit' : 'หน่วย', 'n', 'Min', 'Max', 'Mean', 'SD', isEN ? 'Status' : 'สถานะ'];
+  const NUM_COLS = 5; // n, Min, Max, Mean, SD — right-aligned to match their cells
+  const firstNum = ths.length - 1 - NUM_COLS;
 
   tableCard.innerHTML = `
     <div class="table-scroll">
       <table>
-        <thead><tr>${ths.map((h, i) => `<th${i > 0 && i < ths.length - 1 ? ' class="num"' : ''}>${h}</th>`).join('')}</tr></thead>
+        <thead><tr>${ths.map((h, i) => `<th${i >= firstNum && i < ths.length - 1 ? ' class="num"' : ''}>${h}</th>`).join('')}</tr></thead>
         <tbody id="${t}-tbody"></tbody>
       </table>
     </div>

@@ -54,15 +54,29 @@ export function buildPage(t, el) {
           <span class="dot"></span> <span id="${t}-cmd-map-text">${isEN ? 'Columns mapped' : 'จับคู่คอลัมน์แล้ว'}</span>
           <a href="#" data-editmap="${t}">— ${isEN ? 'edit' : 'แก้ไข'}</a>
         </div>
-        <div class="cmd-spacer"></div>
-        <button class="btn" data-template="${t}">${isEN ? 'Download Template' : 'Download Template'}</button>
-        <button class="btn" id="${t}-btn-importcfg" data-importcfg="${t}" disabled>${isEN ? 'Import Config' : 'นำเข้าการตั้งค่า'}</button>
-        <button class="btn" id="${t}-btn-exportcfg" data-exportcfg="${t}" disabled>${isEN ? 'Export Config' : 'ส่งออกการตั้งค่า'}</button>
-        <button class="btn" id="${t}-btn-export" data-export="${t}" disabled>${isEN ? 'Export' : 'Export'}</button>
-        <button class="btn btn-primary" id="${t}-btn-run" data-run="${t}" disabled>
+        <div class="cmd-actions">
+        <div class="cmd-menu">
+          <button type="button" class="btn" data-cmdmenu-toggle="${t}" aria-haspopup="true" aria-expanded="false">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 11-4 0v-.09a1.65 1.65 0 00-1-1.51 1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 110-4h.09a1.65 1.65 0 001.51-1 1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33h.01a1.65 1.65 0 001-1.51V3a2 2 0 114 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82v.01a1.65 1.65 0 001.51 1H21a2 2 0 110 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+            ${isEN ? 'Template & settings' : 'เทมเพลต & การตั้งค่า'}
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:11px;height:11px"><polyline points="6 9 12 15 18 9"/></svg>
+          </button>
+          <div class="cmd-menu-pop" id="${t}-cmdmenu" role="menu">
+            <button type="button" class="cmd-menu-item" role="menuitem" data-template="${t}">${isEN ? 'Download data template (Excel)' : 'ดาวน์โหลด Template ข้อมูล (Excel)'}</button>
+            <div class="cmd-menu-sep"></div>
+            <button type="button" class="cmd-menu-item" role="menuitem" id="${t}-btn-importcfg" data-importcfg="${t}" disabled>${isEN ? 'Import settings (.json)' : 'นำเข้าการตั้งค่า (.json)'}</button>
+            <button type="button" class="cmd-menu-item" role="menuitem" id="${t}-btn-exportcfg" data-exportcfg="${t}" disabled>${isEN ? 'Export settings (.json)' : 'ส่งออกการตั้งค่า (.json)'}</button>
+          </div>
+        </div>
+        <button class="btn" id="${t}-btn-export" data-export="${t}" disabled>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Export Excel
+        </button>
+        <button class="btn btn-primary btn-run" id="${t}-btn-run" data-run="${t}" disabled>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
           ${isEN ? 'Run analysis' : 'วิเคราะห์ข้อมูล'}
         </button>
+        </div>
       </div>
 
       <div id="${t}-dq-wrap"></div>
