@@ -137,6 +137,53 @@ function bioEsc(v){
 
 function bioF2(x){ return (x==null||isNaN(x)) ? '' : parseFloat(x).toFixed(2); }
 
+/* Min / Max across the stations of one Year + Location table, appended
+   after the Location column. The first nSt values of each row are the
+   stations; a value keeps its shown form (e.g. "1.85"), blanks and text
+   (Dominant taxon) are skipped. Returns the widened column list. */
+var BIO_MINMAX = ['Min','Max'];
+function bioAddMinMax(cols, rows, nSt){
+  rows.forEach(function(row){
+    var lo = '', hi = '';
+    if(!row.sec && !row.dom){
+      row.vals.slice(0, nSt).forEach(function(v){
+        if(v===''||v==null) return;
+        var n = parseFloat(v);
+        if(!isFinite(n)) return;
+        if(lo===''||n<parseFloat(lo)) lo = v;
+        if(hi===''||n>parseFloat(hi)) hi = v;
+      });
+    }
+    row.vals = row.vals.concat([lo, hi]);
+  });
+  return cols.concat(BIO_MINMAX);
+}
+
+/* The result tables: Parameter + station columns + Location + Min/Max.
+   Shared by Calculate and By Rep. */
+function bioResultTable(cols, rows){
+  var nStart = cols.length - BIO_MINMAX.length; /* first Min/Max column */
+  var mm = function(i){ return i >= nStart ? ' bio-mm' : ''; };
+  /* fixed layout squeezes columns to fit; give each a floor and let the
+     wrapper scroll sideways when a Location has many stations */
+  var t = '<div class="bio-tbl-wrap"><table style="min-width:'+(160+nStart*104+BIO_MINMAX.length*80)+'px">';
+  t += '<thead><tr><th style="text-align:left">Parameter</th>'+cols.map(function(c,i){return '<th class="'+mm(i).trim()+'" title="'+bioEsc(c)+'">'+bioEsc(c)+'</th>';}).join('')+'</tr></thead><tbody>';
+  rows.forEach(function(row){
+    if(row.sec){
+      t += '<tr><td class="sec-hd" colspan="'+(cols.length+1)+'">'+bioEsc(row.label)+'</td></tr>';
+    } else if(!row.label&&row.vals.every(function(v){return v==='';})){
+      t += '<tr><td colspan="'+(cols.length+1)+'" style="height:4px;padding:0"></td></tr>';
+    } else {
+      var st = row.bold?' style="font-weight:700"':'';
+      t += '<tr><td class="row-hd"'+st+'>'+bioEsc(row.label)+'</td>'+row.vals.map(function(v,i){
+        var c = ((row.dom && i < nStart) ? 'bio-dom' : '') + mm(i);
+        return '<td'+(c?' class="'+c.trim()+'"':'')+st+'>'+bioEsc(v)+'</td>';
+      }).join('')+'</tr>';
+    }
+  });
+  return t + '</tbody></table></div>';
+}
+
 /* ── Main Calculate ── */
 function bioCalculate(mod){
   var rows = bioGetFilteredRows(mod);
@@ -409,27 +456,16 @@ function bioCalculate(mod){
     var domVals = stations.map(function(st){return getDomSt(st);}).concat([bioDominant(dmLoc)]);
     rows2.push({label:'Dominant '+unitLabel, vals:domVals, sec:false, bold:true, dom:true});
 
+    /* Min / Max across this Location's stations (UI and export) */
+    cols = bioAddMinMax(cols, rows2, stations.length);
+
     /* ── Store for export ── */
     BIO[mod].calc[metaKey] = {cols:cols, rows:rows2};
 
     /* ── Render table ── */
     var metaParts = metaKey.split('||');
     var metaLabel = metaKey==='ALL' ? 'All Data' : metaParts.join(' | ');
-    var tbl = '<div class="bio-result-title">'+bioEsc(metaLabel)+'</div><div class="bio-tbl-wrap"><table>';
-    tbl += '<thead><tr><th style="text-align:left">Parameter</th>'+cols.map(function(c){return '<th>'+bioEsc(c)+'</th>';}).join('')+'</tr></thead><tbody>';
-    rows2.forEach(function(row){
-      if(row.sec){
-        tbl += '<tr><td class="sec-hd" colspan="'+(cols.length+1)+'">'+bioEsc(row.label)+'</td></tr>';
-      } else if(!row.label&&row.vals.every(function(v){return v==='';})){
-        tbl += '<tr><td colspan="'+(cols.length+1)+'" style="height:4px;padding:0"></td></tr>';
-      } else {
-        var cls = row.bold?'style="font-weight:700"':'';
-        var vcls = row.dom?' class="bio-dom"':''; // taxon names: wrap instead of spilling into the next cell
-        tbl += '<tr><td class="row-hd" '+cls+'>'+bioEsc(row.label)+'</td>'+row.vals.map(function(v){return '<td'+vcls+' '+cls+'>'+bioEsc(v)+'</td>';}).join('')+'</tr>';
-      }
-    });
-    tbl += '</tbody></table></div>';
-    resultDiv.innerHTML += tbl;
+    resultDiv.innerHTML += '<div class="bio-result-title">'+bioEsc(metaLabel)+'</div>' + bioResultTable(cols, rows2);
   });
 
   if(!Object.keys(byMeta).length) bioErr(mod,'ไม่พบข้อมูลภายหลังการกรอง (filter)');
@@ -1249,6 +1285,93 @@ function bioFindCol(raw, name) {
   return key || '';
 }
 
+/* A filter as a list of checkboxes: one click picks or drops a value (the old
+   <select multiple> needed Ctrl/Cmd for every extra value), with a search box,
+   select-all / clear for the values in view, and a "picked / total" count.
+   Built with the DOM API, not string concat, so a value containing a quote
+   or "<" can't corrupt the markup (that once silently excluded every row
+   for that value). bioPicked() reads it back. */
+function bioCheckList(id, title, vals, size) {
+  var field = document.createElement('div');
+  field.className = 'bio-field bio-flt' + (size ? ' bio-flt-'+size : '');
+
+  var hd = document.createElement('div');
+  hd.className = 'bio-flt-hd';
+  var label = document.createElement('label');
+  label.textContent = title;
+  label.htmlFor = id + '-q';
+  var count = document.createElement('span');
+  count.className = 'bio-flt-count';
+  hd.appendChild(label); hd.appendChild(count);
+
+  var q = document.createElement('input');
+  q.type = 'search';
+  q.id = id + '-q';
+  q.className = 'bio-flt-q';
+  q.placeholder = 'ค้นหา ' + title + '…';
+  q.autocomplete = 'off';
+
+  var acts = document.createElement('div');
+  acts.className = 'bio-flt-acts';
+  var bAll = document.createElement('button');
+  bAll.type = 'button'; bAll.textContent = 'เลือกทั้งหมด';
+  var bNone = document.createElement('button');
+  bNone.type = 'button'; bNone.textContent = 'ล้าง';
+  acts.appendChild(bAll); acts.appendChild(bNone);
+
+  var list = document.createElement('div');
+  list.className = 'bio-flt-list';
+  list.id = id;
+  list.setAttribute('role', 'group');
+  list.setAttribute('aria-label', title);
+  vals.forEach(function(v){
+    var opt = document.createElement('label');
+    opt.className = 'bio-flt-opt';
+    var cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.value = v;
+    cb.checked = true;
+    var tx = document.createElement('span');
+    tx.textContent = v;
+    opt.appendChild(cb); opt.appendChild(tx);
+    list.appendChild(opt);
+  });
+  var empty = document.createElement('div');
+  empty.className = 'bio-flt-empty';
+  empty.textContent = 'ไม่พบ';
+  empty.hidden = true;
+  list.appendChild(empty);
+
+  function boxes(){ return [...list.querySelectorAll('input[type=checkbox]')]; }
+  function shown(){ return boxes().filter(function(cb){ return !cb.parentElement.hidden; }); }
+  function sync(){
+    var all = boxes();
+    count.textContent = all.filter(function(cb){return cb.checked;}).length + ' / ' + all.length;
+  }
+  q.addEventListener('input', function(){
+    var s = q.value.trim().toLowerCase();
+    boxes().forEach(function(cb){ cb.parentElement.hidden = !!s && cb.value.toLowerCase().indexOf(s) < 0; });
+    empty.hidden = shown().length > 0;
+  });
+  /* while searching, the buttons act on the matches only */
+  bAll.addEventListener('click', function(){ shown().forEach(function(cb){ cb.checked = true; }); sync(); });
+  bNone.addEventListener('click', function(){ shown().forEach(function(cb){ cb.checked = false; }); sync(); });
+  list.addEventListener('change', sync);
+  sync();
+
+  field.appendChild(hd);
+  if(vals.length > 6) field.appendChild(q); /* a short list needs no search */
+  field.appendChild(acts);
+  field.appendChild(list);
+  return field;
+}
+
+/* Values picked in a bioCheckList (null when the filter isn't there) */
+function bioPicked(id){
+  var el = document.getElementById(id); if(!el) return null;
+  return [...el.querySelectorAll('input[type=checkbox]')].filter(function(cb){return cb.checked;}).map(function(cb){return cb.value;});
+}
+
 function bioUpdateFilters(mod) {
   var raw = BIO[mod].raw;
   if(!raw) return;
@@ -1265,28 +1388,7 @@ function bioUpdateFilters(mod) {
     if(!col) return;
     any = true;
     var vals = [...new Set(raw.map(function(r){return String(r[col]||'').trim();}).filter(Boolean))].sort();
-    /* Build via DOM API (not string concat) so values containing quotes/
-       special chars aren't corrupted, which was silently excluding all
-       rows for that value (e.g. a project name with a " in it) */
-    var field = document.createElement('div');
-    field.className = 'bio-field';
-    var label = document.createElement('label');
-    label.textContent = lbl;
-    var sel = document.createElement('select');
-    sel.id = fid;
-    sel.multiple = true;
-    sel.style.height = '72px';
-    sel.style.fontSize = '11px';
-    vals.forEach(function(v){
-      var opt = document.createElement('option');
-      opt.value = v;
-      opt.textContent = v;
-      opt.selected = true;
-      sel.appendChild(opt);
-    });
-    field.appendChild(label);
-    field.appendChild(sel);
-    filterDiv.appendChild(field);
+    filterDiv.appendChild(bioCheckList(fid, lbl, vals, lbl==='Location' ? 'wide' : lbl==='Taxa Group' ? 'mid' : ''));
   });
   if(!any){
     var hint = document.createElement('span');
@@ -1307,14 +1409,10 @@ function bioGetFilteredRows(mod) {
   var tgCol   = bioFindCol(raw, 'Taxa_Group');
 
   /* meta filters */
-  function getSelected(id){
-    var el=document.getElementById(id); if(!el) return null;
-    return [...el.options].filter(function(o){return o.selected;}).map(function(o){return o.value;});
-  }
-  var yPick = getSelected('bio-f-year-'+mod);
-  var pPick = getSelected('bio-f-proj-'+mod);
-  var lPick = getSelected('bio-f-loc-'+mod);
-  var tgPick = getSelected('bio-f-taxagroup-'+mod);
+  var yPick = bioPicked('bio-f-year-'+mod);
+  var pPick = bioPicked('bio-f-proj-'+mod);
+  var lPick = bioPicked('bio-f-loc-'+mod);
+  var tgPick = bioPicked('bio-f-taxagroup-'+mod);
 
   var rows = raw.filter(function(r){
     if(yearCol && yPick && !yPick.includes(String(r[yearCol]||'').trim())) return false;
@@ -1337,9 +1435,8 @@ function bioGetFilteredRows(mod) {
         rows = rows.filter(function(r){ return chosen.includes(String(r[repCol]||'').trim()); });
       }
     } else if(modeVal==='pick'){
-      var el = document.getElementById('bio-rep-pick-'+mod);
-      if(el){
-        var picked = [...el.options].filter(function(o){return o.selected;}).map(function(o){return o.value;});
+      var picked = bioPicked('bio-rep-pick-'+mod);
+      if(picked){
         rows = rows.filter(function(r){ return picked.includes(String(r[repCol]||'').trim()); });
       }
     }
@@ -1361,21 +1458,7 @@ function bioRepChange(mod) {
     ctrl.innerHTML = '<input type="range" min="1" max="'+repVals.length+'" value="'+repVals.length+'" style="width:120px" oninput="this.nextElementSibling.textContent=this.value"> <span>'+repVals.length+'</span>';
   } else if(mode.value==='pick'){
     ctrl.innerHTML = '';
-    var pickSel = document.createElement('select');
-    pickSel.multiple = true;
-    pickSel.style.height = '64px';
-    pickSel.style.fontSize = '11px';
-    pickSel.id = 'bio-rep-pick-'+mod;
-    /* Replicate values come from the uploaded file — build options via
-       DOM API so a value containing a quote can't corrupt the value attr */
-    repVals.forEach(function(v){
-      var opt = document.createElement('option');
-      opt.value = v;
-      opt.textContent = v;
-      opt.selected = true;
-      pickSel.appendChild(opt);
-    });
-    ctrl.appendChild(pickSel);
+    ctrl.appendChild(bioCheckList('bio-rep-pick-'+mod, 'Replicate', repVals, ''));
   } else {
     ctrl.innerHTML = '<span style="font-size:11px;color:var(--text3)">All replicates</span>';
   }
@@ -1570,25 +1653,13 @@ function bioCalculateByRep(mod) {
       stations.forEach(function(st){if(pivot[st]) Object.keys(pivot[st]).forEach(function(k){var lv2=k.split('|||')[1];dmAll[lv2]=(dmAll[lv2]||0)+pivot[st][k];});});
       rows2.push({label:'Dominant '+BIO_CFG[mod].unit, vals:domVals.concat([bioDominant(dmAll)]), sec:false, bold:true, dom:true});
 
+      /* Min / Max across this Location's stations for this replicate */
+      cols = bioAddMinMax(cols, rows2, stations.length);
+
       /* Render table */
       var metaParts = metaKey.split('||');
       var metaLabel = metaKey==='ALL' ? 'All Data' : metaParts.join(' | ');
-      var tbl = '<div class="bio-result-title">'+bioEsc(metaLabel+' | Rep '+rep)+'</div>';
-      tbl += '<div class="bio-tbl-wrap"><table>';
-      tbl += '<thead><tr><th style="text-align:left">Parameter</th>'+cols.map(function(c){return '<th>'+bioEsc(c)+'</th>';}).join('')+'</tr></thead><tbody>';
-      rows2.forEach(function(row){
-        if(row.sec){
-          tbl += '<tr><td class="sec-hd" colspan="'+(cols.length+1)+'">'+bioEsc(row.label)+'</td></tr>';
-        } else if(!row.label&&row.vals.every(function(v){return v==='';})){
-          tbl += '<tr><td colspan="'+(cols.length+1)+'" style="height:4px;padding:0"></td></tr>';
-        } else {
-          var cls = row.bold?'style="font-weight:700"':'';
-          var vcls = row.dom?' class="bio-dom"':'';
-          tbl += '<tr><td class="row-hd" '+cls+'>'+bioEsc(row.label)+'</td>'+row.vals.map(function(v){return '<td'+vcls+' '+cls+'>'+bioEsc(v)+'</td>';}).join('')+'</tr>';
-        }
-      });
-      tbl += '</tbody></table></div>';
-      resultDiv.innerHTML += tbl;
+      resultDiv.innerHTML += '<div class="bio-result-title">'+bioEsc(metaLabel+' | Rep '+rep)+'</div>' + bioResultTable(cols, rows2);
     });
   });
 
@@ -1782,7 +1853,8 @@ function bioExportLongByRep(mod) {
 
       if(ri===0){
         /* Header row - get station names */
-        stCols = cells.slice(1, cells.length-1); /* exclude Parameter and Total/Mean */
+        /* stations only: drop Parameter, and the Location (Total) + Min/Max columns at the end */
+        stCols = cells.slice(1, cells.length-1-BIO_MINMAX.length);
         stCols.forEach(function(st){ totalDenBySt[st]=0; totalTaxaBySt[st]=0; indexBySt[st]={}; });
         return;
       }
@@ -1865,8 +1937,8 @@ function bioExportLongMean(mod) {
     var proj = parts[1]||'';
     var loc  = parts[2]||'';
 
-    /* Get station columns (exclude Total/Mean) */
-    var stCols = data.cols.slice(0, data.cols.length-1);
+    /* Get station columns (exclude Total/Mean and Min/Max) */
+    var stCols = data.cols.slice(0, data.cols.length-1-BIO_MINMAX.length);
 
     /* Parse rows */
     var totalTaxaBySt = {};

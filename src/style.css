@@ -475,6 +475,35 @@ select,input{color:var(--text);}
 /* Dominant taxon names: the columns are fixed-width, so long names (or two
    tied names "A / B") wrap inside their cell instead of running into the next. */
 .bio-tbl-wrap td.bio-dom:not(.row-hd){font-family:inherit;white-space:normal;overflow-wrap:anywhere;line-height:1.35;vertical-align:top;padding-top:5px;padding-bottom:5px;}
+/* Min / Max (across the Location's stations): tinted so they read as a
+   summary, not as two more stations */
+.bio-tbl-wrap th.bio-mm,.bio-tbl-wrap td.bio-mm{background:var(--bio-l);}
+.bio-tbl-wrap thead th.bio-mm{width:80px;}
+/* station + Location headers: a notch smaller than the old 18px so
+   "Total/Mean" still fits once Min/Max share the row; the full name is
+   in the title tooltip if a long station name is cut */
+.bio-tbl-wrap:has(th.bio-mm) thead th{font-size:15px;padding-left:10px;padding-right:10px;overflow:hidden;text-overflow:ellipsis;}
+.bio-tbl-wrap th.bio-mm{color:var(--bio-c);}
+.bio-tbl-wrap th.bio-mm:not(.bio-mm + .bio-mm),.bio-tbl-wrap td.bio-mm:not(.bio-mm + .bio-mm){border-left:1px solid var(--border2);}
+
+/* Biology filters: checkbox lists (bioCheckList) */
+.bio-flt{flex:0 1 170px;min-width:150px;gap:6px;}
+.bio-flt-mid{flex:0 1 220px;}
+.bio-flt-wide{flex:1 1 300px;max-width:480px;}
+.bio-flt-hd{display:flex;align-items:baseline;justify-content:space-between;gap:8px;}
+.bio-flt-count{font-size:11px;color:var(--text3);font-variant-numeric:tabular-nums;white-space:nowrap;}
+.bio-flt-q{width:100%;box-sizing:border-box;padding:5px 9px;border:1.5px solid var(--border2);border-radius:var(--rs);background:var(--white);color:var(--text);font-family:var(--font);font-size:12.5px;}
+.bio-flt-q:focus{outline:none;border-color:var(--bio-c);}
+.bio-flt-acts{display:flex;gap:12px;}
+.bio-flt-acts button{background:none;border:0;padding:0;font-family:var(--font);font-size:12px;color:var(--bio-c);cursor:pointer;}
+.bio-flt-acts button:hover{text-decoration:underline;}
+.bio-flt-list{max-height:264px;overflow-y:auto;border:1.5px solid var(--border2);border-radius:var(--rs);background:var(--white);padding:4px 0;}
+.bio-flt label.bio-flt-opt{display:flex;align-items:center;gap:8px;padding:4px 10px;margin:0;font-size:13px;font-weight:400;color:var(--text);cursor:pointer;line-height:1.3;}
+.bio-flt label.bio-flt-opt:hover{background:var(--bg2);}
+.bio-flt label.bio-flt-opt[hidden]{display:none;}
+.bio-flt-opt input{accent-color:var(--bio-c);margin:0;flex:none;width:15px;height:15px;cursor:pointer;}
+.bio-flt-opt span{overflow-wrap:anywhere;}
+.bio-flt-empty{padding:6px 10px;font-size:12px;color:var(--text3);}
 
 /* Light mode text fixes */
 body:not(.dark) .home-brand h1{color:var(--text);}
