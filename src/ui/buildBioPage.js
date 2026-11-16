@@ -137,11 +137,13 @@ function bioEsc(v){
 
 function bioF2(x){ return (x==null||isNaN(x)) ? '' : parseFloat(x).toFixed(2); }
 
-/* Min / Max across the stations of one Year + Location table, appended
-   after the Location column. The first nSt values of each row are the
-   stations; a value keeps its shown form (e.g. "1.85"), blanks and text
-   (Dominant taxon) are skipped. Returns the widened column list. */
-var BIO_MINMAX = ['Min','Max'];
+/* Min-Max across the stations of one Year + Location table, as one
+   "lo-hi" column after the Location column (e.g. "3-15", "1.76-2.14" —
+   the user wants the range in a single cell, UI and export alike).
+   The first nSt values of each row are the stations; a value keeps its
+   shown form (e.g. "1.85"), blanks and text (Dominant taxon) are skipped.
+   Returns the widened column list. */
+var BIO_MINMAX = ['Min-Max'];
 function bioAddMinMax(cols, rows, nSt){
   rows.forEach(function(row){
     var lo = '', hi = '';
@@ -154,19 +156,19 @@ function bioAddMinMax(cols, rows, nSt){
         if(hi===''||n>parseFloat(hi)) hi = v;
       });
     }
-    row.vals = row.vals.concat([lo, hi]);
+    row.vals = row.vals.concat([lo==='' ? '' : lo+'-'+hi]);
   });
   return cols.concat(BIO_MINMAX);
 }
 
-/* The result tables: Parameter + station columns + Location + Min/Max.
+/* The result tables: Parameter + station columns + Location + Min-Max.
    Shared by Calculate and By Rep. */
 function bioResultTable(cols, rows){
-  var nStart = cols.length - BIO_MINMAX.length; /* first Min/Max column */
+  var nStart = cols.length - BIO_MINMAX.length; /* the Min-Max column */
   var mm = function(i){ return i >= nStart ? ' bio-mm' : ''; };
   /* fixed layout squeezes columns to fit; give each a floor and let the
      wrapper scroll sideways when a Location has many stations */
-  var t = '<div class="bio-tbl-wrap"><table style="min-width:'+(160+nStart*104+BIO_MINMAX.length*80)+'px">';
+  var t = '<div class="bio-tbl-wrap"><table style="min-width:'+(160+nStart*104+BIO_MINMAX.length*130)+'px">';
   t += '<thead><tr><th style="text-align:left">Parameter</th>'+cols.map(function(c,i){return '<th class="'+mm(i).trim()+'" title="'+bioEsc(c)+'">'+bioEsc(c)+'</th>';}).join('')+'</tr></thead><tbody>';
   rows.forEach(function(row){
     if(row.sec){
@@ -456,7 +458,7 @@ function bioCalculate(mod){
     var domVals = stations.map(function(st){return getDomSt(st);}).concat([bioDominant(dmLoc)]);
     rows2.push({label:'Dominant '+unitLabel, vals:domVals, sec:false, bold:true, dom:true});
 
-    /* Min / Max across this Location's stations (UI and export) */
+    /* Min-Max across this Location's stations (UI and export) */
     cols = bioAddMinMax(cols, rows2, stations.length);
 
     /* ── Store for export ── */
@@ -1653,7 +1655,7 @@ function bioCalculateByRep(mod) {
       stations.forEach(function(st){if(pivot[st]) Object.keys(pivot[st]).forEach(function(k){var lv2=k.split('|||')[1];dmAll[lv2]=(dmAll[lv2]||0)+pivot[st][k];});});
       rows2.push({label:'Dominant '+BIO_CFG[mod].unit, vals:domVals.concat([bioDominant(dmAll)]), sec:false, bold:true, dom:true});
 
-      /* Min / Max across this Location's stations for this replicate */
+      /* Min-Max across this Location's stations for this replicate */
       cols = bioAddMinMax(cols, rows2, stations.length);
 
       /* Render table */
@@ -1853,7 +1855,7 @@ function bioExportLongByRep(mod) {
 
       if(ri===0){
         /* Header row - get station names */
-        /* stations only: drop Parameter, and the Location (Total) + Min/Max columns at the end */
+        /* stations only: drop Parameter, and the Location (Total) + Min-Max column at the end */
         stCols = cells.slice(1, cells.length-1-BIO_MINMAX.length);
         stCols.forEach(function(st){ totalDenBySt[st]=0; totalTaxaBySt[st]=0; indexBySt[st]={}; });
         return;
@@ -1937,7 +1939,7 @@ function bioExportLongMean(mod) {
     var proj = parts[1]||'';
     var loc  = parts[2]||'';
 
-    /* Get station columns (exclude Total/Mean and Min/Max) */
+    /* Get station columns (exclude Total/Mean and Min-Max) */
     var stCols = data.cols.slice(0, data.cols.length-1-BIO_MINMAX.length);
 
     /* Parse rows */

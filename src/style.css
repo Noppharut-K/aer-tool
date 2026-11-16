@@ -475,12 +475,12 @@ select,input{color:var(--text);}
 /* Dominant taxon names: the columns are fixed-width, so long names (or two
    tied names "A / B") wrap inside their cell instead of running into the next. */
 .bio-tbl-wrap td.bio-dom:not(.row-hd){font-family:inherit;white-space:normal;overflow-wrap:anywhere;line-height:1.35;vertical-align:top;padding-top:5px;padding-bottom:5px;}
-/* Min / Max (across the Location's stations): tinted so they read as a
-   summary, not as two more stations */
+/* Min-Max (across the Location's stations): tinted so it reads as a
+   summary, not as one more station */
 .bio-tbl-wrap th.bio-mm,.bio-tbl-wrap td.bio-mm{background:var(--bio-l);}
-.bio-tbl-wrap thead th.bio-mm{width:80px;}
+.bio-tbl-wrap thead th.bio-mm{width:130px;}
 /* station + Location headers: a notch smaller than the old 18px so
-   "Total/Mean" still fits once Min/Max share the row; the full name is
+   "Total/Mean" still fits once Min-Max shares the row; the full name is
    in the title tooltip if a long station name is cut */
 .bio-tbl-wrap:has(th.bio-mm) thead th{font-size:15px;padding-left:10px;padding-right:10px;overflow:hidden;text-overflow:ellipsis;}
 .bio-tbl-wrap th.bio-mm{color:var(--bio-c);}
