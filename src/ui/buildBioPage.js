@@ -229,7 +229,7 @@ function bioCalculate(mod){
 
   /* Build result tables */
   BIO[mod].calc = {};
-  BIO[mod].calcYear = !!colYear;
+  BIO[mod].calcMeta = {year:!!colYear, proj:!!colProj};
   var resultDiv = document.getElementById('bio-results-'+mod);
   resultDiv.innerHTML = '';
 
@@ -488,31 +488,33 @@ function bioSheetName(wb, name){
   return n;
 }
 
-/* ── Export layout: one sheet per Location (Project/Location/Zone), the years
-   of that Location side by side so the Phylum / Division rows line up across
-   years. One year → one table per sheet, as before. ── */
+/* ── Export layout: one sheet per Location (+ Zone), its Year / Project tables
+   side by side so the Phylum / Division rows line up across them. ── */
 
-/* Group result tables by everything in the meta key except the year.
-   entries: [{metaKey,...}] → [{name, label, items:[{year, e}]}] (years ascending) */
-function bioLocGroups(mod, entries, hasYear){
+/* Group result tables by Location (+ Zone). Year and Project are shown as
+   header rows inside the sheet, not in its name — the same Location can sit
+   under different projects.
+   entries: [{metaKey,...}], meta: {year, proj} = which meta columns are mapped
+   → [{name, label, items:[{year, proj, e}]}], items by year then project */
+function bioLocGroups(mod, entries, meta){
   var groups = {}, order = [];
   entries.forEach(function(e){
     var parts = e.metaKey==='ALL' ? [] : e.metaKey.split('||');
-    var year = hasYear ? (parts[0]||'') : '';
-    var rest = hasYear ? parts.slice(1) : parts;
-    var gk = rest.join('||');
+    var year = meta.year ? (parts.shift()||'') : '';
+    var proj = meta.proj ? (parts.shift()||'') : '';
+    var gk = parts.join('||');
     if(!groups[gk]){
-      var name = !rest.length ? 'Result'
-        : (mod==='phyto' && rest.length===3) ? rest[1]+'_'+rest[2] /* Project dropped: Location_Zone */
-        : rest.join('_');
-      groups[gk] = {name:name, label:rest.join(' | '), items:[]};
+      groups[gk] = {name:parts.join('_') || 'Result', label:parts.join(' | '), items:[]};
       order.push(gk);
     }
-    groups[gk].items.push({year:year, e:e});
+    groups[gk].items.push({year:year, proj:proj, e:e});
   });
   return order.map(function(gk){
     var g = groups[gk];
-    g.items.sort(function(a,b){ return (parseFloat(a.year)-parseFloat(b.year)) || String(a.year).localeCompare(String(b.year)); });
+    g.items.sort(function(a,b){
+      return (parseFloat(a.year)-parseFloat(b.year)) || String(a.year).localeCompare(String(b.year))
+          || String(a.proj).localeCompare(String(b.proj));
+    });
     return g;
   });
 }
@@ -523,10 +525,11 @@ function bioRowKeys(rows){
   return rows.map(function(r){ var l = String(r.label||'').trim(); seen[l] = (seen[l]||0)+1; return l+'#'+seen[l]; });
 }
 
-/* blocks: [{year, cols, rows}] → {aoa, merges} with merges relative to row 0.
-   Row 0 is the year row (only with a Year column), then the header row, then
-   one row per parameter. An empty column separates the years. */
-function bioSideBySide(blocks, hasYear){
+/* blocks: [{year, proj, cols, rows}] → {aoa, merges} with merges relative to
+   row 0. On top: a Project row and a Year row (each only when that column is
+   mapped), then the header row, then one row per parameter. An empty column
+   separates the blocks. */
+function bioSideBySide(blocks, meta){
   var order = [], label = {};
   blocks.forEach(function(b){
     b.keys = bioRowKeys(b.rows);
@@ -537,17 +540,23 @@ function bioSideBySide(blocks, hasYear){
       prev = at;
     });
   });
-  var yr = [''], hd = ['Parameter'], merges = [], c = 1;
+  var tops = [];
+  if(meta.proj) tops.push('proj');
+  if(meta.year) tops.push('year');
+  var topRows = tops.map(function(){ return ['']; });
+  var hd = ['Parameter'], merges = [], c = 1;
   blocks.forEach(function(b, bi){
-    if(bi){ yr.push(''); hd.push(''); c++; }
-    yr.push(b.year);
-    for(var i=1;i<b.cols.length;i++) yr.push('');
-    if(b.cols.length>1) merges.push({s:{r:0,c:c}, e:{r:0,c:c+b.cols.length-1}});
+    if(bi){ topRows.forEach(function(t){ t.push(''); }); hd.push(''); c++; }
+    tops.forEach(function(f, ti){
+      topRows[ti].push(b[f]);
+      for(var i=1;i<b.cols.length;i++) topRows[ti].push('');
+      if(b.cols.length>1) merges.push({s:{r:ti,c:c}, e:{r:ti,c:c+b.cols.length-1}});
+    });
     hd = hd.concat(b.cols);
     c += b.cols.length;
   });
-  var aoa = hasYear ? [yr, hd] : [hd];
-  if(!hasYear) merges = [];
+  tops.forEach(function(f, ti){ topRows[ti][0] = f==='proj' ? 'Project' : 'Year'; });
+  var aoa = topRows.concat([hd]);
   order.forEach(function(k){
     var line = [label[k]];
     blocks.forEach(function(b, bi){
@@ -571,13 +580,13 @@ function bioSheetFromAoa(aoa, merges){
 function bioExport(mod){
   var calc = BIO[mod].calc;
   if(!calc||!Object.keys(calc).length){ bioErr(mod,'กรุณากด Calculate เพื่อคำนวณผลก่อนดำเนินการต่อ'); return; }
-  var hasYear = !!BIO[mod].calcYear;
+  var meta = BIO[mod].calcMeta || {};
   var wb = XLSX.utils.book_new();
   var entries = Object.keys(calc).map(function(k){ return {metaKey:k, data:calc[k]}; });
-  bioLocGroups(mod, entries, hasYear).forEach(function(g){
+  bioLocGroups(mod, entries, meta).forEach(function(g){
     var t = bioSideBySide(g.items.map(function(it){
-      return {year:it.year, cols:it.e.data.cols, rows:it.e.data.rows};
-    }), hasYear);
+      return {year:it.year, proj:it.proj, cols:it.e.data.cols, rows:it.e.data.rows};
+    }), meta);
     XLSX.utils.book_append_sheet(wb, bioSheetFromAoa(t.aoa, t.merges), bioSheetName(wb, g.name));
   });
   var fname = bioFname(mod)+'_Results_'+new Date().toISOString().slice(0,10)+'.xlsx';
@@ -603,6 +612,7 @@ function bioLoadDemo(mod) {
   var data = BIO_DEMO[mod];
   if(!data) return;
   bioResetResults(mod, true);
+  BIO[mod].src = data;
   BIO[mod].raw = data;
   BIO[mod].filename = 'Demo_'+mod+'.xlsx';
   var fi = document.getElementById('bio-fi-'+mod);
@@ -1253,6 +1263,7 @@ function bioLoadSheet(mod, sheetName) {
    import, whose output columns are known exactly. */
 function bioLoadRows(mod, rows, label, map, filename) {
   bioResetResults(mod, !map);
+  BIO[mod].src = rows;
   BIO[mod].raw = rows;
   if(filename) BIO[mod].filename = filename;
   var fi = document.getElementById('bio-fi-'+mod);
@@ -1444,7 +1455,54 @@ function bioPicked(id){
   return [...el.querySelectorAll('input[type=checkbox]')].filter(function(cb){return cb.checked;}).map(function(cb){return cb.value;});
 }
 
+/* Text that differs only in letter case or spacing ("Polychaeta" / "POLYCHAETA",
+   "Loc-A" / "loc-a ") used to make separate rows and groups. Rebuilt from the
+   file's rows whenever the column mapping changes:
+   - Phylum / Division / Order / Class / Family columns → UPPER CASE (user's choice)
+   - Year, Project, Location, Station, Replicate, Zone, Taxa_Group, Taxon and
+     Genus → merged case-insensitively under their most common spelling, so
+     scientific names keep their form (Nereis diversicolor). */
+function bioCanonText(v){ return String(v).replace(/\s+/g,' ').trim(); }
+function bioNormRows(mod, src){
+  if(!src || !src.length) return src;
+  function col(k){ return (document.getElementById('bio-'+k+'-'+mod)||{}).value||''; }
+  var up = {}, merge = {};
+  ['lvl1','class','order','family'].forEach(function(k){ var c = col(k); if(c) up[c] = 1; });
+  ['year','proj','loc','st','rep','zone','lvl2','genus'].forEach(function(k){ var c = col(k); if(c && !up[c]) merge[c] = 1; });
+  var tg = bioFindCol(src, 'Taxa_Group'); if(tg && !up[tg]) merge[tg] = 1;
+  var upCols = Object.keys(up), mergeCols = Object.keys(merge);
+  if(!upCols.length && !mergeCols.length) return src;
+  var spell = {}; /* {col: {lowercase: most common spelling}} */
+  mergeCols.forEach(function(c){
+    var cnt = {};
+    src.forEach(function(r){
+      if(typeof r[c] !== 'string') return;
+      var v = bioCanonText(r[c]); if(!v) return;
+      var k = v.toLowerCase(), m = cnt[k] = cnt[k] || {};
+      m[v] = (m[v]||0) + 1;
+    });
+    var best = {};
+    Object.keys(cnt).forEach(function(k){
+      var b = null;
+      Object.keys(cnt[k]).forEach(function(v){ if(b===null || cnt[k][v] > cnt[k][b]) b = v; });
+      best[k] = b;
+    });
+    spell[c] = best;
+  });
+  return src.map(function(r){
+    var o = Object.assign({}, r);
+    upCols.forEach(function(c){ if(typeof o[c] === 'string') o[c] = bioCanonText(o[c]).toUpperCase(); });
+    mergeCols.forEach(function(c){
+      if(typeof o[c] !== 'string') return;
+      var v = bioCanonText(o[c]);
+      o[c] = v ? (spell[c][v.toLowerCase()] || v) : v;
+    });
+    return o;
+  });
+}
+
 function bioUpdateFilters(mod) {
+  if(BIO[mod].src) BIO[mod].raw = bioNormRows(mod, BIO[mod].src);
   var raw = BIO[mod].raw;
   if(!raw) return;
   var filterDiv = document.getElementById('bio-filters-'+mod);
@@ -1598,7 +1656,7 @@ function bioCalculateByRep(mod) {
   var resultDiv = document.getElementById('bio-byrep-'+mod);
   resultDiv.innerHTML = '';
   BIO[mod].byrep = []; /* [{metaKey, rep, cols, rows}] for Export By Rep */
-  BIO[mod].byrepYear = !!colYear;
+  BIO[mod].byrepMeta = {year:!!colYear, proj:!!colProj};
 
   Object.keys(byMeta).forEach(function(metaKey){
     var grpRows = byMeta[metaKey].rows;
@@ -1760,15 +1818,17 @@ function bioExportByRep(mod) {
   var div = document.getElementById('bio-byrep-'+mod);
   var list = BIO[mod].byrep || [];
   if(!div||!div.innerHTML||!list.length){ bioErr(mod,'กรุณากด Calculate by Rep เพื่อคำนวณผลก่อนดำเนินการต่อ'); return; }
-  var hasYear = !!BIO[mod].byrepYear;
+  var meta = BIO[mod].byrepMeta || {};
   var wb = window.XLSX.utils.book_new();
 
-  /* One sheet per Location; inside it one block per replicate, the years side by side */
-  bioLocGroups(mod, list, hasYear).forEach(function(g){
-    var years = [], colsOf = {}, byYearRep = {};
+  /* One sheet per Location; inside it one block per replicate, with the
+     Year / Project tables side by side */
+  bioLocGroups(mod, list, meta).forEach(function(g){
+    var cols = [], seen = {}, byColRep = {};
     g.items.forEach(function(it){
-      if(years.indexOf(it.year)<0){ years.push(it.year); colsOf[it.year] = it.e.cols; }
-      byYearRep[it.year+'\u0001'+it.e.rep] = it.e;
+      var ck = it.year+'\u0001'+it.proj;
+      if(!seen[ck]){ seen[ck] = 1; cols.push({ck:ck, year:it.year, proj:it.proj, cols:it.e.cols}); }
+      byColRep[ck+'\u0002'+it.e.rep] = it.e;
     });
     var reps = [];
     g.items.forEach(function(it){ if(reps.indexOf(it.e.rep)<0) reps.push(it.e.rep); });
@@ -1777,10 +1837,10 @@ function bioExportByRep(mod) {
     var aoa = [], merges = [];
     reps.forEach(function(rep){
       aoa.push([(g.label ? g.label+' | ' : '')+'Rep '+rep]);
-      var t = bioSideBySide(years.map(function(y){
-        var e = byYearRep[y+'\u0001'+rep];
-        return {year:y, cols:colsOf[y], rows:e ? e.rows : []};
-      }), hasYear);
+      var t = bioSideBySide(cols.map(function(cb){
+        var e = byColRep[cb.ck+'\u0002'+rep];
+        return {year:cb.year, proj:cb.proj, cols:cb.cols, rows:e ? e.rows : []};
+      }), meta);
       var off = aoa.length;
       t.merges.forEach(function(m){ merges.push({s:{r:m.s.r+off,c:m.s.c}, e:{r:m.e.r+off,c:m.e.c}}); });
       aoa = aoa.concat(t.aoa);
