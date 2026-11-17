@@ -229,6 +229,7 @@ function bioCalculate(mod){
 
   /* Build result tables */
   BIO[mod].calc = {};
+  BIO[mod].calcYear = !!colYear;
   var resultDiv = document.getElementById('bio-results-'+mod);
   resultDiv.innerHTML = '';
 
@@ -487,29 +488,97 @@ function bioSheetName(wb, name){
   return n;
 }
 
+/* ── Export layout: one sheet per Location (Project/Location/Zone), the years
+   of that Location side by side so the Phylum / Division rows line up across
+   years. One year → one table per sheet, as before. ── */
+
+/* Group result tables by everything in the meta key except the year.
+   entries: [{metaKey,...}] → [{name, label, items:[{year, e}]}] (years ascending) */
+function bioLocGroups(mod, entries, hasYear){
+  var groups = {}, order = [];
+  entries.forEach(function(e){
+    var parts = e.metaKey==='ALL' ? [] : e.metaKey.split('||');
+    var year = hasYear ? (parts[0]||'') : '';
+    var rest = hasYear ? parts.slice(1) : parts;
+    var gk = rest.join('||');
+    if(!groups[gk]){
+      var name = !rest.length ? 'Result'
+        : (mod==='phyto' && rest.length===3) ? rest[1]+'_'+rest[2] /* Project dropped: Location_Zone */
+        : rest.join('_');
+      groups[gk] = {name:name, label:rest.join(' | '), items:[]};
+      order.push(gk);
+    }
+    groups[gk].items.push({year:year, e:e});
+  });
+  return order.map(function(gk){
+    var g = groups[gk];
+    g.items.sort(function(a,b){ return (parseFloat(a.year)-parseFloat(b.year)) || String(a.year).localeCompare(String(b.year)); });
+    return g;
+  });
+}
+
+/* Row keys: label + occurrence, so blank spacer rows and repeated labels still pair up */
+function bioRowKeys(rows){
+  var seen = {};
+  return rows.map(function(r){ var l = String(r.label||'').trim(); seen[l] = (seen[l]||0)+1; return l+'#'+seen[l]; });
+}
+
+/* blocks: [{year, cols, rows}] → {aoa, merges} with merges relative to row 0.
+   Row 0 is the year row (only with a Year column), then the header row, then
+   one row per parameter. An empty column separates the years. */
+function bioSideBySide(blocks, hasYear){
+  var order = [], label = {};
+  blocks.forEach(function(b){
+    b.keys = bioRowKeys(b.rows);
+    var prev = -1;
+    b.keys.forEach(function(k, i){
+      var at = order.indexOf(k);
+      if(at<0){ at = prev+1; order.splice(at, 0, k); label[k] = b.rows[i].label; }
+      prev = at;
+    });
+  });
+  var yr = [''], hd = ['Parameter'], merges = [], c = 1;
+  blocks.forEach(function(b, bi){
+    if(bi){ yr.push(''); hd.push(''); c++; }
+    yr.push(b.year);
+    for(var i=1;i<b.cols.length;i++) yr.push('');
+    if(b.cols.length>1) merges.push({s:{r:0,c:c}, e:{r:0,c:c+b.cols.length-1}});
+    hd = hd.concat(b.cols);
+    c += b.cols.length;
+  });
+  var aoa = hasYear ? [yr, hd] : [hd];
+  if(!hasYear) merges = [];
+  order.forEach(function(k){
+    var line = [label[k]];
+    blocks.forEach(function(b, bi){
+      if(bi) line.push('');
+      var i = b.keys.indexOf(k);
+      var vals = i>=0 ? b.rows[i].vals : [];
+      for(var j=0;j<b.cols.length;j++) line.push(vals[j]==null ? '' : vals[j]);
+    });
+    aoa.push(line);
+  });
+  return {aoa:aoa, merges:merges};
+}
+
+function bioSheetFromAoa(aoa, merges){
+  var ws = XLSX.utils.aoa_to_sheet(aoa);
+  if(merges.length) ws['!merges'] = merges;
+  ws['!cols'] = [{wch:30}];
+  return ws;
+}
+
 function bioExport(mod){
   var calc = BIO[mod].calc;
   if(!calc||!Object.keys(calc).length){ bioErr(mod,'กรุณากด Calculate เพื่อคำนวณผลก่อนดำเนินการต่อ'); return; }
+  var hasYear = !!BIO[mod].calcYear;
   var wb = XLSX.utils.book_new();
-  Object.keys(calc).forEach(function(metaKey){
-    var data = calc[metaKey];
-    var sheetData = [['Parameter'].concat(data.cols)];
-    data.rows.forEach(function(row){
-      sheetData.push([row.label].concat(row.vals));
-    });
-    var ws = XLSX.utils.aoa_to_sheet(sheetData);
-    var sheetName;
-    if(mod==='phyto' && metaKey!=='ALL'){
-      var parts = metaKey.split('||');
-      /* parts: year||proj||loc||zone — want Station_Zone_Year */
-      var loc  = parts[2]||'';
-      var zone = parts[3]||'';
-      var yr   = parts[0]||'';
-      sheetName = loc+'_'+zone+'_'+yr;
-    } else {
-      sheetName = metaKey==='ALL'?'Result':metaKey.replace(/\|\|/g,'_');
-    }
-    XLSX.utils.book_append_sheet(wb, ws, bioSheetName(wb, sheetName));
+  var entries = Object.keys(calc).map(function(k){ return {metaKey:k, data:calc[k]}; });
+  bioLocGroups(mod, entries, hasYear).forEach(function(g){
+    var t = bioSideBySide(g.items.map(function(it){
+      return {year:it.year, cols:it.e.data.cols, rows:it.e.data.rows};
+    }), hasYear);
+    XLSX.utils.book_append_sheet(wb, bioSheetFromAoa(t.aoa, t.merges), bioSheetName(wb, g.name));
   });
   var fname = bioFname(mod)+'_Results_'+new Date().toISOString().slice(0,10)+'.xlsx';
   XLSX.writeFile(wb, fname);
@@ -520,6 +589,7 @@ function bioExport(mod){
    closeWide: the data came from somewhere other than the lab report panel. */
 function bioResetResults(mod, closeWide) {
   BIO[mod].calc = {};
+  BIO[mod].byrep = [];
   BIO[mod].tax = {};
   ['bio-results-','bio-taxsummary-','bio-byrep-'].forEach(function(id){
     var el = document.getElementById(id+mod); if(el) el.innerHTML = '';
@@ -1527,6 +1597,8 @@ function bioCalculateByRep(mod) {
 
   var resultDiv = document.getElementById('bio-byrep-'+mod);
   resultDiv.innerHTML = '';
+  BIO[mod].byrep = []; /* [{metaKey, rep, cols, rows}] for Export By Rep */
+  BIO[mod].byrepYear = !!colYear;
 
   Object.keys(byMeta).forEach(function(metaKey){
     var grpRows = byMeta[metaKey].rows;
@@ -1658,6 +1730,8 @@ function bioCalculateByRep(mod) {
       /* Min-Max across this Location's stations for this replicate */
       cols = bioAddMinMax(cols, rows2, stations.length);
 
+      BIO[mod].byrep.push({metaKey:metaKey, rep:rep, cols:cols, rows:rows2});
+
       /* Render table */
       var metaParts = metaKey.split('||');
       var metaLabel = metaKey==='ALL' ? 'All Data' : metaParts.join(' | ');
@@ -1684,38 +1758,35 @@ window.bioWideFile = bioWideFile;
 bioWideInit({ loadRows: bioLoadRows });
 function bioExportByRep(mod) {
   var div = document.getElementById('bio-byrep-'+mod);
-  if(!div||!div.innerHTML){ bioErr(mod,'กรุณากด Calculate by Rep เพื่อคำนวณผลก่อนดำเนินการต่อ'); return; }
-
+  var list = BIO[mod].byrep || [];
+  if(!div||!div.innerHTML||!list.length){ bioErr(mod,'กรุณากด Calculate by Rep เพื่อคำนวณผลก่อนดำเนินการต่อ'); return; }
+  var hasYear = !!BIO[mod].byrepYear;
   var wb = window.XLSX.utils.book_new();
-  var tables = div.querySelectorAll('table');
-  var titles = div.querySelectorAll('.bio-result-title');
 
-  /* Group tables by location (meta key = everything except rep) */
-  var sheetMap = {}; /* sheetName -> [[rows]] */
-  tables.forEach(function(tbl, i){
-    var title = titles[i] ? titles[i].textContent.trim() : ('Rep_'+i);
-    /* title format: "2026 | EIA | Loc-A | Rep 1" — strip last " | Rep X" */
-    /* grouping key only — bioSheetName cleans it when the sheet is added */
-    var sheetName = title.replace(/\s*\|\s*Rep\s*\S+\s*$/,'').replace(/\s*\|\s*/g,'_') || 'Result';
-    if(!sheetMap[sheetName]) sheetMap[sheetName] = [];
-
-    /* Add title row */
-    sheetMap[sheetName].push([title]);
-
-    tbl.querySelectorAll('tr').forEach(function(tr){
-      var row = [];
-      tr.querySelectorAll('th,td').forEach(function(td){
-        row.push(td.textContent.trim());
-      });
-      sheetMap[sheetName].push(row);
+  /* One sheet per Location; inside it one block per replicate, the years side by side */
+  bioLocGroups(mod, list, hasYear).forEach(function(g){
+    var years = [], colsOf = {}, byYearRep = {};
+    g.items.forEach(function(it){
+      if(years.indexOf(it.year)<0){ years.push(it.year); colsOf[it.year] = it.e.cols; }
+      byYearRep[it.year+'\u0001'+it.e.rep] = it.e;
     });
-    /* Add empty row between reps */
-    sheetMap[sheetName].push([]);
-  });
+    var reps = [];
+    g.items.forEach(function(it){ if(reps.indexOf(it.e.rep)<0) reps.push(it.e.rep); });
+    reps.sort(function(a,b){ return parseFloat(a)-parseFloat(b) || a.localeCompare(b); });
 
-  Object.keys(sheetMap).forEach(function(sheetName){
-    var ws = window.XLSX.utils.aoa_to_sheet(sheetMap[sheetName]);
-    window.XLSX.utils.book_append_sheet(wb, ws, bioSheetName(wb, sheetName));
+    var aoa = [], merges = [];
+    reps.forEach(function(rep){
+      aoa.push([(g.label ? g.label+' | ' : '')+'Rep '+rep]);
+      var t = bioSideBySide(years.map(function(y){
+        var e = byYearRep[y+'\u0001'+rep];
+        return {year:y, cols:colsOf[y], rows:e ? e.rows : []};
+      }), hasYear);
+      var off = aoa.length;
+      t.merges.forEach(function(m){ merges.push({s:{r:m.s.r+off,c:m.s.c}, e:{r:m.e.r+off,c:m.e.c}}); });
+      aoa = aoa.concat(t.aoa);
+      aoa.push([]);
+    });
+    window.XLSX.utils.book_append_sheet(wb, bioSheetFromAoa(aoa, merges), bioSheetName(wb, g.name));
   });
 
   var fname = bioFname(mod)+'_ByRep_'+new Date().toISOString().slice(0,10)+'.xlsx';
