@@ -1,5 +1,6 @@
 /**
- * buildReportPage.js — Report Check: open a Word/PDF report (or paste text),
+ * buildReportPage.js — Report Check: open a Word/PDF report (or paste text,
+ * or an Excel file — checked for entries typed twice, see xlsxCheck.js),
  * list what looks wrong, and highlight each spot in the text. Nothing is
  * edited and nothing leaves the browser.
  */
@@ -7,6 +8,11 @@ import { LANG, L } from '../utils/lang.js';
 import { runChecks, CATS, SEV_ORDER, scanAbbr } from '../core/reportCheck.js';
 import { extractDocx, extractPdf, extractText } from '../core/reportExtract.js';
 import { renderWord, renderPdf, renderPlain, stopPdf, ensureFonts, guessBreaks, pdfRects } from './reportView.js';
+import { extractXlsx, checkXlsx, XL_CATS } from '../core/xlsxCheck.js';
+import { renderXlsx } from './xlsxView.js';
+
+const ALL_CATS = CATS.concat(XL_CATS);
+const isXl = () => RPT.doc && RPT.doc.kind === 'xlsx';
 
 /* Where a repeated passage counts: 'para' (same paragraph only) or 'doc' */
 function savedScope() { try { return localStorage.getItem('aer-rc-scope') === 'doc' ? 'doc' : 'para'; } catch (e) { return 'para'; } }
@@ -45,14 +51,14 @@ const dictView = () => {
   const up = userPre();
   return { size: DICT.size, has: w => DICT.has(w) || USER.has(w), pre: w => PRE.has(w) || up.has(w) };
 };
-const check = doc => runChecks(doc, { scope: RPT.scope, dict: dictView() });
+const check = doc => doc.kind === 'xlsx' ? checkXlsx(doc) : runChecks(doc, { scope: RPT.scope, dict: dictView() });
 
 const TX = {
   th: {
     title: 'Report Check', sub: 'ตรวจรายงาน · คำซ้ำ · คำผิด · เลขตาราง/รูป',
     hero: 'ตรวจรายงานก่อนส่ง',
     heroSub: 'เปิดไฟล์รายงาน แล้วโปรแกรมจะชี้จุดที่น่าจะผิด พร้อมไฮไลต์ในเนื้อหา โดยไม่แก้ไฟล์ของคุณ',
-    drop: 'ลากไฟล์มาวาง หรือคลิกเพื่อเลือกไฟล์', dropSub: 'Word (.docx) หรือ PDF',
+    drop: 'ลากไฟล์มาวาง หรือคลิกเพื่อเลือกไฟล์', dropSub: 'Word (.docx), PDF หรือ Excel (.xlsx, .xls, .csv)',
     privacy: 'ไฟล์ไม่ถูกส่งออกจากเครื่อง ตรวจในเบราว์เซอร์ทั้งหมด',
     paste: 'หรือวางข้อความเพื่อตรวจ', pastePh: 'วางข้อความจากรายงานที่นี่…', pasteBtn: 'ตรวจข้อความ',
     checks: 'สิ่งที่ตรวจ',
@@ -70,6 +76,7 @@ const TX = {
     prevPage: 'หน้าก่อน', nextPage: 'หน้าถัดไป', goPage: 'ไปที่หน้า',
     brkLbl: 'ตัดบรรทัดแบบ', brkHint: 'Word บน Mac ตัดบรรทัดภาษาไทยที่ช่องว่างเท่านั้น ส่วน Word บน Windows ตัดระหว่างคำ — เลือกให้ตรงกับเครื่องที่เปิดดูไฟล์ (โปรแกรมเดาจากไฟล์ให้แล้ว)',
     newFile: 'เปิดไฟล์อื่น', export: 'Export Excel', restore: 'คืนรายการที่ข้าม',
+    sheet: 'Sheet', sheets: 'sheet', cellsN: n => `${n.toLocaleString()} ช่อง`, hiddenSheet: 'ซ่อนอยู่', emptySheet: 'Sheet ว่าง', rowsHidden: n => `… ไม่แสดง ${n.toLocaleString()} แถว (ไม่พบจุดที่ต้องดู)`, xlChecks: 'ไฟล์ Excel ตรวจ',
     prevSkips: n => `ข้ามไว้จากการตรวจไฟล์ชื่อนี้ครั้งก่อน ${n} รายการ — กด "คืนรายการที่ข้าม" ถ้าต้องการดูอีกครั้ง`,
     pages: 'หน้า', paras: 'ย่อหน้า', pastedName: 'ข้อความที่วาง',
     total: 'จุดที่พบ', none: 'ไม่พบจุดที่ต้องตรวจในหมวดที่เลือก',
@@ -82,6 +89,7 @@ const TX = {
     cat: {
       prep: 'ตรวจก่อนส่ง', spell: 'คำที่มักสะกดผิด', dict: 'ไม่มีในพจนานุกรม', datamatch: 'ตัวเลขไม่ตรงตาราง', char: 'อักขระผิดปกติ', dupword: 'คำ/ตัวเลขซ้ำติดกัน', dupphrase: 'ข้อความซ้ำ', tabledup: 'ข้อมูลซ้ำในตาราง', toc: 'สารบัญ', abbr: 'คำย่อ', sci: 'ชื่อวิทยาศาสตร์',
       number: 'เลขตาราง/รูป', consist: 'เขียนไม่เหมือนกัน', overuse: 'คำเดิมถี่', space: 'เว้นวรรค', pair: 'วงเล็บ/คำพูด',
+      xlrow: 'แถวซ้ำ', xlcol: 'คอลัมน์ซ้ำ', xlname: 'ชื่อซ้ำ / เขียนต่างกัน',
     },
     catDesc: {
       prep: 'สิ่งที่ลืมไว้ก่อนส่ง: ความเห็น (Comment), การแก้ไขที่ยังไม่ยอมรับ (Track Changes), ไฮไลต์, ข้อความที่ซ่อนไว้ และข้อความรอเติม เช่น xxx, ???, [ใส่ข้อมูล], TBD',
@@ -100,6 +108,9 @@ const TX = {
       overuse: 'คำเดิมใช้ 3 ครั้งขึ้นไปในช่วงสั้น ๆ',
       space: 'เว้นวรรคซ้อน และวรรคหน้าจุลภาคหรือในวงเล็บ (Word และข้อความที่วาง)',
       pair: 'วงเล็บหรือเครื่องหมายคำพูดเปิดแล้วไม่ปิด',
+      xlrow: 'แถวที่พิมพ์ซ้ำกับแถวก่อนหน้าทุกช่อง และแถวที่ตัวเลขตรงกับแถวอื่นทุกช่องแต่ชื่อต่างกัน (คัดลอกแล้วลืมแก้ค่า)',
+      xlcol: 'คอลัมน์ที่ตัวเลขตรงกับคอลัมน์อื่นทุกแถว เช่น ST3 ตรงกับ ST2 ทั้งคอลัมน์',
+      xlname: 'ชื่อที่พิมพ์ซ้ำในรายการ เช่น ชื่อสถานีหรือหัวคอลัมน์ซ้ำในแถวเดียวกัน ชื่อชนิดซ้ำในคอลัมน์ และชื่อเดียวกันที่เขียนต่างกัน เช่น Glycera sp. กับ glycera sp, ST1 กับ ST-1',
     },
     msg: {
       ee: 'พิมพ์ เ สองตัวแทน แ — ดูเหมือนกันแต่ค้นหาและเรียงคำไม่ได้',
@@ -146,6 +157,12 @@ const TX = {
       rowData: i => `ตัวเลขทั้งแถวตรงกับแถว${i.other ? ' "' + i.other + '"' : 'ก่อนหน้า'} ทุกช่อง — อาจคัดลอกแล้วลืมแก้ค่า`,
       colData: i => `ตัวเลขในคอลัมน์${i.label ? ' "' + i.label + '"' : 'นี้'} ตรงกับคอลัมน์${i.other ? ' "' + i.other + '"' : 'ก่อนหน้า'} ทุกแถว — อาจคัดลอกแล้วลืมแก้ค่า`,
       tableSame: () => 'ตัวเลขทั้งตารางตรงกับตารางก่อนหน้า — อาจใส่ตารางซ้ำ',
+      xlRowSame: i => `ทั้งแถวซ้ำกับแถว ${i.refLoc} — อาจพิมพ์หรือวางซ้ำ`,
+      xlRowNums: i => `ตัวเลขทั้งแถวตรงกับแถว ${i.refLoc}${i.other ? ' "' + i.other + '"' : ''} ทุกช่อง — อาจคัดลอกแล้วลืมแก้ค่า`,
+      xlColNums: i => `ตัวเลขในคอลัมน์ ${i.col}${i.label ? ' "' + i.label + '"' : ''} ตรงกับคอลัมน์ ${i.refCol}${i.other ? ' "' + i.other + '"' : ''} ทุกแถว — อาจคัดลอกแล้วลืมแก้ค่า`,
+      xlNameRow: i => `ชื่อซ้ำในแถวเดียวกัน (ซ้ำกับช่อง ${i.refLoc})`,
+      xlNameCol: i => `ชื่อซ้ำในคอลัมน์เดียวกัน (ซ้ำกับช่อง ${i.refLoc})`,
+      xlNameForm: i => `น่าจะเป็นชื่อเดียวกับ "${i.usual}" (${i.nUsual} ช่อง เช่น ${i.refLoc}) แต่เขียนต่างกัน${i.n > 1 ? ` — แบบนี้ ${i.n} ช่อง` : ''}`,
       capdup: 'เลขซ้ำกับที่มีแล้วใน',
       capstart: 'ลำดับไม่ได้เริ่มที่ 1',
       capgap: n => `เลขข้าม — ก่อนหน้านี้ถึงเลข ${n}`,
@@ -164,9 +181,10 @@ const TX = {
       scanned: 'PDF นี้แทบไม่มีข้อความ อาจเป็นไฟล์สแกน — ตรวจได้เฉพาะไฟล์ที่มีข้อความจริง ลองใช้ไฟล์ Word แทน',
       garbled: 'ข้อความภาษาไทยใน PDF นี้ดึงออกมาได้ไม่สมบูรณ์ (สระ/วรรณยุกต์เพี้ยน) อาจมีจุดที่ชี้ผิด — ถ้ามีไฟล์ Word จะแม่นกว่า',
       pdfspace: 'PDF ไม่ได้เก็บการเว้นวรรคไว้จริง จึงไม่ตรวจหมวดเว้นวรรค และหัวกระดาษ/ท้ายกระดาษที่ซ้ำทุกหน้าจะถูกข้าม',
+      xlbig: 'Sheet ขนาดใหญ่: ตรวจครบทุกช่อง แต่แสดงเฉพาะแถวแรก ๆ และแถวรอบจุดที่พบ',
     },
     err: {
-      type: 'รองรับเฉพาะไฟล์ .docx และ .pdf', doc: 'ไฟล์ .doc แบบเก่ายังไม่รองรับ — เปิดใน Word แล้วบันทึกเป็น .docx ก่อน',
+      type: 'รองรับไฟล์ .docx, .pdf, .xlsx, .xls และ .csv', xlsx: 'เปิดไฟล์ Excel นี้ไม่ได้ ไฟล์อาจเสียหรือมีรหัสผ่าน', xlempty: 'ไม่พบข้อมูลในไฟล์ Excel นี้', doc: 'ไฟล์ .doc แบบเก่ายังไม่รองรับ — เปิดใน Word แล้วบันทึกเป็น .docx ก่อน',
       notdocx: 'เปิดไฟล์ Word นี้ไม่ได้ ไฟล์อาจเสียหรือมีรหัสผ่าน', pdf: 'เปิด PDF นี้ไม่ได้ ไฟล์อาจเสียหรือมีรหัสผ่าน',
       nolib: 'โหลดตัวอ่านไฟล์ไม่สำเร็จ ตรวจการเชื่อมต่ออินเทอร์เน็ตแล้วลองใหม่', empty: 'ไม่พบข้อความในไฟล์นี้',
     },
@@ -177,7 +195,7 @@ const TX = {
     title: 'Report Check', sub: 'Proofread reports · repeated words · misspellings · table/figure numbers',
     hero: 'Check a report before sending',
     heroSub: 'Open a report and every spot that looks wrong is listed and highlighted in the text. Your file is not changed.',
-    drop: 'Drop a file here, or click to choose one', dropSub: 'Word (.docx) or PDF',
+    drop: 'Drop a file here, or click to choose one', dropSub: 'Word (.docx), PDF or Excel (.xlsx, .xls, .csv)',
     privacy: 'Your file stays on this computer — everything runs in the browser',
     paste: 'Or paste text to check', pastePh: 'Paste report text here…', pasteBtn: 'Check text',
     checks: 'What is checked',
@@ -195,6 +213,7 @@ const TX = {
     prevPage: 'Previous page', nextPage: 'Next page', goPage: 'Go to page',
     brkLbl: 'Line breaks', brkHint: 'Word for Mac breaks Thai lines only at spaces; Word for Windows breaks between words — pick the one you view the file in (guessed from the file)',
     newFile: 'Open another file', export: 'Export Excel', restore: 'Restore skipped',
+    sheet: 'Sheet', sheets: 'sheet(s)', cellsN: n => `${n.toLocaleString()} cells`, hiddenSheet: 'hidden', emptySheet: 'Empty sheet', rowsHidden: n => `… ${n.toLocaleString()} row(s) not shown (no findings)`, xlChecks: 'Excel files are checked for',
     prevSkips: n => `${n} finding(s) skipped last time this file name was checked — "Restore skipped" shows them again`,
     pages: 'pages', paras: 'paragraphs', pastedName: 'Pasted text',
     total: 'Found', none: 'Nothing to check in the selected categories',
@@ -207,6 +226,7 @@ const TX = {
     cat: {
       prep: 'Before sending', spell: 'Common misspellings', dict: 'Not in dictionary', datamatch: 'Text vs table', char: 'Odd characters', dupword: 'Repeated words/numbers', dupphrase: 'Repeated passages', tabledup: 'Repeated table data', toc: 'Contents', abbr: 'Abbreviations', sci: 'Scientific names',
       number: 'Table/figure numbers', consist: 'Inconsistent forms', overuse: 'Overused words', space: 'Spacing', pair: 'Brackets/quotes',
+      xlrow: 'Repeated rows', xlcol: 'Repeated columns', xlname: 'Repeated / variant names',
     },
     catDesc: {
       prep: 'Left in by mistake: comments, tracked changes not yet accepted, highlighter, hidden text, and text to fill in such as xxx, ???, [insert], TBD',
@@ -225,6 +245,9 @@ const TX = {
       overuse: 'The same word 3+ times within a short span',
       space: 'Double spaces, spaces before commas or inside brackets (Word and pasted text)',
       pair: 'Brackets or quotes opened but not closed',
+      xlrow: 'Rows typed twice (same as an earlier row in every cell), and rows whose numbers all match another row under a different name (copied and not updated)',
+      xlcol: 'Columns whose numbers match another column in every row, e.g. ST3 the same as ST2',
+      xlname: 'Names typed twice in a list — station names or headers repeated in a row, a species listed twice in a column — and one name written two ways, e.g. Glycera sp. / glycera sp, ST1 / ST-1',
     },
     msg: {
       ee: 'Two เ typed instead of แ — looks the same but breaks search and sorting',
@@ -271,6 +294,12 @@ const TX = {
       rowData: i => `Every number matches row${i.other ? ' "' + i.other + '"' : ' above'} — copied and not updated?`,
       colData: i => `Every number in column${i.label ? ' "' + i.label + '"' : ''} matches column${i.other ? ' "' + i.other + '"' : ' before it'} — copied and not updated?`,
       tableSame: () => 'Every number matches an earlier table — table inserted twice?',
+      xlRowSame: i => `Same as row ${i.refLoc} — typed or pasted twice?`,
+      xlRowNums: i => `Every number matches row ${i.refLoc}${i.other ? ' "' + i.other + '"' : ''} — copied and not updated?`,
+      xlColNums: i => `Column ${i.col}${i.label ? ' "' + i.label + '"' : ''} matches column ${i.refCol}${i.other ? ' "' + i.other + '"' : ''} in every row — copied and not updated?`,
+      xlNameRow: i => `Name repeated in the same row (same as ${i.refLoc})`,
+      xlNameCol: i => `Name repeated in the same column (same as ${i.refLoc})`,
+      xlNameForm: i => `Probably the same name as "${i.usual}" (${i.nUsual} cell(s), e.g. ${i.refLoc}) written differently${i.n > 1 ? ` — ${i.n} cells like this` : ''}`,
       capdup: 'Number already used at',
       capstart: 'Numbering does not start at 1',
       capgap: n => `Number skipped — the previous one was ${n}`,
@@ -289,9 +318,10 @@ const TX = {
       scanned: 'This PDF has almost no text — it may be a scan. Only PDFs with real text can be checked; try the Word file instead.',
       garbled: 'Thai text in this PDF did not extract cleanly (vowels/tone marks are off), so some findings may be wrong. A Word file is more accurate.',
       pdfspace: 'PDFs do not keep real spacing, so spacing is not checked, and headers/footers repeated on every page are skipped.',
+      xlbig: 'Large sheet: every cell is checked, but only the first rows and the rows around findings are shown.',
     },
     err: {
-      type: 'Only .docx and .pdf files are supported', doc: 'Old .doc files are not supported — open it in Word and save as .docx first',
+      type: 'Only .docx, .pdf, .xlsx, .xls and .csv files are supported', xlsx: 'This Excel file could not be opened. It may be damaged or password-protected.', xlempty: 'No data was found in this Excel file', doc: 'Old .doc files are not supported — open it in Word and save as .docx first',
       notdocx: 'This Word file could not be opened. It may be damaged or password-protected.', pdf: 'This PDF could not be opened. It may be damaged or password-protected.',
       nolib: 'The file reader did not load. Check the internet connection and try again.', empty: 'No text was found in this file',
     },
@@ -334,7 +364,7 @@ function renderStart() {
     '<div class="rc-drop" id="rc-drop" role="button" tabindex="0">' +
     '<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M14 3H7a2 2 0 00-2 2v14a2 2 0 002 2h10a2 2 0 002-2V8z"/><polyline points="14 3 14 8 19 8"/><path d="M9 14l2 2 4-4"/></svg>' +
     '<div class="rc-drop-lbl">' + esc(t.drop) + '</div><div class="rc-drop-sub">' + esc(t.dropSub) + '</div>' +
-    '<input type="file" id="rc-file" accept=".docx,.pdf,.doc,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" hidden></div>' +
+    '<input type="file" id="rc-file" accept=".docx,.pdf,.doc,.xlsx,.xlsm,.xls,.csv,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden></div>' +
     '<div class="rc-privacy"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 018 0v4"/></svg>' + esc(t.privacy) + '</div>' +
     '<div class="rc-err" id="rc-err" role="alert" hidden></div>' +
     '<details class="rc-paste"><summary>' + esc(t.paste) + '</summary>' +
@@ -344,6 +374,9 @@ function renderStart() {
     '<h3 class="rc-h3">' + esc(t.checks) + '</h3><div class="rc-checks">' +
     CATS.map(c => '<div class="rc-check"><b>' + esc(t.cat[c]) + '</b><span>' + esc(t.catDesc[c]) + '</span>' +
       (c === 'dict' && USER.size ? '<span class="rc-words">' + esc(t.myWords(USER.size)) + ' <button data-act="clearWords">' + esc(t.clearWords) + '</button></span>' : '') + '</div>').join('') +
+    '</div>' +
+    '<h3 class="rc-h3">' + esc(t.xlChecks) + '</h3><div class="rc-checks">' +
+    XL_CATS.map(c => '<div class="rc-check"><b>' + esc(t.cat[c]) + '</b><span>' + esc(t.catDesc[c]) + '</span></div>').join('') +
     '</div></div>';
 
   const drop = document.getElementById('rc-drop');
@@ -389,12 +422,22 @@ async function openFile(file) {
   const t = tx();
   const ext = (file.name.split('.').pop() || '').toLowerCase();
   if (ext === 'doc') return showErr(t.err.doc);
-  if (ext !== 'docx' && ext !== 'pdf') return showErr(t.err.type);
+  const xl = ['xlsx', 'xlsm', 'xls', 'csv'].includes(ext);
+  if (ext !== 'docx' && ext !== 'pdf' && !xl) return showErr(t.err.type);
   progress(t.reading, 0.05);
   await nextFrame();
   try {
     const buf = await file.arrayBuffer();
     let doc;
+    if (xl) {
+      try { doc = extractXlsx(buf); } catch (e) { throw new Error('xlsx'); }
+      if (!doc.cells) throw new Error('xlempty');
+      progress(t.checking, 0.6);
+      await nextFrame();
+      load(doc, file.name);
+      progress(null);
+      return;
+    }
     if (ext === 'pdf') {
       try {
         doc = await extractPdf(buf, (n, total) => progress(t.readingPdf + ' ' + n + '/' + total, n / total * 0.9));
@@ -471,6 +514,7 @@ function load(doc, name) {
    stays skipped when the report is checked again after edits elsewhere */
 const sig = i => {
   if (i._sig) return i._sig;
+  if (XL_CATS.includes(i.cat)) return (i._sig = i.cat + '|' + i.msg + '|' + i.found);
   const t = (RPT.doc.paras[i.para] || {}).text || '';
   const [s, e] = i.ranges[0];
   return (i._sig = i.cat + '|' + (i.msg || '') + '|' + t.slice(Math.max(0, s - 20), Math.min(t.length, e + 20)).replace(/\s+/g, ' '));
@@ -507,6 +551,7 @@ function tblName(n) {
   return (T && T.cap) || tx().tableN(n + 1);
 }
 function locText(p, pi, off) {
+  if (isXl()) return p.loc || '';
   const t = tx();
   const pg = pageAt(p, off);
   const a = [];
@@ -532,6 +577,7 @@ function message(i) {
   if (i.cat === 'spell') return m.spell;
   if (i.cat === 'overuse') return m.overuse(i.count);
   if (i.cat === 'tabledup') return m[i.msg](i) + (i.ref != null ? ' (' + refText(i) + ')' : '');
+  if (XL_CATS.includes(i.cat)) return m[i.msg](i);
   if (i.cat === 'datamatch' || i.cat === 'dict' || /^(yearBE|yearCE|codeForm|stationForm|decimals)$/.test(i.msg || '')) {
     const f = m[i.msg];
     return typeof f === 'function' ? f(i) : f || '';
@@ -554,7 +600,7 @@ function message(i) {
 }
 
 function context(i) {
-  if (i.cat === 'tabledup') return '<b>' + esc(i.found.length > 140 ? i.found.slice(0, 138) + '…' : i.found) + '</b>';
+  if (i.cat === 'tabledup' || XL_CATS.includes(i.cat)) return '<b>' + esc(i.found.length > 140 ? i.found.slice(0, 138) + '…' : i.found) + '</b>';
   const text = RPT.doc.paras[i.para].text;
   const [s, e] = i.ranges[0];
   if (e - s > 120) return '<b>' + esc(text.slice(s, s + 110)) + '…</b>';
@@ -581,7 +627,8 @@ function renderResult() {
   const body = document.getElementById('rc-body');
   body.classList.add('has-doc');
   const d = RPT.doc;
-  const meta = d.kind === 'pdf' || (d.kind === 'docx' && d.hasPages) ? d.pages + ' ' + t.pages : d.paras.filter(p => p.text.trim() && !p.inTable).length + ' ' + t.paras;
+  const meta = d.kind === 'xlsx' ? d.sheets.length + ' ' + t.sheets + ' · ' + t.cellsN(d.cells)
+    : d.kind === 'pdf' || (d.kind === 'docx' && d.hasPages) ? d.pages + ' ' + t.pages : d.paras.filter(p => p.text.trim() && !p.inTable).length + ' ' + t.paras;
   body.innerHTML =
     '<div class="rc-top">' +
     '<div class="rc-file"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M14 3H7a2 2 0 00-2 2v14a2 2 0 002 2h10a2 2 0 002-2V8z"/><polyline points="14 3 14 8 19 8"/></svg>' +
@@ -602,7 +649,7 @@ function renderResult() {
     '<div class="rc-list" id="rc-list" aria-label="' + esc(t.total) + '"></div></div>' +
     '<div class="rc-split" id="rc-split" role="separator" aria-orientation="vertical" tabindex="0" aria-label="' + esc(t.resize) + '"></div>' +
     '<div class="rc-docpane"><div class="rc-dbar">' +
-    '<div class="rc-pnav" id="rc-pnav"><button data-pg="prev" aria-label="' + esc(t.prevPage) + '">‹</button><span>' + esc(t.page) + '</span>' +
+    '<div class="rc-pnav" id="rc-pnav"><button data-pg="prev" aria-label="' + esc(t.prevPage) + '">‹</button><span>' + esc(d.kind === 'xlsx' ? t.sheet : t.page) + '</span>' +
     '<input id="rc-pg" inputmode="numeric" aria-label="' + esc(t.goPage) + '"><span class="rc-pgn" id="rc-pgn"></span>' +
     '<button data-pg="next" aria-label="' + esc(t.nextPage) + '">›</button></div>' +
     '<div class="rc-find" id="rc-find" hidden><span id="rc-find-n" aria-live="polite"></span>' +
@@ -725,11 +772,11 @@ function renderSummary() {
       esc(t.sev[s]) + ' <b>' + sev[s] + '</b></button>').join('');
   const allCats = [...new Set(all.map(i => i.cat))];
   const on = allCats.filter(c => !RPT.off.has(c)).length;
-  document.getElementById('rc-chips').innerHTML = CATS.filter(c => allCats.includes(c)).map(c =>
+  document.getElementById('rc-chips').innerHTML = ALL_CATS.filter(c => allCats.includes(c)).map(c =>
     '<button class="rc-chip" data-cat="' + c + '" aria-pressed="' + !RPT.off.has(c) + '">' + esc(t.cat[c]) + ' <b>' + (by[c] || 0) + '</b></button>').join('') +
     (allCats.length > 1 ? '<span class="rc-chipctl"><button data-cats="all"' + (on === allCats.length ? ' disabled' : '') + '>' + esc(t.catAll) + '</button>' +
       '<button data-cats="none"' + (on === 0 ? ' disabled' : '') + '>' + esc(t.catNone) + '</button></span>' : '');
-  document.getElementById('rc-scope').innerHTML = scopeHtml(true);
+  document.getElementById('rc-scope').innerHTML = isXl() ? '' : scopeHtml(true);
 }
 
 function renderCount() {
@@ -862,7 +909,8 @@ function renderDoc(force) {
       for (const [pi, s, e] of i.also || []) put(d.kind === 'docx' ? (d.paras[pi] || {}).idx ?? pi : pi, { ...i, para: pi, ranges: [[s, e]] });
     });
     const keep = el.scrollTop;
-    const w = d.kind === 'docx' ? renderWord(el, d, byPara, t.page, breakMode())
+    const w = d.kind === 'xlsx' ? renderXlsx(el, d, byPara, t)
+      : d.kind === 'docx' ? renderWord(el, d, byPara, t.page, breakMode())
       : d.kind === 'pdf' ? renderPdf(el, d, byPara, RPT.pdfCache, t.page)
       : renderPlain(el, d, byPara);
     el.dataset.w = w;
@@ -1073,7 +1121,7 @@ function exportXlsx() {
     const p = RPT.doc.paras[i.para];
     const [s, e] = i.ranges[0];
     rows.push([n + 1, t.sev[i.sev], t.cat[i.cat], locText(p, i.para, s), p.heading || '',
-      i.cat === 'tabledup' ? i.found : p.text.slice(s, Math.min(e, s + 200)), i.suggest || '', message(i),
+      i.cat === 'tabledup' || XL_CATS.includes(i.cat) ? i.found : p.text.slice(s, Math.min(e, s + 200)), i.suggest || '', message(i),
       p.text.slice(Math.max(0, s - 40), Math.min(p.text.length, e + 40)).replace(/\n/g, ' ')]);
   });
   const ws = X.utils.aoa_to_sheet(rows);
@@ -1081,7 +1129,7 @@ function exportXlsx() {
   const wb = X.utils.book_new();
   X.utils.book_append_sheet(wb, ws, 'Report Check');
   /* table of abbreviations, ready to paste into the report */
-  const { defs, uses } = scanAbbr(RPT.doc);
+  const { defs, uses } = isXl() ? { defs: new Map() } : scanAbbr(RPT.doc);
   if (defs.size) {
     const ar = [t.abbrHead];
     [...defs.keys()].sort((a, b) => a.localeCompare(b, 'en', { sensitivity: 'base' })).forEach(a => {
